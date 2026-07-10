@@ -1,0 +1,175 @@
+/*
+ * Token Arcade — page chrome only. The game itself is drawn on <canvas> with a
+ * bitmap font, so CSS just frames the stage and styles the DOM modals.
+ */
+
+:root {
+  --bg: #0a0712;
+  --ink: #f6f4ff;
+  --gold: #ffd23f;
+  --cyan: #5fe6d6;
+  --magenta: #e15ad8;
+  --panel: #1b1230;
+  --panel-2: #120b22;
+  --pixel: 'Press Start 2P', 'VT323', ui-monospace, monospace;
+  --read: 'VT323', ui-monospace, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: #050308;
+  color: var(--ink);
+  overflow: hidden;
+  font-family: var(--read);
+  -webkit-font-smoothing: none;
+}
+
+/* Radial arcade-room vignette behind the letterboxed canvas. */
+body {
+  background: radial-gradient(120% 90% at 50% 15%, #241338 0%, #12091f 45%, #050308 100%);
+}
+
+#stage {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  touch-action: none;
+}
+
+#overlays {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 10;
+}
+
+/* ---- modal dialogs (help / settings) ---- */
+
+.ta-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(5, 3, 8, 0.72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+  animation: ta-fade 0.15s ease;
+}
+
+@keyframes ta-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+.ta-modal {
+  width: min(560px, 90vw);
+  max-height: 84vh;
+  overflow: auto;
+  background: linear-gradient(180deg, var(--panel) 0%, var(--panel-2) 100%);
+  border: 3px solid var(--gold);
+  border-radius: 14px;
+  box-shadow: 0 0 0 3px #000, 0 12px 40px rgba(0, 0, 0, 0.6), 0 0 42px rgba(225, 90, 216, 0.25);
+  padding: 22px 24px 26px;
+}
+
+.ta-modal h2 {
+  font-family: var(--pixel);
+  font-size: 15px;
+  letter-spacing: 1px;
+  color: var(--gold);
+  margin: 4px 0 16px;
+  text-shadow: 0 0 8px rgba(255, 210, 63, 0.5);
+}
+
+.ta-modal p,
+.ta-modal li {
+  font-size: 20px;
+  line-height: 1.35;
+  color: #d9d4ef;
+}
+
+.ta-modal ul {
+  padding-left: 20px;
+  margin: 10px 0;
+}
+
+.ta-modal .ta-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 20px;
+}
+
+.ta-btn {
+  font-family: var(--pixel);
+  font-size: 11px;
+  color: #10202a;
+  background: var(--cyan);
+  border: none;
+  border-radius: 8px;
+  padding: 10px 14px;
+  cursor: pointer;
+  box-shadow: 0 3px 0 #2c8f86;
+  transition: transform 0.05s ease;
+}
+.ta-btn:active {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 #2c8f86;
+}
+.ta-btn.ghost {
+  background: transparent;
+  color: var(--cyan);
+  border: 2px solid var(--cyan);
+  box-shadow: none;
+}
+.ta-btn.danger {
+  background: #e1556b;
+  color: #fff;
+  box-shadow: 0 3px 0 #8f2c3c;
+}
+
+.ta-input {
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 14px;
+  padding: 12px 14px;
+  font-family: var(--pixel);
+  font-size: 16px;
+  color: #f6f4ff;
+  background: rgba(6, 4, 14, 0.6);
+  border: 2px solid var(--cyan);
+  border-radius: 8px;
+  outline: none;
+}
+.ta-input::placeholder {
+  color: #6a6488;
+}
+.ta-input:focus {
+  border-color: var(--gold, #ffd23f);
+}
+
+.ta-modal .ta-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 20px;
+}
+
+.ta-switch {
+  font-family: var(--pixel);
+  font-size: 10px;
+}

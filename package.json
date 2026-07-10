@@ -1,0 +1,22 @@
+{
+  "name": "token-arcade",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Turn AI coding token usage into a cozy pixel arcade.",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "esbuild src/main.ts --bundle --format=iife --outfile=public/app.js --sourcemap --loader:.ts=ts",
+    "watch": "esbuild src/main.ts --bundle --format=iife --outfile=public/app.js --sourcemap --loader:.ts=ts --watch",
+    "start": "node --experimental-strip-types --no-warnings server/index.ts",
+    "dev": "npm run build && npm run start",
+    "test": "node scripts/run-tests.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.0",
+    "esbuild": "^0.24.0",
+    "playwright-core": "1.48",
+    "sharp": "^0.35.3",
+    "typescript": "^5.6.0"
+  }
+}

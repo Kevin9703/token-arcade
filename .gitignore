@@ -1,0 +1,7 @@
+node_modules/
+public/app.js
+public/app.js.map
+_reference/
+*.log
+.DS_Store
+.test-build/
