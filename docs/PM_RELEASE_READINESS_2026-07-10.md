@@ -78,6 +78,8 @@ Required before public release:
 - Show a compact first-run choice or clearly labeled `Demo Arcade` banner when fallback happens, with an explicit way to retry local scan.
 - Do not make a user infer that invented token history is theirs.
 
+Implementation scope and acceptance criteria: `docs/P1_PRODUCT_SPEC.md`.
+
 ## Release Scope Recommendation
 
 - **Now:** private alpha / shared prototype for people who understand it is local, desktop-first, and still under economy/content tuning.
