@@ -2,14 +2,32 @@
 
 > Turn AI coding tokens into a tiny pixel arcade.
 
+[![Version](https://img.shields.io/badge/version-v0.1-f04acb?style=flat-square)](#status)
+[![Node.js](https://img.shields.io/badge/node.js-22%2B-56d364?style=flat-square)](#run-locally)
+[![Local-first](https://img.shields.io/badge/data-local--first-53e0d5?style=flat-square)](#privacy)
+[![License: MIT](https://img.shields.io/badge/license-MIT-ffc928?style=flat-square)](LICENSE)
+
 Token Arcade is a local-first game for Claude Code and Codex usage. It groups
 your model token history by project, turns newly discovered tokens into arcade
 coins, and lets you spend those coins on capsule pulls, collectibles, cabinets,
 and achievements.
 
+![Token Arcade home screen with fictional demo cabinets](docs/readme-assets/demo-home.png)
+
 This is deliberately **not** a productivity dashboard. It does not score your
 commits, tests, documentation, or output quality. Tokens are the only gameplay
 input: use a model, sync your history, watch the arcade grow.
+
+## Why Token Arcade
+
+- **One honest input.** Token usage drives the entire game; there are no
+  arbitrary productivity scores or judgments about how you work.
+- **Every project becomes a cabinet.** More tokens unlock richer machine stages,
+  brighter lights, and a visible history of the project growing.
+- **Progress turns into a collection.** Coins fund capsule pulls, 50 collectible
+  prizes, achievements, room themes, profile frames, and permanent display upgrades.
+- **Your history stays yours.** Scanning, aggregation, saves, and demo data all
+  remain on your machine with no account, telemetry, or cloud backend.
 
 ## Status
 
@@ -23,13 +41,6 @@ preview rather than a hosted service.
 
 All screenshots below use isolated, fictional demo data. No personal projects
 or local usage history are included.
-
-### The Arcade Floor
-
-Projects become cabinets on the left, new usage feeds the coin bank, and the
-prize wall makes the next pull visible from the first screen.
-
-![Token Arcade home screen with fictional demo cabinets](docs/readme-assets/demo-home.png)
 
 ### A Project Becomes A Cabinet
 
