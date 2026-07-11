@@ -138,13 +138,6 @@ For token accounting details and the project identity rules, read
 - [Architecture](ARCHITECTURE.md)
 - [PM release readiness review](docs/PM_RELEASE_READINESS_2026-07-10.md)
 
-## Non-Goals
-
-- No productivity score, rankings, or quality judgment.
-- No real-money currency, paid currency, ads, accounts, or leaderboards.
-- No chat transcript viewer.
-- No combat RPG or dungeon-crawler mechanics.
-
 ## License
 
 [MIT](LICENSE)
