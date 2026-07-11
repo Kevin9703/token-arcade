@@ -33,6 +33,26 @@ test('saveState -> loadState round-trips a deep-equal current-version state per 
   assert.equal(loadState('demo'), null);
 });
 
+test('P1C: current saves preserve owned quantities/dates without a version bump', () => {
+  installLocalStorage();
+  const state = { ...new GameStore().state };
+  const firstUnlocked = '2025-12-24T12:34:56.000Z';
+  state.owned = {
+    c_smiley: { count: 7, firstUnlocked },
+    retired_prize: { count: 99, firstUnlocked: '2024-01-01T00:00:00.000Z' },
+  };
+  saveState('live', state);
+
+  const loaded = loadState('live')!;
+  assert.equal(loaded.version, 2);
+  assert.deepEqual(loaded.owned.c_smiley, { count: 7, firstUnlocked });
+  assert.deepEqual(loaded.owned.retired_prize, { count: 99, firstUnlocked: '2024-01-01T00:00:00.000Z' });
+
+  const store = new GameStore();
+  assert.deepEqual(store.state.owned.c_smiley, { count: 7, firstUnlocked });
+  assert.equal(store.ownedCount(), 1, 'unknown legacy IDs remain stored but do not count toward milestones');
+});
+
 test('legacy single-blob save migrates into the slot matching its own mode', () => {
   installLocalStorage();
   const legacy = { ...new GameStore().state, coins: 77, mode: 'live' as const };

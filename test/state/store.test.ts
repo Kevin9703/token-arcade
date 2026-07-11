@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { GameStore } from '../../src/state/store';
 import { SLOT_KEYS } from '../../src/state/persistence';
-import { SHOP } from '../../src/content';
+import { COLLECTIBLES, SHOP } from '../../src/content';
 import { installLocalStorage, installStorageEvents } from '../helpers';
 import type { GameState, ProjectUsage } from '../../src/core/types';
 
@@ -15,6 +15,12 @@ function liveWith(projects: ProjectUsage[]): () => Promise<{ source: string; pro
 /** Escape hatch for tests that need to poke state directly. */
 function mut(store: GameStore): GameState {
   return store.state as GameState;
+}
+
+const P1C_UNLOCKED_AT = '2026-07-11T00:00:00.000Z';
+
+function grantOwned(store: GameStore, ids: string[]): void {
+  for (const id of ids) mut(store).owned[id] = { count: 1, firstUnlocked: P1C_UNLOCKED_AT };
 }
 
 // ---------------------------------------------------------------------------
@@ -30,6 +36,8 @@ test('construction: a fresh store (empty storage) has zeroed defaults', () => {
   assert.deepEqual(s.projects, []);
   assert.deepEqual(s.owned, {});
   assert.equal(s.mode, 'live');
+  assert.equal(s.historyScan, 'unscanned');
+  assert.deepEqual(s.cosmetics, { roomTheme: 'base', profileFrame: 'base' });
   assert.equal(s.coinResidue, 0);
   assert.equal(s.tickets, 0);
   assert.equal(s.shards, 0);
@@ -210,19 +218,23 @@ test('sync: overlapping calls share one in-flight sync (no double-minting)', asy
 });
 
 // ---------------------------------------------------------------------------
-// SYNC — demo fallback + explicit demo mode + save-slot isolation
+// SYNC — truthful first scan + explicit demo mode + save-slot isolation
 // ---------------------------------------------------------------------------
 
-test('sync: empty live payload on a FIRST RUN falls back to demo and still mints coins', async () => {
+test('P1A: an empty first live scan stays empty and records a demo decision instead of minting fiction', async () => {
   installLocalStorage();
   const store = new GameStore({ fetchLive: liveWith([]) });
   assert.equal(store.state.mode, 'live');
 
   const r = await store.sync();
-  assert.equal(store.state.mode, 'demo'); // transparently switched
-  assert.equal(r.source, 'demo-fallback');
-  assert.ok(r.coinsMinted > 0);
-  assert.ok(store.state.projects.length > 0);
+  assert.equal(store.state.mode, 'live');
+  assert.equal(r.source, 'no-history');
+  assert.equal(r.coinsMinted, 0);
+  assert.deepEqual(store.state.projects, []);
+  assert.equal(store.state.coins, 0);
+  assert.equal(store.state.stats.syncs, 0);
+  assert.equal(store.state.historyScan, 'no-history');
+  assert.equal(store.state.firstRunDone, false);
 });
 
 test('sync: an empty live payload does NOT switch a save with real progress into demo', async () => {
@@ -299,6 +311,33 @@ test('mode slots: demo progress never leaks into the live save', async () => {
   assert.equal(store.state.coins, demoCoins);
 });
 
+test('P1A: choosing demo is explicit and a later live retry enters an isolated live slot', async () => {
+  installLocalStorage();
+  let payload: ProjectUsage[] = [];
+  const store = new GameStore({ fetchLive: async () => ({ source: 'live', projects: payload }) });
+  await store.sync();
+  assert.equal(store.state.historyScan, 'no-history');
+
+  const demo = await store.playDemoArcade();
+  assert.equal(demo.source, 'demo');
+  assert.equal(store.state.mode, 'demo');
+  assert.ok(store.state.projects.length > 0);
+  const demoCoins = store.state.coins;
+
+  payload = [{ id: 'real', name: 'real', provider: 'codex', tokens: 500_000 }];
+  const live = await store.tryLiveScan();
+  assert.equal(live.source, 'live');
+  assert.equal(store.state.mode, 'live');
+  assert.equal(store.state.projects.length, 1);
+  assert.equal(store.state.projects[0].id, 'real');
+  assert.equal(store.state.historyScan, 'live-history');
+  assert.equal(store.state.coins, 50);
+
+  store.setMode('demo');
+  assert.equal(store.state.coins, demoCoins);
+  assert.ok(store.state.projects.some((p) => p.id !== 'real'));
+});
+
 // ---------------------------------------------------------------------------
 // PULL
 // ---------------------------------------------------------------------------
@@ -373,6 +412,50 @@ test('pull: forcing Math.random gives a deterministic legendary; a duplicate add
   }
 });
 
+test('P1C pull: a ten-pull returns the crossed unique-collection milestone', () => {
+  installLocalStorage();
+  const store = new GameStore();
+  grantOwned(store, COLLECTIBLES.filter((c) => c.rarity !== 'common').slice(0, 9).map((c) => c.id));
+  mut(store).coins = 1000;
+
+  const commonCount = COLLECTIBLES.filter((c) => c.rarity === 'common').length;
+  let call = 0;
+  const originalRandom = Math.random;
+  Math.random = () => {
+    const pairIndex = Math.floor(call++ / 2);
+    return call % 2 === 1 ? 0.99 : (pairIndex + 0.1) / commonCount;
+  };
+  try {
+    const result = store.pull(10)!;
+    assert.equal(result.results.filter((outcome) => !outcome.isDup).length, 10);
+    assert.deepEqual(result.milestones.map((m) => m.threshold), [10]);
+    assert.equal(store.ownedCount(), 19);
+  } finally {
+    Math.random = originalRandom;
+  }
+});
+
+test('P1C pull: a duplicate does not advance unique progress or unlock a milestone', () => {
+  installLocalStorage();
+  const store = new GameStore();
+  grantOwned(store, [
+    'l_crown',
+    ...COLLECTIBLES.filter((c) => c.id !== 'l_crown').slice(0, 8).map((c) => c.id),
+  ]);
+  mut(store).coins = 100;
+  const originalRandom = Math.random;
+  Math.random = () => 0;
+  try {
+    const result = store.pull(1)!;
+    assert.equal(result.results[0].collectible.id, 'l_crown');
+    assert.equal(result.results[0].isDup, true);
+    assert.deepEqual(result.milestones, []);
+    assert.equal(store.ownedCount(), 9);
+  } finally {
+    Math.random = originalRandom;
+  }
+});
+
 // ---------------------------------------------------------------------------
 // BUY
 // ---------------------------------------------------------------------------
@@ -391,6 +474,46 @@ test('buy: a grant item spends coins and adds a collectible of its pick type', (
   assert.equal(res!.isDup, false);
   assert.equal(res!.count, 1);
   assert.ok(store.state.owned[res!.collectible.id]);
+});
+
+test('P1C buy: a newly granted item can cross a collection milestone', () => {
+  installLocalStorage();
+  const store = new GameStore();
+  grantOwned(store, COLLECTIBLES.filter((c) => c.type !== 'sign').slice(0, 24).map((c) => c.id));
+  mut(store).coins = 500;
+  const sign = SHOP.find((i) => i.id === 'sign')!;
+  const result = store.buy(sign)!;
+  assert.equal(result.isDup, false);
+  assert.deepEqual(result.milestones.map((m) => m.threshold), [25]);
+  assert.equal(store.collectionMilestoneTier(), 2);
+  assert.deepEqual(store.collectionMilestones().map((m) => m.threshold), [10, 25]);
+});
+
+test('P1C ownedCount ignores stale unknown IDs', () => {
+  installLocalStorage();
+  const store = new GameStore();
+  grantOwned(store, COLLECTIBLES.slice(0, 9).map((c) => c.id));
+  mut(store).owned.retired_prize = { count: 999, firstUnlocked: P1C_UNLOCKED_AT };
+  assert.equal(store.ownedCount(), 9);
+  assert.equal(store.collectionMilestoneTier(), 0);
+});
+
+test('P1C collection tiers remain isolated between live and demo slots', () => {
+  installLocalStorage();
+  const store = new GameStore();
+  grantOwned(store, COLLECTIBLES.slice(0, 10).map((c) => c.id));
+  store.save();
+  assert.equal(store.collectionMilestoneTier(), 1);
+
+  store.setMode('demo');
+  assert.equal(store.collectionMilestoneTier(), 0);
+  grantOwned(store, COLLECTIBLES.slice(0, 25).map((c) => c.id));
+  store.save();
+  assert.equal(store.collectionMilestoneTier(), 2);
+
+  store.setMode('live');
+  assert.equal(store.collectionMilestoneTier(), 1);
+  assert.equal(store.ownedCount(), 10);
 });
 
 test('buy: insufficient coins returns null', () => {
@@ -415,6 +538,55 @@ test('buy: a capsule-kind item returns null (and does not spend)', () => {
   const res = store.buy(capsule);
   assert.equal(res, null);
   assert.equal(store.state.coins, 500); // untouched
+});
+
+test('P1B: cosmetic shop grants prefer unowned cosmetics and become complete without charging duplicates', () => {
+  installLocalStorage();
+  const store = new GameStore();
+  const theme = SHOP.find((i) => i.id === 'theme')!;
+  const frame = SHOP.find((i) => i.id === 'frame')!;
+  mut(store).coins = 10_000;
+
+  const firstTheme = store.buy(theme);
+  const secondTheme = store.buy(theme);
+  assert.ok(firstTheme && secondTheme);
+  assert.equal(firstTheme!.collectible.type, 'theme');
+  assert.equal(secondTheme!.collectible.type, 'theme');
+  assert.notEqual(firstTheme!.collectible.id, secondTheme!.collectible.id);
+  assert.equal(store.isGrantComplete(theme), true);
+  const coinsAfterThemes = store.state.coins;
+  assert.equal(store.buy(theme), null);
+  assert.equal(store.state.coins, coinsAfterThemes, 'complete theme card cannot spend coins for a duplicate');
+
+  const firstFrame = store.buy(frame);
+  assert.ok(firstFrame);
+  assert.equal(firstFrame!.collectible.id, 'r_frame');
+  assert.equal(store.isGrantComplete(frame), true);
+  const coinsAfterFrame = store.state.coins;
+  assert.equal(store.buy(frame), null);
+  assert.equal(store.state.coins, coinsAfterFrame, 'complete frame card cannot spend coins for a duplicate');
+});
+
+test('P1B: equipped cosmetics persist per slot and require ownership', () => {
+  installLocalStorage();
+  const store = new GameStore();
+  assert.equal(store.equipRoomTheme('e_sunset'), false);
+  assert.equal(store.equipProfileFrame('r_frame'), false);
+
+  mut(store).owned.e_sunset = { count: 1, firstUnlocked: '2026-07-10T00:00:00.000Z' };
+  mut(store).owned.r_frame = { count: 1, firstUnlocked: '2026-07-10T00:00:00.000Z' };
+  assert.equal(store.equipRoomTheme('e_sunset'), true);
+  assert.equal(store.equipProfileFrame('r_frame'), true);
+  assert.deepEqual(store.state.cosmetics, { roomTheme: 'e_sunset', profileFrame: 'r_frame' });
+
+  const reloaded = new GameStore();
+  assert.deepEqual(reloaded.state.cosmetics, { roomTheme: 'e_sunset', profileFrame: 'r_frame' });
+  reloaded.setMode('demo');
+  assert.deepEqual(reloaded.state.cosmetics, { roomTheme: 'base', profileFrame: 'base' });
+  mut(reloaded).owned.l_forest = { count: 1, firstUnlocked: '2026-07-10T00:00:00.000Z' };
+  assert.equal(reloaded.equipRoomTheme('l_forest'), true);
+  reloaded.setMode('live');
+  assert.deepEqual(reloaded.state.cosmetics, { roomTheme: 'e_sunset', profileFrame: 'r_frame' });
 });
 
 // ---------------------------------------------------------------------------

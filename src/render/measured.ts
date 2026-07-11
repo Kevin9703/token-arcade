@@ -6,9 +6,16 @@
  * dynamic content exactly where the art expects it.
  */
 
-/** Per-cell centers of the achievement display cabinet (5 shelves x 9 slots),
- * as fractions of the drawn image box. The AI-drawn grid is not uniform. */
-export const DISPLAY_SLOTS: { x: number; y: number }[][] = [[{"x":0.1472,"y":0.2156},{"x":0.2408,"y":0.2156},{"x":0.3321,"y":0.2156},{"x":0.4225,"y":0.2156},{"x":0.5146,"y":0.2156},{"x":0.6043,"y":0.2156},{"x":0.694,"y":0.2156},{"x":0.7814,"y":0.2156},{"x":0.8635,"y":0.2156}],[{"x":0.1488,"y":0.3657},{"x":0.2408,"y":0.3657},{"x":0.3321,"y":0.3657},{"x":0.4225,"y":0.3657},{"x":0.5138,"y":0.3657},{"x":0.6043,"y":0.3657},{"x":0.694,"y":0.3657},{"x":0.7799,"y":0.3657},{"x":0.865,"y":0.3657}],[{"x":0.148,"y":0.5133},{"x":0.2408,"y":0.5133},{"x":0.3321,"y":0.5133},{"x":0.4225,"y":0.5133},{"x":0.5138,"y":0.5133},{"x":0.6043,"y":0.5133},{"x":0.694,"y":0.5133},{"x":0.7799,"y":0.5133},{"x":0.8635,"y":0.5133}],[{"x":0.1472,"y":0.6609},{"x":0.2408,"y":0.6609},{"x":0.3321,"y":0.6609},{"x":0.4225,"y":0.6609},{"x":0.5146,"y":0.6609},{"x":0.6043,"y":0.6609},{"x":0.694,"y":0.6609},{"x":0.7799,"y":0.6609},{"x":0.8643,"y":0.6609}],[{"x":0.148,"y":0.8027},{"x":0.2408,"y":0.8027},{"x":0.3321,"y":0.8027},{"x":0.4233,"y":0.8027},{"x":0.51,"y":0.8027},{"x":0.6043,"y":0.8027},{"x":0.694,"y":0.8027},{"x":0.7799,"y":0.8027},{"x":0.8627,"y":0.8027}]];
+/** Per-cell centers of the P1C achievement display (5 shelves x 10 slots),
+ * measured from display-50-v1.png. Rarity rails sit separately at x=0.13. */
+const DISPLAY_X = [0.2287, 0.2999, 0.3711, 0.4423, 0.5135, 0.5851, 0.6558, 0.727, 0.7982, 0.8694];
+const DISPLAY_Y = [0.2144, 0.3554, 0.4978, 0.6401, 0.7843];
+export const DISPLAY_SLOTS: { x: number; y: number }[][] = DISPLAY_Y.map((y) =>
+  DISPLAY_X.map((x) => ({ x, y })),
+);
+
+/** Center of the five separate rarity-name rails. */
+export const DISPLAY_RARITY_RAILS: { x: number; y: number }[] = DISPLAY_Y.map((y) => ({ x: 0.1563, y }));
 
 /** Per-cell centers of the home prize wall (5 shelves x 4 slots), as fractions
  * of the drawn image box. */

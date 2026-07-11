@@ -13,10 +13,11 @@ input: use a model, sync your history, watch the arcade grow.
 
 ## Status
 
-**Preview / local alpha.** The core arcade loop is playable, but this is not a
-publicly finished game yet. In particular, the first-run demo fallback needs
-clearer disclosure and the collection/cosmetic endgame needs more depth before
-a public V0.1 release. See the [release readiness review](docs/PM_RELEASE_READINESS_2026-07-10.md).
+**V0.1 local release.** The first complete arcade loop is ready to play: sync
+real local usage or deliberately enter an isolated demo, earn coins, level
+project cabinets, collect all 50 prizes, unlock permanent collection upgrades,
+and equip room themes and profile frames. Token Arcade remains a local-first
+preview rather than a hosted service.
 
 ## Demo
 
@@ -69,9 +70,14 @@ Pull capsules and fill the prize wall
 - Local token-history scans for Claude Code and Codex, grouped by project.
 - A single token-to-coin economy: `10,000 tokens = 1 coin`.
 - Fifty cabinet levels across five visual stages.
-- Capsule pulls, duplicate handling, a reviewable x10 result ticker, and a prize wall.
+- Fifty collectible prizes with four permanent prize-wall upgrades at 10, 25,
+  40, and 50 unique discoveries.
+- Capsule pulls, duplicate handling, a reviewable x10 result ticker, and a
+  physical 50-slot prize cabinet.
+- Unlockable room themes and profile frames with persistent equipped states.
 - Achievement gallery and Simplified Chinese / English interface switching.
-- Local-only persistence with separate demo and live save slots.
+- An explicit no-history choice plus separate demo and live save slots, so
+  fictional progress never leaks into real usage.
 - Pixel-art canvas UI, bitmap font, sound feedback, and no account or cloud service.
 
 ## Run Locally
@@ -79,7 +85,7 @@ Pull capsules and fill the prize wall
 Requirements: Node.js 22+ and npm.
 
 ```bash
-git clone https://github.com/<your-account>/token-arcade.git
+git clone https://github.com/Kevin9703/token-arcade.git
 cd token-arcade
 npm install
 npm run dev
@@ -116,6 +122,8 @@ For token accounting details and the project identity rules, read
 - [MVP specification](docs/MVP_SPEC.md)
 - [Game economy](docs/GAME_ECONOMY.md)
 - [Project level system](docs/PROJECT_LEVEL_SYSTEM.md)
+- [P1 trust and cosmetic progression](docs/P1_PRODUCT_SPEC.md)
+- [P1 collection asset map](docs/P1C_COLLECTION_ASSETS.md)
 - [Architecture](ARCHITECTURE.md)
 - [PM release readiness review](docs/PM_RELEASE_READINESS_2026-07-10.md)
 

@@ -72,6 +72,12 @@ test('rollCapsule — returns a real collectible whose rarity matches the roll',
   }
 });
 
+test('P1C: every rarity pool is non-empty and every catalog entry is drawable', () => {
+  for (const rarity of RARITY_ORDER) assert.ok(byRarity[rarity].length > 0, `${rarity} pool is empty`);
+  const pooledIds = new Set(RARITY_ORDER.flatMap((rarity) => byRarity[rarity].map((c) => c.id)));
+  assert.deepEqual(pooledIds, new Set(COLLECTIBLES.map((c) => c.id)));
+});
+
 test('rollCapsule — varying (mulberry32) rng always yields a valid member', () => {
   const rng = mulberry32(7);
   for (let i = 0; i < 200; i++) {

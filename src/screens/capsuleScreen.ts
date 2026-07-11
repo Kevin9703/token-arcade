@@ -32,9 +32,10 @@ import { drawSprite, drawSpriteCentered, drawCoin } from '../render/sprites';
 import { drawCapsuleMachine } from '../render/machines';
 import { drawImageSmooth, collectibleIcon } from '../render/assets';
 import { drawCoinHud } from '../render/hud';
+import { drawDemoPlaque } from '../render/demoPlaque';
 import { revealFrameImage, resultRowArt } from '../render/atlas';
 import { drawIconCentered, drawImageContain, EasedNumber } from '../render/widgets';
-import { DISPLAY_SLOTS } from '../render/measured';
+import { DISPLAY_RARITY_RAILS, DISPLAY_SLOTS } from '../render/measured';
 import { CONFIG, fmtComma } from '../domain/economy';
 import { RARITIES, RARITY_ORDER, byRarity } from '../content';
 import type { PullOutcome, Collectible } from '../core/types';
@@ -43,6 +44,7 @@ import { drawBackButton } from './chrome';
 import { t, tRarity, tType, tCollectibleName, tCollectibleDesc, tAchName, tAchDesc } from '../i18n';
 
 const GOLD = '#ffd23f';
+const CYAN = '#5fe6d6';
 const MAGENTA = '#e15ad8';
 const INK = '#f6f4ff';
 
@@ -63,7 +65,8 @@ const CARD_Y = 168;
 // DISPLAY_SLOTS (measured per cell by scripts/measure-assets.mjs — the
 // AI-drawn grid is not uniform, so per-cell anchors are the only way icons
 // sit truly centered).
-const DISPLAY = { x: 806, y: 120, w: 752, h: 696 };
+const DISPLAY = { x: 836, y: 120, w: 712, h: 696 };
+const DISPLAY_ITEMS = RARITY_ORDER.flatMap((rarity) => byRarity[rarity]);
 
 // Procedural fallback wall box (only used if the cabinet asset is missing).
 const WALL = { x: 760, y: 120, w: 800, h: 800 };
@@ -297,16 +300,16 @@ export class CapsuleScreen implements Screen {
     this.slotFlash[c.id] = 1.0;
   }
 
-  /** Center of the cabinet slot a collectible is displayed in (or null if it
-   * has no drawn slot). Items live in slots[i+1]; slots[0] holds the plaque. */
+  /** Center of the cabinet slot a collectible is displayed in. P1C gives each
+   * rarity ten real niches; the rarity rail no longer consumes a prize slot. */
   private slotCenterFor(c: Collectible): { x: number; y: number } | null {
-    const r = RARITY_ORDER.indexOf(c.rarity);
-    if (r < 0) return null;
-    const items = byRarity[c.rarity];
-    const i = items.findIndex((x) => x.id === c.id);
-    const slots = DISPLAY_SLOTS[r];
-    if (i >= 0 && i + 1 < slots.length) {
-      return { x: DISPLAY.x + slots[i + 1].x * DISPLAY.w, y: DISPLAY.y + slots[i + 1].y * DISPLAY.h };
+    const index = DISPLAY_ITEMS.findIndex((item) => item.id === c.id);
+    if (index < 0) return null;
+    const row = Math.floor(index / 10);
+    const column = index % 10;
+    const slot = DISPLAY_SLOTS[row]?.[column];
+    if (slot) {
+      return { x: DISPLAY.x + slot.x * DISPLAY.w, y: DISPLAY.y + slot.y * DISPLAY.h };
     }
     return null;
   }
@@ -345,6 +348,7 @@ export class CapsuleScreen implements Screen {
     const HW = 252;
     const HX = 1600 - HW - 24;
     drawCoinHud(g, this.ctx.assets, HX, 14, HW, fmtComma(Math.round(this.displayCoins.value)));
+    drawDemoPlaque(g, this.ctx, HX - 170, 18, 160);
   }
 
   // ---- capsule machine ----------------------------------------------------
@@ -621,29 +625,28 @@ export class CapsuleScreen implements Screen {
     }
     drawImageSmooth(g, img, DISPLAY.x, DISPLAY.y, DISPLAY.w, DISPLAY.h);
 
-    // Each rarity gets one shelf (top = legendary). Its collectibles fill the
-    // shelf's slots, owned lit / locked silhouette. A small nameplate marks the
-    // shelf's rarity in slots[0]; collectibles start from the second slot.
+    // P1C uses all 50 niches. Items are rarity-sorted, then laid row-major;
+    // each slim rail marks its physical 10-item range rather than consuming a
+    // prize slot. Per-item frame glow and tooltips still communicate rarity.
     for (let r = 0; r < RARITY_ORDER.length; r++) {
-      const rk = RARITY_ORDER[r];
-      const rar = RARITIES[rk];
       const slots = DISPLAY_SLOTS[r];
 
       // Rarity nameplate — a small gold-trimmed tag, readable but not a header.
-      const pl = slots[0];
+      const pl = DISPLAY_RARITY_RAILS[r];
       const plCx = DISPLAY.x + pl.x * DISPLAY.w;
       const plCy = DISPLAY.y + pl.y * DISPLAY.h;
-      const plScale = 1.5;
-      const plW = rar.label.length * 6 * plScale + 22;
-      const plH = 28;
+      const plW = 52;
+      const plH = 23;
+      const rangeLabel = `${r * 10 + 1}-${r * 10 + 10}`;
+      const plScale = Math.min(1.02, (plW - 8) / Math.max(1, measureText(rangeLabel, 1)));
       rrect(g, plCx - plW / 2, plCy - plH / 2, plW, plH, 8);
       g.fillStyle = 'rgba(9,6,18,0.94)';
       g.fill();
       g.save();
-      g.shadowColor = rar.glow;
+      g.shadowColor = CYAN;
       g.shadowBlur = 6;
       rrect(g, plCx - plW / 2, plCy - plH / 2, plW, plH, 8);
-      g.strokeStyle = rar.color;
+      g.strokeStyle = CYAN;
       g.lineWidth = 2;
       g.stroke();
       g.restore();
@@ -651,34 +654,35 @@ export class CapsuleScreen implements Screen {
       g.strokeStyle = 'rgba(201,143,36,0.5)';
       g.lineWidth = 1;
       g.stroke();
-      drawText(g, tRarity(rar.key), plCx, plCy - 5, plScale, rar.color, { align: 'center', glow: rar.glow, glowBlur: 3 });
+      drawText(g, rangeLabel, plCx, plCy - 5, plScale, GOLD, { align: 'center', glow: GOLD, glowBlur: 3 });
 
-      const items = byRarity[rk];
-      for (let i = 0; i < items.length && i + 1 < slots.length; i++) {
+      const items = DISPLAY_ITEMS.slice(r * 10, r * 10 + 10);
+      for (let i = 0; i < items.length && i < slots.length; i++) {
         const c = items[i];
-        const cx = DISPLAY.x + slots[i + 1].x * DISPLAY.w;
-        const cy = DISPLAY.y + slots[i + 1].y * DISPLAY.h;
+        const rar = RARITIES[c.rarity];
+        const cx = DISPLAY.x + slots[i].x * DISPLAY.w;
+        const cy = DISPLAY.y + slots[i].y * DISPLAY.h;
         const entry = store.state.owned[c.id];
         const flash = this.slotFlash[c.id] || 0;
 
         if (entry) {
           // display spotlight glow
-          const grad = g.createRadialGradient(cx, cy, 0, cx, cy, 30);
+          const grad = g.createRadialGradient(cx, cy, 0, cx, cy, 24);
           grad.addColorStop(0, rar.glow.length === 7 ? rar.glow + '55' : rar.glow);
           grad.addColorStop(1, 'rgba(0,0,0,0)');
           g.fillStyle = grad;
-          g.fillRect(cx - 30, cy - 30, 60, 60);
+          g.fillRect(cx - 24, cy - 24, 48, 48);
           // soft contact shadow so the prize sits on the shelf
           g.save();
           g.fillStyle = 'rgba(0,0,0,0.35)';
           g.beginPath();
-          g.ellipse(cx, cy + 22, 20, 6, 0, 0, Math.PI * 2);
+          g.ellipse(cx, cy + 18, 16, 5, 0, 0, Math.PI * 2);
           g.fill();
           g.restore();
 
           const icon = collectibleIcon(c.id);
-          if (icon) drawIconCentered(g, icon, cx, cy, 56);
-          else drawSpriteCentered(g, c.sprite, cx, cy, 50, c.tint);
+          if (icon) drawIconCentered(g, icon, cx, cy, 42);
+          else drawSpriteCentered(g, c.sprite, cx, cy, 40, c.tint);
 
           // landing flash: an extra bright ring + white bloom while it decays
           if (flash > 0) {
@@ -689,32 +693,32 @@ export class CapsuleScreen implements Screen {
             g.strokeStyle = rar.color;
             g.lineWidth = 2 + 2 * flash;
             g.beginPath();
-            g.arc(cx, cy, 26 + 6 * flash, 0, Math.PI * 2);
+            g.arc(cx, cy, 20 + 5 * flash, 0, Math.PI * 2);
             g.stroke();
             g.restore();
-            const fg = g.createRadialGradient(cx, cy, 0, cx, cy, 34);
+            const fg = g.createRadialGradient(cx, cy, 0, cx, cy, 27);
             fg.addColorStop(0, `rgba(255,255,255,${0.35 * flash})`);
             fg.addColorStop(1, 'rgba(0,0,0,0)');
             g.fillStyle = fg;
-            g.fillRect(cx - 34, cy - 34, 68, 68);
+            g.fillRect(cx - 27, cy - 27, 54, 54);
           }
 
           if (entry.count > 1) {
-            rrect(g, cx + 8, cy + 10, 26, 16, 4);
+            rrect(g, cx + 5, cy + 8, 23, 15, 4);
             g.fillStyle = '#0d0a16';
             g.fill();
             g.strokeStyle = rar.color;
             g.lineWidth = 1;
             g.stroke();
-            drawText(g, '×' + entry.count, cx + 12, cy + 13, 1.5, INK);
+            drawText(g, '×' + entry.count, cx + 8, cy + 11, 1.25, INK);
           }
 
           const info: TipInfo = { locked: false, c, count: entry.count, cx, cy };
           const hov = this.ctx.stage.hotspot({
-            x: cx - 33,
-            y: cy - 33,
-            w: 66,
-            h: 66,
+            x: cx - 24,
+            y: cy - 24,
+            w: 48,
+            h: 48,
             cursor: 'help',
             id: 'slot-' + c.id,
             onClick: () => {
@@ -727,10 +731,10 @@ export class CapsuleScreen implements Screen {
 
           const info: TipInfo = { locked: true, cx, cy };
           const hov = this.ctx.stage.hotspot({
-            x: cx - 33,
-            y: cy - 33,
-            w: 66,
-            h: 66,
+            x: cx - 24,
+            y: cy - 24,
+            w: 48,
+            h: 48,
             cursor: 'help',
             id: 'slot-' + c.id,
             onClick: () => {
@@ -1188,6 +1192,14 @@ export class CapsuleScreen implements Screen {
       this.dupPulseCount = res.results.length;
     }
 
+    // A cosmetic from the capsule is more than another card: make the first
+    // unlock point directly at the dedicated backstage dressing room.
+    for (const item of newItems) {
+      if (item.collectible.type === 'theme' || item.collectible.type === 'frame') {
+        this.ctx.fx.toast(t('ui.newCosmetic'), t('ui.customizeArcade'), item.collectible.sprite);
+      }
+    }
+
     const best = res.results.reduce((a, b) =>
       RARITIES[b.collectible.rarity].order < RARITIES[a.collectible.rarity].order ? b : a,
     );
@@ -1205,6 +1217,9 @@ export class CapsuleScreen implements Screen {
     this.ctx.sound.pull();
 
     for (const a of res.achievements) this.ctx.fx.toast(tAchName(a.id), tAchDesc(a.id), a.sprite);
+    for (const milestone of res.milestones) {
+      this.ctx.fx.toast(t(milestone.nameKey), t(milestone.descKey), 'starBadge');
+    }
   }
 
   /** Fast-forward the big-reveal queue: drop any pending/current cards. The

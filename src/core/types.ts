@@ -85,6 +85,22 @@ export interface GameStats {
 
 export type DataMode = 'live' | 'demo';
 
+/** Whether the live-history slot has discovered usable local usage yet. This
+ * is deliberately persisted so an empty first scan cannot silently turn into
+ * a fictional arcade after a refresh. */
+export type HistoryScanState = 'unscanned' | 'no-history' | 'live-history';
+
+/** P1 cosmetics are identity choices, not another currency or inventory. The
+ * base choices are always available and every non-base id must be owned before
+ * it can be equipped. */
+export type RoomThemeId = 'base' | 'e_sunset' | 'l_forest';
+export type ProfileFrameId = 'base' | 'r_frame';
+
+export interface EquippedCosmetics {
+  roomTheme: RoomThemeId;
+  profileFrame: ProfileFrameId;
+}
+
 export interface MockWorld {
   projects: ProjectUsage[];
 }
@@ -108,6 +124,7 @@ export interface GameState {
   version: typeof SAVE_VERSION;
   firstRunDone: boolean;
   mode: DataMode;
+  historyScan: HistoryScanState;
   coins: number;
   tickets: number;
   shards: number;
@@ -121,6 +138,10 @@ export interface GameState {
   owned: Record<string, OwnedEntry>;
   achievements: Record<string, string>; // id -> ISO unlock date
   mockWorld: MockWorld | null;
+  /** Equipped room/profile identity. Stored inside each mode slot, never in
+   * the shared settings payload, so demo and live arcades cannot bleed into
+   * one another. */
+  cosmetics: EquippedCosmetics;
   settings: GameSettings;
 }
 
@@ -157,14 +178,27 @@ export interface PullOutcome {
   count: number;
 }
 
+export type CollectionMilestoneId = 'neon-shelf' | 'prize-lights' | 'collector-pedestal' | 'crown-marquee';
+
+/** A permanent visual upgrade derived from unique, valid collection entries. */
+export interface CollectionMilestone {
+  readonly id: CollectionMilestoneId;
+  readonly tier: number;
+  readonly threshold: number;
+  readonly nameKey: string;
+  readonly descKey: string;
+}
+
 export interface PullResult {
   cost: number;
   results: PullOutcome[];
   achievements: Achievement[];
+  milestones: CollectionMilestone[];
 }
 
 export interface BuyResult extends PullOutcome {
   achievements: Achievement[];
+  milestones: CollectionMilestone[];
 }
 
 export interface Achievement {

@@ -27,6 +27,7 @@ import { stageCabinet, stageAccent, statTileAsset } from '../render/atlas';
 import type { StatTileKey } from '../render/atlas';
 import { EasedNumber, drawIconCentered } from '../render/widgets';
 import { drawCoinHud, drawTokenHud, hudPlaqueHeight } from '../render/hud';
+import { drawDemoPlaque } from '../render/demoPlaque';
 import { CONFIG, fmtComma, fmtCompact } from '../domain/economy';
 import { levelInfo } from '../domain/levels';
 import type { Project } from '../core/types';
@@ -169,6 +170,7 @@ export class CabinetScreen implements Screen {
     const HX = 1600 - HW - 24;
     drawCoinHud(g, this.ctx.assets, HX, 14, HW, fmtComma(Math.round(this.displayCoins.value)));
     drawTokenHud(g, this.ctx.assets, HX, 14 + hudPlaqueHeight(HW) + 8, HW, fmtComma(this.ctx.store.state.stats.lifetimeTokens));
+    drawDemoPlaque(g, this.ctx, HX - 170, 18, 160);
   }
 
   // ---- big project cabinet ------------------------------------------------

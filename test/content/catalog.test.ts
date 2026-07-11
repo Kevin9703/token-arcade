@@ -11,6 +11,7 @@ import {
   ACHIEVEMENTS,
 } from '../../src/content';
 import { SPRITES } from '../../src/render/sprites';
+import { getLocale, setLocale, tCollectibleDesc, tCollectibleName } from '../../src/i18n';
 
 // The CollectibleType union from core/types.ts (types are stripped at bundle
 // time, so we mirror the allowed values here as runtime data).
@@ -81,6 +82,57 @@ test('COLLECTIBLES: tint, when present, is an object', () => {
       assert.notEqual(c.tint, null, `collectible ${c.id} tint is null`);
       assert.ok(!Array.isArray(c.tint), `collectible ${c.id} tint is an array`);
     }
+  }
+});
+
+test('P1C: catalog contains exactly 50 entries in the required rarity distribution', () => {
+  assert.equal(COLLECTIBLES.length, 50);
+  assert.deepEqual(
+    Object.fromEntries(RARITY_KEYS.map((rarity) => [rarity, COLLECTIBLES.filter((c) => c.rarity === rarity).length])),
+    { common: 14, uncommon: 12, rare: 10, epic: 8, legendary: 6 },
+  );
+});
+
+test('P1C: original 27 IDs keep their order and the 23 expansion IDs are appended', () => {
+  const original = [
+    'c_smiley', 'c_token', 'c_heart', 'c_gg', 'c_mug', 'c_sprout',
+    'u_star', 'u_luckycoin', 'u_shelf', 'u_1up', 'u_gemc',
+    'r_cat', 'r_palm', 'r_gameover', 'r_stool', 'r_rug', 'r_frame',
+    'e_rainbowcat', 'e_astro', 'e_minicab', 'e_trophy', 'e_sunset', 'e_gemu',
+    'l_crown', 'l_trophy', 'l_egg', 'l_forest',
+  ];
+  const expansion = [
+    'c_keyboard', 'c_cursor', 'c_floppy', 'c_duck', 'c_patch', 'c_noodle', 'c_terminal', 'c_shipit',
+    'u_lavalamp', 'u_lintbot', 'u_bonsai', 'u_prompt', 'u_enter', 'u_headphones', 'u_inbox',
+    'r_drone', 'r_clock', 'r_vending', 'r_hologram',
+    'e_whale', 'e_portal',
+    'l_pair', 'l_infinite',
+  ];
+  assert.deepEqual(COLLECTIBLES.map((c) => c.id), [...original, ...expansion]);
+});
+
+test('P1C: every collectible has complete, distinct English and Chinese copy', () => {
+  const previous = getLocale();
+  try {
+    setLocale('en');
+    const english = new Map(COLLECTIBLES.map((c) => [c.id, {
+      name: tCollectibleName(c.id),
+      desc: tCollectibleDesc(c.id),
+    }]));
+    setLocale('zh-CN');
+    for (const collectible of COLLECTIBLES) {
+      const en = english.get(collectible.id)!;
+      const zhName = tCollectibleName(collectible.id);
+      const zhDesc = tCollectibleDesc(collectible.id);
+      assert.ok(en.name.trim().length > 0, `${collectible.id} English name is empty`);
+      assert.ok(en.desc.trim().length > 0, `${collectible.id} English description is empty`);
+      assert.ok(zhName.trim().length > 0, `${collectible.id} Chinese name is empty`);
+      assert.ok(zhDesc.trim().length > 0, `${collectible.id} Chinese description is empty`);
+      assert.notEqual(zhName, en.name, `${collectible.id} Chinese name fell back to English`);
+      assert.notEqual(zhDesc, en.desc, `${collectible.id} Chinese description fell back to English`);
+    }
+  } finally {
+    setLocale(previous);
   }
 });
 

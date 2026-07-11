@@ -3,7 +3,8 @@
  *
  * GET /api/usage returns a list of projects with their *lifetime* token totals
  * (the server scans ~/.claude and ~/.codex history). Any failure resolves to an
- * empty result so the store can transparently fall back to the demo world.
+ * empty result; the store presents its explicit no-history decision instead of
+ * treating it as permission to enter demo mode.
  */
 
 import type { ProjectUsage } from '../core/types';

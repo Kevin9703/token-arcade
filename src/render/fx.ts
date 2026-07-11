@@ -9,9 +9,11 @@
 
 import type { Point } from '../core/types';
 import { drawCoin, drawSprite, SPRITES } from './sprites';
-import { drawText } from './pixelFont';
+import { drawText, measureText } from './pixelFont';
 import { rrect, vgrad } from './canvas';
 import { t } from '../i18n';
+import { collectibleIcon } from './assets';
+import { drawIconCentered } from './widgets';
 
 // ---- particle shapes ------------------------------------------------------
 
@@ -67,6 +69,19 @@ interface Toast {
   t: number;
 }
 
+/** One bounded, in-world reward plaque for a newly usable cosmetic. It lives
+ * in the Home room's open gap to the right of the Coin Bank, never on the shop
+ * rail or prize-wall controls. */
+interface CosmeticReveal {
+  name: string;
+  sprite: string;
+  /** The earned collectible id. It selects a full generated item PNG when one
+   * exists, instead of treating the code sprite as source-of-truth art. */
+  collectibleId: string;
+  life: number;
+  max: number;
+}
+
 /** Options for a floating banner. */
 export interface BannerOpts {
   life?: number;
@@ -82,6 +97,7 @@ let sparks: Spark[] = []; // sparkle particles
 let banners: Banner[] = []; // floating text
 let pulses: Record<string, number> = {}; // projectId -> pulse time remaining
 let toasts: Toast[] = []; // achievement toasts
+let cosmeticRevealState: CosmeticReveal | null = null;
 
 // Where the achievement-toast column is anchored (top-center of the stack).
 // Screens can move it clear of their busy areas; reset() restores the default.
@@ -99,6 +115,7 @@ function reset(): void {
   banners = [];
   pulses = {};
   toasts = [];
+  cosmeticRevealState = null;
   toastZone = { ...DEFAULT_TOAST_ZONE };
 }
 
@@ -171,6 +188,13 @@ function toast(title: string, sub: string, sprite: string): void {
   // negative start time delays each toast behind the ones already queued.
   const delay = -0.35 * toasts.length;
   toasts.push({ title, sub, sprite, life: 3.4 - delay, max: 3.4, t: delay });
+}
+
+/** Present the current cosmetic as a compact arcade plaque in the Home room's
+ * fixed open-stage safe zone. Consecutive purchases replace the old plaque
+ * rather than stacking effects over the player controls. */
+function cosmeticReveal(name: string, sprite: string, collectibleId: string): void {
+  cosmeticRevealState = { name, sprite, collectibleId, life: 3.2, max: 3.2 };
 }
 
 function pulseAmount(projectId: string): number {
@@ -247,6 +271,10 @@ function update(dt: number): void {
       toasts.splice(i, 1);
     }
   }
+  if (cosmeticRevealState) {
+    cosmeticRevealState.life -= dt;
+    if (cosmeticRevealState.life <= 0) cosmeticRevealState = null;
+  }
 }
 
 function draw(ctx: CanvasRenderingContext2D, W: number): void {
@@ -308,6 +336,51 @@ function draw(ctx: CanvasRenderingContext2D, W: number): void {
     ctx.globalAlpha = 1;
     ty += th + 8;
   }
+
+  // Fixed 224px-wide safe zone: x=990..1214 lies between the Coin Bank
+  // (ending at x=980) and prize wall (starting at x=1224), while y=166..262
+  // stays below the HUD and far above the bottom reward rail.
+  if (cosmeticRevealState) {
+    const reveal = cosmeticRevealState;
+    const x = 990;
+    const y = 166;
+    const w = 224;
+    const h = 96;
+    const fade = Math.min(1, reveal.life / 0.35);
+    ctx.save();
+    ctx.globalAlpha = fade;
+    ctx.shadowColor = '#ffd23f';
+    ctx.shadowBlur = 12;
+    rrect(ctx, x, y, w, h, 9);
+    vgrad(ctx, x, y, w, h, '#332154', '#120d25');
+    ctx.fill();
+    ctx.strokeStyle = '#ffd23f';
+    ctx.lineWidth = 2;
+    rrect(ctx, x, y, w, h, 9);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+    // A small marquee rail makes the reward read as an in-world arcade object,
+    // rather than another generic browser notification.
+    ctx.fillStyle = 'rgba(95,230,214,0.68)';
+    ctx.fillRect(x + 10, y + 8, w - 20, 2);
+    // Reward plaques use the actual collectible image when one exists. In
+    // particular, `r_frame.png` includes the full cyan rails, winged gem,
+    // lower socket, and bolts; `SPRITES.frame` is only a generic placeholder.
+    const itemIcon = reveal.collectibleId ? collectibleIcon(reveal.collectibleId) : null;
+    if (itemIcon) {
+      drawIconCentered(ctx, itemIcon, x + 35, y + 50, 42);
+    } else if (reveal.collectibleId !== 'r_frame') {
+      const spr = SPRITES[reveal.sprite];
+      if (reveal.sprite && spr) drawSprite(ctx, spr, x + 14, y + 33, 2.15);
+    }
+    const textX = x + 62;
+    drawText(ctx, t('ui.newCosmetic'), textX, y + 17, 1.3, '#ffd23f', { glow: '#ffd23f', glowBlur: 3 });
+    const nameScale = Math.max(1.1, Math.min(1.65, (w - 74) / Math.max(1, measureText(reveal.name, 1))));
+    drawText(ctx, reveal.name, textX, y + 35, nameScale, '#f6f4ff');
+    drawText(ctx, t('ui.unlockedBang'), textX, y + 57, 1.25, '#5fe6d6', { glow: '#5fe6d6', glowBlur: 2 });
+    drawText(ctx, '→ ' + t('ui.customizeArcade'), textX, y + 75, 1.05, '#c9c6e0');
+    ctx.restore();
+  }
 }
 
 function busy(): boolean {
@@ -327,6 +400,7 @@ export const fx = {
   pulse,
   pulseAmount,
   toast,
+  cosmeticReveal,
   setToastZone,
   update,
   draw,

@@ -8,14 +8,21 @@
  * function — the store fetches totals, applies the computation, and saves.
  *
  * Save isolation: live and demo progress live in separate localStorage slots
- * (see ./persistence). A live save can never be polluted by demo coins: the
- * transparent demo fallback only happens on a first run with no live progress,
- * and it switches slots before minting anything.
+ * (see ./persistence). A live save can never be polluted by demo coins: a
+ * first empty scan persists a no-history decision state, and the player must
+ * explicitly choose the separate demo slot before anything fictional is minted.
  */
 
 import { CONFIG, playerLevelFor } from '../domain/economy';
 import { computeSync } from '../domain/sync';
 import { rollCapsule, pickGrant } from '../domain/capsule';
+import {
+  collectionMilestoneTier,
+  crossedCollectionMilestones,
+  earnedCollectionMilestones,
+  validOwnedCount,
+} from '../domain/collection';
+import { isP1CosmeticType, isProfileFrameId, isRoomThemeId } from '../domain/cosmetics';
 import { ACHIEVEMENTS, COLLECTIBLES } from '../content';
 import { fetchLive } from '../data/liveSource';
 import { seedMock, advanceMock } from '../data/mockSource';
@@ -33,7 +40,9 @@ import type {
   PullOutcome,
   BuyResult,
   DataMode,
+  ProfileFrameId,
   RarityKey,
+  RoomThemeId,
   GameSettings,
 } from '../core/types';
 
@@ -42,6 +51,7 @@ function freshState(mode: DataMode, settings?: GameSettings): GameState {
     version: SAVE_VERSION,
     firstRunDone: false,
     mode,
+    historyScan: 'unscanned',
     coins: 0,
     tickets: 0,
     shards: 0, // dust from duplicates
@@ -52,6 +62,7 @@ function freshState(mode: DataMode, settings?: GameSettings): GameState {
     owned: {}, // collectibleId -> { count, firstUnlocked }
     achievements: {}, // id -> ISO date unlocked
     mockWorld: null,
+    cosmetics: { roomTheme: 'base', profileFrame: 'base' },
     settings: settings ? { ...settings } : { muted: false, language: detectLocale(), fps: 'auto', playerName: '' },
   };
 }
@@ -103,12 +114,16 @@ export class GameStore {
       ...fresh,
       ...saved,
       stats: { ...fresh.stats, ...saved.stats },
+      cosmetics: { ...fresh.cosmetics, ...(saved.cosmetics || {}) },
       settings: { ...fresh.settings, ...saved.settings },
     };
     merged.mode = mode; // the slot decides the mode, not the blob
     if (!merged.settings.language) merged.settings.language = detectLocale();
     if (!merged.settings.fps) merged.settings.fps = 'auto'; // saves predating the fps setting
     if (merged.settings.playerName == null) merged.settings.playerName = ''; // saves predating custom names
+    if (!['unscanned', 'no-history', 'live-history'].includes(merged.historyScan)) merged.historyScan = 'unscanned';
+    if (!isRoomThemeId(merged.cosmetics.roomTheme)) merged.cosmetics.roomTheme = 'base';
+    if (!isProfileFrameId(merged.cosmetics.profileFrame)) merged.cosmetics.profileFrame = 'base';
     return merged;
   }
 
@@ -159,7 +174,7 @@ export class GameStore {
 
   private hasProgress(): boolean {
     const s = this._state;
-    return s.stats.syncs > 0 || s.projects.length > 0 || s.coins > 0;
+    return s.stats.syncs > 0 || s.projects.length > 0 || s.coins > 0 || s.stats.lifetimeTokens > 0 || Object.keys(s.owned).length > 0;
   }
 
   private async getTotals(): Promise<{ source: string; projects: ProjectUsage[] }> {
@@ -167,17 +182,22 @@ export class GameStore {
       return { source: 'demo', projects: this.advanceDemoWorld() };
     }
     const live = await this.fetchLiveFn();
-    if (live.projects && live.projects.length) return { source: 'live', projects: live.projects };
+    if (live.projects && live.projects.length) {
+      this._state.historyScan = 'live-history';
+      return { source: 'live', projects: live.projects };
+    }
     if (this.hasProgress()) {
       // The scan came back empty but this save has real progress. Treat it as
       // a no-op sync — a transient failure must never switch a real save into
       // demo mode (that used to mint fake coins into live progress).
       return { source: 'live-empty', projects: [] };
     }
-    // First run with no local history at all -> transparently fall back to the
-    // demo world, in its own save slot.
-    this.setMode('demo');
-    return { source: 'demo-fallback', projects: this.advanceDemoWorld() };
+    // First run with no local history must remain truthful: persist the empty
+    // result and let the room present the explicit demo-or-retry decision.
+    // Crucially, this does not create mock projects or switch save slots.
+    this._state.historyScan = 'no-history';
+    this.save();
+    return { source: 'no-history', projects: [] };
   }
 
   async sync(): Promise<SyncResult> {
@@ -192,6 +212,19 @@ export class GameStore {
 
   private async doSync(): Promise<SyncResult> {
     const { source, projects: totals } = await this.getTotals();
+    if (source === 'no-history') {
+      return {
+        source,
+        newTokens: 0,
+        coinsMinted: 0,
+        residue: this._state.coinResidue,
+        tickets: 0,
+        perProject: [],
+        levelUps: [],
+        newProjects: [],
+        achievements: [],
+      };
+    }
     const s = this._state;
     const c = computeSync({ projects: s.projects, lastTotals: s.lastTotals, coinResidue: s.coinResidue }, totals);
 
@@ -244,6 +277,7 @@ export class GameStore {
   pull(count: number): PullResult | null {
     const cost = count === 10 ? CONFIG.PULL10_COST : CONFIG.PULL_COST * count;
     if (this._state.coins < cost) return null;
+    const ownedBefore = this.ownedCount();
     this._state.coins -= cost;
     const results: PullOutcome[] = [];
     for (let i = 0; i < count; i++) {
@@ -253,20 +287,27 @@ export class GameStore {
       results.push({ collectible: c, isDup, count: this._state.owned[c.id].count });
     }
     const achievements = this.checkAchievements();
+    const milestones = crossedCollectionMilestones(ownedBefore, this.ownedCount());
     this.save();
-    return { cost, results, achievements };
+    return { cost, results, achievements, milestones };
   }
 
   buy(item: ShopItem): BuyResult | null {
     if (this._state.coins < item.cost) return null;
     if (item.kind === 'grant') {
+      // Room themes and profile frames have a finite, useful P1 pool. Once it
+      // is complete we refuse the transaction before coins move; a duplicate
+      // would create no new identity and is therefore never a valid purchase.
+      if (isP1CosmeticType(item.pick) && this.isGrantComplete(item)) return null;
+      const ownedBefore = this.ownedCount();
       this._state.coins -= item.cost;
       // Grant items always carry a `pick` type in the shop catalog.
       const c = pickGrant(item.pick!, this._state.owned);
       const isDup = this.addOwned(c);
       const achievements = this.checkAchievements();
+      const milestones = crossedCollectionMilestones(ownedBefore, this.ownedCount());
       this.save();
-      return { collectible: c, isDup, count: this._state.owned[c.id].count, achievements };
+      return { collectible: c, isDup, count: this._state.owned[c.id].count, achievements, milestones };
     }
     return null;
   }
@@ -285,11 +326,58 @@ export class GameStore {
   // ---- misc -------------------------------------------------------------
 
   ownedCount(): number {
-    return Object.keys(this._state.owned).length;
+    return validOwnedCount(this._state.owned);
   }
 
   totalCollectibles(): number {
     return COLLECTIBLES.length;
+  }
+
+  /** Permanent collection-display upgrades currently earned by this slot. */
+  collectionMilestones() {
+    return earnedCollectionMilestones(this.ownedCount());
+  }
+
+  /** Highest permanent collection-display tier earned by this slot (0..4). */
+  collectionMilestoneTier(): number {
+    return collectionMilestoneTier(this.ownedCount());
+  }
+
+  /** True when a cosmetic shop card has no unowned matching reward left. */
+  isGrantComplete(item: ShopItem): boolean {
+    if (item.kind !== 'grant' || !isP1CosmeticType(item.pick)) return false;
+    return !COLLECTIBLES.some((c) => c.type === item.pick && !this._state.owned[c.id]);
+  }
+
+  /** Equip the selected P1 room. The base room is always free; a reward room
+   * must have been genuinely unlocked in this mode's save slot. */
+  equipRoomTheme(id: RoomThemeId): boolean {
+    if (!isRoomThemeId(id) || (id !== 'base' && !this._state.owned[id])) return false;
+    this._state.cosmetics.roomTheme = id;
+    this.save();
+    return true;
+  }
+
+  /** Equip the selected P1 profile frame under the same per-slot ownership
+   * rule as room themes. */
+  equipProfileFrame(id: ProfileFrameId): boolean {
+    if (!isProfileFrameId(id) || (id !== 'base' && !this._state.owned[id])) return false;
+    this._state.cosmetics.profileFrame = id;
+    this.save();
+    return true;
+  }
+
+  /** Begin an intentional fictional arcade. This is only called by the
+   * no-history decision panel, never by a scan fallback. */
+  async playDemoArcade(): Promise<SyncResult> {
+    this.setMode('demo');
+    return this.sync();
+  }
+
+  /** Return to the isolated live slot and immediately retry the local scan. */
+  async tryLiveScan(): Promise<SyncResult> {
+    this.setMode('live');
+    return this.sync();
   }
 
   /** Switch between the live and demo save slots. The current slot is saved

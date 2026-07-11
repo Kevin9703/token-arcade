@@ -25,12 +25,13 @@
  */
 
 import { panel, vgrad, rrect } from '../render/canvas';
-import { drawText, measureText, GLYPH_H } from '../render/pixelFont';
+import { drawText, measureText, wrapText, GLYPH_H } from '../render/pixelFont';
 import { drawSprite, drawSpriteCentered, drawPlayer, drawCoin, AVATAR } from '../render/sprites';
 import { drawCabinet } from '../render/cabinet';
 import { drawCoinBank } from '../render/machines';
 import { drawImageSmooth, collectibleIcon } from '../render/assets';
 import { drawCoinHud, drawTokenHud, hudPlaqueHeight } from '../render/hud';
+import { drawDemoPlaque } from '../render/demoPlaque';
 import {
   cabinetCropFor,
   stageAccent,
@@ -52,7 +53,7 @@ import { levelInfo } from '../domain/levels';
 import { COLLECTIBLES, RARITIES, SHOP } from '../content';
 import type { Project, ShopItem } from '../core/types';
 import type { Screen, ScreenContext } from './screen';
-import { t, tAchName, tAchDesc } from '../i18n';
+import { t, tAchName, tAchDesc, tCollectibleName } from '../i18n';
 
 // ---- palette --------------------------------------------------------------
 const GOLD = '#ffd23f';
@@ -304,6 +305,9 @@ export class RoomScreen implements Screen {
   /** Scroll offset (logical px) of the cabinet wall — the column is a clipped
    * viewport so every project is reachable by wheel even past the ~5 that fit. */
   private cabScrollY = 0;
+  /** Full cyan frame ignition after an equip, then a steady low glow. */
+  private profileFramePulseUntil = 0;
+  private lastProfileFrame = this.ctx.store.state.cosmetics.profileFrame;
 
   constructor(private readonly ctx: ScreenContext) {
     this.displayCoins.set(ctx.store.state.coins);
@@ -317,6 +321,12 @@ export class RoomScreen implements Screen {
     // Ease the displayed coin count toward the real balance (climbs on sync,
     // drops on spend) so the pill animates instead of snapping.
     this.displayCoins.toward(this.ctx.store.state.coins, dt);
+    const equippedFrame = this.ctx.store.state.cosmetics.profileFrame;
+    if (equippedFrame !== this.lastProfileFrame) {
+      this.lastProfileFrame = equippedFrame;
+      this.profileFramePulseUntil = now + 720;
+      this.ctx.stage.wake(760);
+    }
 
     // Keep achievement toasts in the open floor between the coin bank and the
     // prize wall (starts x1224) so they never cover the TOKEN ARCADE sign or
@@ -330,6 +340,7 @@ export class RoomScreen implements Screen {
     this.drawPrizeWall(g);
     this.drawTopBar(g, now);
     this.drawSpendRail(g);
+    this.drawNoHistoryDecision(g);
   }
 
   // ---- background ---------------------------------------------------------
@@ -337,11 +348,20 @@ export class RoomScreen implements Screen {
   private drawBackground(g: CanvasRenderingContext2D): void {
     const W = this.ctx.stage.width;
     const H = this.ctx.stage.height;
-    const bg = this.ctx.assets.get('roomBg');
+    const theme = this.ctx.store.state.cosmetics.roomTheme;
+    const bg = theme === 'e_sunset'
+      ? this.ctx.assets.get('roomThemeSunset')
+      : theme === 'l_forest'
+        ? this.ctx.assets.get('roomThemeForest')
+        : this.ctx.assets.get('roomBg');
     if (bg) {
       // Generated arcade room: wall, posters, machines, shelves, reflective
       // floor. Drawn first so the UI objects feel mounted inside a place.
       drawImageSmooth(g, bg, 0, 0, W, H);
+      // P1 theme art is an opaque, authored full-room scene. It deliberately
+      // receives no tint, crop, filter, or readability wash; live gameplay
+      // layers are drawn above its reserved safety zones.
+      if (theme !== 'base') return;
       // Gentle darkening at the top + behind the columns keeps overlaid text
       // legible without hiding the room (per the QA: let the room show through).
       const grad = g.createLinearGradient(0, 0, 0, H);
@@ -365,15 +385,16 @@ export class RoomScreen implements Screen {
   // ---- top bar ------------------------------------------------------------
 
   private drawTopBar(g: CanvasRenderingContext2D, now: number): void {
-    this.drawPlayerCard(g);
+    this.drawPlayerCard(g, now);
     this.drawMarquee(g, now);
     this.drawCoinPlaque(g);
+    drawDemoPlaque(g, this.ctx, 930, 15, 146);
     this.drawSyncButton(g);
   }
 
   /** Player card: generated frame + portrait, with name/level/XP drawn on top.
    * Clicking the card opens the achievement gallery. */
-  private drawPlayerCard(g: CanvasRenderingContext2D): void {
+  private drawPlayerCard(g: CanvasRenderingContext2D, now: number): void {
     const store = this.ctx.store;
     const pl = store.playerLevel();
     const cardHover = this.ctx.stage.hotspot({
@@ -383,7 +404,7 @@ export class RoomScreen implements Screen {
       h: CARD.h,
       cursor: 'pointer',
       id: 'player-card',
-      onClick: () => this.ctx.router.go('achievements'),
+      onClick: () => this.ctx.router.go('customize'),
     });
     const frame = this.ctx.assets.get('homePlayerCard');
     if (frame) {
@@ -393,12 +414,7 @@ export class RoomScreen implements Screen {
       // XP bar sits in the thin slot at the bottom-right.
       const fx0 = (fx: number) => CARD.x + fx * CARD.w;
       const fy0 = (fy: number) => CARD.y + fy * CARD.h;
-      const portrait = this.ctx.assets.get('homePlayer');
-      if (portrait) {
-        drawCropContain(g, portrait, PLAYER_PORTRAIT_CROP, fx0(0.085), fy0(0.14), 0.275 * CARD.w, 0.7 * CARD.h);
-      } else {
-        drawSprite(g, AVATAR, fx0(0.12), fy0(0.28), 5);
-      }
+      this.drawPlayerPortrait(g, fx0, fy0, now);
       // Subtle dark scrim behind just the text lanes (kept off the portrait bay)
       // so ARCADE PLAYER / LV n / XP stay readable over busy regions of the frame.
       const scrimX = fx0(0.395);
@@ -418,7 +434,7 @@ export class RoomScreen implements Screen {
     }
     // Fallback: procedural panel + blocky avatar.
     panel(g, CARD.x, CARD.y, CARD.w, CARD.h, { radius: 12, fill: PANEL, border: CYAN, borderWidth: 3 });
-    drawSprite(g, AVATAR, CARD.x + 14, CARD.y + 12, 5);
+    this.drawPlayerPortrait(g, (f) => CARD.x + f * CARD.w, (f) => CARD.y + f * CARD.h, now);
     this.drawEditableName(g, CARD.x + 96, CARD.y + 14, 2);
     drawText(g, 'LV ' + pl.level, CARD.x + 96, CARD.y + 38, 3, GOLD, { glow: GOLD, glowBlur: 3 });
     bar(g, CARD.x + 96, CARD.y + 78, 248, 14, pl.need > 0 ? pl.into / pl.need : 0, CYAN);
@@ -426,10 +442,54 @@ export class RoomScreen implements Screen {
     this.drawCardAffordance(g, cardHover);
   }
 
-  /** A small "achievements" cue on the player card + a hover ring, so players
-   * discover that clicking the card opens the trophy gallery. */
+  /** Home portrait plus the complete earned Cyan Profile Frame when equipped.
+   * The PNG is always drawn whole and above the portrait: its wing tips, lower
+   * gem, dark inner window and corner bolts are not recreated in canvas. */
+  private drawPlayerPortrait(
+    g: CanvasRenderingContext2D,
+    fx0: (fraction: number) => number,
+    fy0: (fraction: number) => number,
+    now: number,
+  ): void {
+    const equipped = this.ctx.store.state.cosmetics.profileFrame === 'r_frame';
+    const portrait = this.ctx.assets.get('homePlayer');
+    const cx = fx0(0.2225);
+    const cy = fy0(0.49);
+    if (equipped) {
+      // A dark inset makes the character sit behind the frame's interior window.
+      rrect(g, cx - 34, cy - 37, 68, 79, 9);
+      g.fillStyle = '#0a1020';
+      g.fill();
+      const frame = collectibleIcon('r_frame');
+      if (frame) {
+        const pulse = Math.max(0, (this.profileFramePulseUntil - now) / 720);
+        g.save();
+        g.shadowColor = CYAN;
+        g.shadowBlur = 7 + 26 * pulse;
+        g.globalAlpha = 0.88 + 0.12 * (0.5 + 0.5 * Math.sin(now / 240));
+        drawImageContain(g, frame, cx, cy, 122, 134);
+        g.restore();
+      }
+      // The supplied frame intentionally has a deep opaque interior. Restore
+      // the portrait only inside that measured window AFTER drawing the whole
+      // frame, so its cyan rails, four bolts, wing tips and both diamonds stay
+      // completely intact rather than being painted over by the character.
+      g.save();
+      rrect(g, cx - 29, cy - 27, 58, 66, 7);
+      g.clip();
+      if (portrait) drawCropContain(g, portrait, PLAYER_PORTRAIT_CROP, cx - 29, cy - 29, 58, 68);
+      else drawSprite(g, AVATAR, cx - 18, cy - 21, 3.6);
+      g.restore();
+      return;
+    }
+    if (portrait) drawCropContain(g, portrait, PLAYER_PORTRAIT_CROP, fx0(0.085), fy0(0.14), 0.275 * CARD.w, 0.7 * CARD.h);
+    else drawSprite(g, AVATAR, fx0(0.12), fy0(0.28), 5);
+  }
+
+  /** A small backstage cue on the player card + a hover ring, so the earned
+   * profile frame has a clear, physical route to the dressing room. */
   private drawCardAffordance(g: CanvasRenderingContext2D, hovered: boolean): void {
-    drawText(g, '★ ' + t('ui.achievement'), CARD.x + CARD.w - 12, CARD.y + CARD.h - 20, 1.2, hovered ? GOLD : '#8a86a6', {
+    drawText(g, '✦ ' + t('ui.customizeArcade'), CARD.x + CARD.w - 12, CARD.y + CARD.h - 20, 1.05, hovered ? GOLD : '#8a86a6', {
       align: 'right',
     });
     if (hovered) {
@@ -477,8 +537,9 @@ export class RoomScreen implements Screen {
     drawTokenHud(g, this.ctx.assets, HUD_X, HUD_TOKEN_Y, HUD_W, tokens);
   }
 
-  /** SYNC button — the primary action. Generated 3-state art (default/hover/
-   * pressed) with the label drawn on top; falls back to the green rounded box. */
+  /** SYNC button — the primary action. Its compact physical label always names
+   * the action, while demo identity stays on the persistent plaque and in the
+   * post-sync feedback below the HUD. */
   private drawSyncButton(g: CanvasRenderingContext2D): void {
     const syncHover = this.ctx.stage.hotspot({
       x: SYNC.x,
@@ -502,7 +563,7 @@ export class RoomScreen implements Screen {
       const bx = SYNC.x + 6;
       const by = SYNC.y - 8;
       drawImageSmooth(g, states, bx, by, bw, bh, crop);
-      const scale = this.syncing ? 1.75 : 3;
+      const scale = this.syncing ? 1.55 : 3;
       drawText(g, label, bx + bw / 2, by + bh / 2 - GLYPH_H * scale * 0.5, scale, '#0b2015', {
         align: 'center',
         shadow: 'rgba(255,255,255,0.35)',
@@ -512,7 +573,7 @@ export class RoomScreen implements Screen {
     // Fallback: the original green rounded button.
     const syncFill = this.syncing ? '#2f6f45' : syncHover ? '#7be88a' : GREEN;
     panel(g, SYNC.x, SYNC.y, SYNC.w, SYNC.h, { radius: 14, fill: syncFill, border: '#2f8f4b', borderWidth: 3 });
-    drawText(g, label, SYNC.x + SYNC.w / 2, SYNC.y + 22, this.syncing ? 3 : 5, '#0b2015', {
+    drawText(g, label, SYNC.x + SYNC.w / 2, SYNC.y + 22, this.syncing ? 2.6 : 5, '#0b2015', {
       align: 'center',
       shadow: 'rgba(255,255,255,0.35)',
     });
@@ -521,9 +582,10 @@ export class RoomScreen implements Screen {
   private drawMarquee(g: CanvasRenderingContext2D, now: number): void {
     const cx = 800;
     // Generated neon title sign, fit into the marquee band by aspect (1567x712 =>
-    // 2.201). The supporting tagline stays code-rendered beneath it. The sign
-    // occasionally flickers by swapping to the dropout/burst frames (same size,
-    // same rect — never redrawn as canvas text), so it reads as a living neon.
+    // 2.201). It is the marquee's sole content; the token-loop explanation is
+    // mounted on the physical floor guide sign instead. The sign occasionally
+    // flickers by swapping to the dropout/burst frames (same size, same rect —
+    // never redrawn as canvas text), so it reads as a living neon.
     let frameKey = this.logoFlickerFrame(now);
     let logo = this.ctx.assets.get(frameKey);
     if (!logo) {
@@ -531,8 +593,7 @@ export class RoomScreen implements Screen {
       logo = this.ctx.assets.get('homeLogo');
     }
     if (logo) {
-      // Nudged fully onto the top edge (its top bulb row was clipped at y-20) and
-      // trimmed slightly so the sign's bottom stays clear of the tagline (y136).
+      // Nudged fully onto the top edge (its top bulb row was clipped at y-20).
       const lh = 124;
       const lw = lh * 2.201;
       const x0 = cx - lw / 2;
@@ -560,7 +621,6 @@ export class RoomScreen implements Screen {
       g.shadowBlur = 5 + 6 * breath; // 5 .. 11 soft cyan halo
       drawImageSmooth(g, logo, dx, dy, dw, dh);
       g.restore();
-      drawText(g, t('ui.tagline'), cx, 136, 2, CYAN, { align: 'center' });
       return;
     }
     // Fallback: code-drawn neon TOKEN / ARCADE sign.
@@ -584,7 +644,6 @@ export class RoomScreen implements Screen {
     }
     drawText(g, 'TOKEN', cx, 18, 8, MAGENTA, { align: 'center', glow: MAGENTA, glowBlur: 6, shadow: 'rgba(0,0,0,0.5)' });
     drawText(g, 'ARCADE', cx, 74, 8, CYAN, { align: 'center', glow: CYAN, glowBlur: 6, shadow: 'rgba(0,0,0,0.5)' });
-    drawText(g, t('ui.tagline'), cx, 136, 2, CYAN, { align: 'center' });
   }
 
   // Neon-logo flicker timing (ms). The sign holds a bright NORMAL frame for a
@@ -870,6 +929,8 @@ export class RoomScreen implements Screen {
     const store = this.ctx.store;
     const bankCx = BANK.x + BANK.w / 2;
 
+    this.drawTokenGuideSign(g);
+
     // The coin bank is the visual centerpiece and also a big sync hotspot.
     const bankHover = this.ctx.stage.hotspot({
       x: BANK.x,
@@ -900,12 +961,6 @@ export class RoomScreen implements Screen {
         align: 'center',
         glow: GOLD,
         glowBlur: 3,
-      });
-      // Conversion reminder just above the machine.
-      drawText(g, t('ui.tokensPerCoin', { n: CONFIG.TOKENS_PER_COIN.toLocaleString('en-US') }), bankCx, BANK.y - 20, 1.75, CYAN, {
-        align: 'center',
-        glow: '#2f9fa0',
-        glowBlur: 2,
       });
     } else {
       drawCoinBank(g, BANK.x, BANK.y, BANK.w, BANK.h, {
@@ -973,6 +1028,23 @@ export class RoomScreen implements Screen {
     }
   }
 
+  /** The Home loop is explained by a localized, authored A-frame planted on
+   * the floor. The letters are part of the pixel art, matching the original
+   * prototype's sign-painting rather than floating canvas text. */
+  private drawTokenGuideSign(g: CanvasRenderingContext2D): void {
+    const asset = this.ctx.store.state.settings.language === 'zh-CN' ? 'homeTokenGuideBoardZh' : 'homeTokenGuideBoardEn';
+    const sign = this.ctx.assets.get(asset);
+    if (!sign) return;
+
+    // PM-approved readability geometry. It ends at x600, leaving a 20px lane
+    // before BANK.x=620, and starts 14px after the cabinet column.
+    const x = 390;
+    const y = 512;
+    const w = 210;
+    const h = 272;
+    drawImageSmooth(g, sign, x, y, w, h);
+  }
+
   // ---- right column: prize wall preview ----------------------------------
 
   private drawPrizeWall(g: CanvasRenderingContext2D): void {
@@ -991,6 +1063,67 @@ export class RoomScreen implements Screen {
     } else {
       this.drawPrizeWallProcedural(g, hovered);
     }
+    this.drawCollectionMilestones(g);
+    // A separate, clearly-labelled prize-wall control opens the backstage
+    // dressing room. Registered after the wall hotspot so it owns this small
+    // physical control area rather than sending the player to the capsule page.
+    this.drawCustomizeWallControl(g);
+  }
+
+  /** Permanent P1C room upgrades. Each tier is derived from unique valid
+   * prizes, so no extra save flag or currency can drift out of sync. */
+  private drawCollectionMilestones(g: CanvasRenderingContext2D): void {
+    const tier = this.ctx.store.collectionMilestoneTier();
+    if (tier >= 1) {
+      const shelf = this.ctx.assets.get('collectionNeonShelf');
+      if (shelf) {
+        g.save();
+        g.shadowColor = MAGENTA;
+        g.shadowBlur = 12;
+        drawImageContain(g, shelf, WALL.x + WALL.w / 2, WALL.y + 404, WALL.w - 48, 36);
+        g.restore();
+        drawImageContain(g, shelf, WALL.x + WALL.w / 2, WALL.y + 404, WALL.w - 48, 36);
+      }
+    }
+    if (tier >= 2) {
+      const lights = this.ctx.assets.get('collectionPrizeLights');
+      if (lights) drawImageContain(g, lights, WALL.x + WALL.w / 2, WALL.y + 56, 220, 56);
+    }
+    if (tier >= 3) {
+      const pedestal = this.ctx.assets.get('collectionPedestal');
+      if (pedestal) drawImageContain(g, pedestal, WALL.x + WALL.w / 2, WALL.y + WALL.h - 37, WALL.w - 76, 74);
+    }
+    if (tier >= 4) {
+      const crown = this.ctx.assets.get('collectionCrownMarquee');
+      if (crown) drawImageContain(g, crown, WALL.x + WALL.w / 2, WALL.y + 36, WALL.w - 62, 96);
+    }
+  }
+
+  private drawCustomizeWallControl(g: CanvasRenderingContext2D): void {
+    const w = 240;
+    const h = 38;
+    const x = WALL.x + (WALL.w - w) / 2;
+    const y = WALL.y + WALL.h - 116;
+    const hovered = this.ctx.stage.hotspot({
+      x,
+      y,
+      w,
+      h,
+      cursor: 'pointer',
+      id: 'wall-customize',
+      onClick: () => this.ctx.router.go('customize'),
+    });
+    panel(g, x, y, w, h, {
+      radius: 7,
+      fill: hovered ? '#2a1f4a' : 'rgba(12,8,24,0.9)',
+      border: hovered ? GOLD : '#9a6cff',
+      borderWidth: hovered ? 2.5 : 2,
+    });
+    drawText(g, t('ui.customizeArcade'), x + w / 2, y + 12, 1.35, hovered ? GOLD : INK, {
+      align: 'center',
+      glow: hovered ? GOLD : undefined,
+      glowBlur: 3,
+    });
   }
 
   /** Prize wall rendered on the generated shelf asset. */
@@ -1188,8 +1321,9 @@ export class RoomScreen implements Screen {
     for (let i = 0; i < count; i++) {
       const item = SHOP[i];
       const bx = Math.round(startX + i * stride);
-      const afford = store.state.coins >= item.cost;
-      const accent = item.kind === 'capsule' ? MAGENTA : GOLD;
+      const complete = store.isGrantComplete(item);
+      const afford = !complete && store.state.coins >= item.cost;
+      const accent = complete ? '#6a6488' : item.kind === 'capsule' ? MAGENTA : GOLD;
       const hovered = this.ctx.stage.hotspot({
         x: bx,
         y: btnY,
@@ -1200,7 +1334,7 @@ export class RoomScreen implements Screen {
         onClick: () => this.onShop(item, bx + cardW / 2, btnY + cardH / 2, afford),
       });
       // Lit vs dim arcade card: dim when the player can't afford it.
-      g.globalAlpha = afford ? 1 : 0.45;
+      g.globalAlpha = complete ? 0.62 : afford ? 1 : 0.45;
       if (cardFrame) {
         if (hovered && afford) {
           g.save();
@@ -1246,15 +1380,20 @@ export class RoomScreen implements Screen {
         drawSpriteCentered(g, item.sprite, icoCx, icoCy, icoSize);
       }
       const txtX = bx + cardW * 0.39;
-      drawText(g, t('shop.' + item.id + '.label'), txtX, btnY + cardH * 0.19, 1.5, INK);
-      drawText(g, t('shop.' + item.id + '.sub'), txtX, btnY + cardH * 0.42, 1.2, '#b9b3d6');
-      // Price centered on the gold pill.
+      drawText(g, complete ? t('ui.complete') : t('shop.' + item.id + '.label'), txtX, btnY + cardH * 0.19, 1.5, complete ? '#b9b3d6' : INK);
+      drawText(g, complete ? t('ui.customizeArcade') : t('shop.' + item.id + '.sub'), txtX, btnY + cardH * 0.42, 1.2, '#b9b3d6');
+      // Price centered on the gold pill, replaced by a terminal state so a
+      // complete cosmetic card never implies that it can sell a duplicate.
       const priceCx = bx + cardW * 0.68;
       const priceCy = btnY + cardH * 0.7;
-      const priceStr = fmtComma(item.cost);
-      const pw = measureText(priceStr, 2);
-      drawCoin(g, priceCx - pw / 2 - 10, priceCy + 4, 7);
-      drawText(g, priceStr, priceCx - pw / 2 + 6, priceCy - 3, 2, GOLD);
+      if (complete) {
+        drawText(g, '✓', priceCx, priceCy - 5, 2.3, CYAN, { align: 'center', glow: CYAN, glowBlur: 3 });
+      } else {
+        const priceStr = fmtComma(item.cost);
+        const pw = measureText(priceStr, 2);
+        drawCoin(g, priceCx - pw / 2 - 10, priceCy + 4, 7);
+        drawText(g, priceStr, priceCx - pw / 2 + 6, priceCy - 3, 2, GOLD);
+      }
       g.globalAlpha = 1;
     }
   }
@@ -1309,7 +1448,7 @@ export class RoomScreen implements Screen {
       this.ctx.router.go('capsule');
       return;
     }
-    if (!afford) {
+    if (!afford || this.ctx.store.isGrantComplete(item)) {
       this.ctx.sound.error();
       return;
     }
@@ -1323,13 +1462,24 @@ export class RoomScreen implements Screen {
       return;
     }
     const r = RARITIES[res.collectible.rarity];
-    this.ctx.fx.burst(cx, cy - 10, r.glow, 22);
-    this.ctx.fx.banner(res.isDup ? t('ui.dup', { n: res.count }) : t('ui.unlockedBang'), cx, cy - 44, r.color, { scale: 4, life: 1.8 });
-    this.ctx.fx.banner(res.collectible.name, cx, cy - 96, INK, { scale: 2, life: 2.2, vy: -22 });
+    const isNewCosmetic = !res.isDup && (res.collectible.type === 'theme' || res.collectible.type === 'frame');
+    if (isNewCosmetic) {
+      // Do not reveal a cosmetic on top of the clicked shop card / prize-wall
+      // route. This safe location is the open stage just right of the Coin Bank.
+      this.ctx.fx.burst(1102, 214, r.glow, 16);
+      this.ctx.fx.cosmeticReveal(tCollectibleName(res.collectible.id), res.collectible.sprite, res.collectible.id);
+    } else {
+      this.ctx.fx.burst(cx, cy - 10, r.glow, 22);
+      this.ctx.fx.banner(res.isDup ? t('ui.dup', { n: res.count }) : t('ui.unlockedBang'), cx, cy - 44, r.color, { scale: 4, life: 1.8 });
+      this.ctx.fx.banner(tCollectibleName(res.collectible.id), cx, cy - 96, INK, { scale: 2, life: 2.2, vy: -22 });
+    }
     this.ctx.fx.banner(t('ui.minusCoins', { n: item.cost }), COINS_TARGET.x, COINS_TARGET.y + 34, '#ff9a3c', { scale: 3, life: 1.4 });
     this.ctx.sound.reveal(res.collectible.rarity);
     this.ctx.sound.coin();
     for (const a of res.achievements) this.ctx.fx.toast(tAchName(a.id), tAchDesc(a.id), a.sprite);
+    for (const milestone of res.milestones) {
+      this.ctx.fx.toast(t(milestone.nameKey), t(milestone.descKey), 'starBadge');
+    }
   }
 
   private async doSync(): Promise<void> {
@@ -1340,6 +1490,14 @@ export class RoomScreen implements Screen {
     const bankCy = BANK.y + BANK.h * 0.45;
     try {
       const result = await this.ctx.store.sync();
+      // A first empty live scan is an explicit decision point, not an
+      // all-caught-up sync. The panel is rendered from persisted state below.
+      if (result.source === 'no-history') return;
+      if (result.source === 'demo') {
+        // The button remains the short physical SYNC control; this explicit
+        // feedback is the truthful demo-specific action acknowledgement.
+        this.ctx.fx.banner(t('ui.demoSync'), bankCx, BANK.y + 12, CYAN, { scale: 1.7, life: 1.8, vy: -10 });
+      }
       // Keep the celebration at 60fps for its full length — the sync await can
       // outlast the click's wake window, so the coin rain / banners / cabinet
       // pulses would otherwise start on the 30fps idle cap.
@@ -1376,6 +1534,88 @@ export class RoomScreen implements Screen {
       this.ctx.sound.error();
     } finally {
       this.syncing = false;
+    }
+  }
+
+  /** Start demo only after the player chooses it in the no-history panel. */
+  private async playDemoArcade(): Promise<void> {
+    if (this.syncing) return;
+    this.ctx.store.setMode('demo');
+    this.displayCoins.set(this.ctx.store.state.coins);
+    await this.doSync();
+  }
+
+  /** Settings' one-click escape hatch from demo back to an isolated live scan. */
+  async tryLiveScanFromSettings(): Promise<void> {
+    if (this.syncing) return;
+    this.ctx.store.setMode('live');
+    this.displayCoins.set(this.ctx.store.state.coins);
+    await this.doSync();
+  }
+
+  /** Canvas decision panel for an empty first local scan. It intentionally
+   * gates mock projects behind a deliberate player choice. */
+  private drawNoHistoryDecision(g: CanvasRenderingContext2D): void {
+    const state = this.ctx.store.state;
+    if (state.mode !== 'live' || state.historyScan !== 'no-history') return;
+
+    const x = 442;
+    const y = 258;
+    const w = 716;
+    const h = 476;
+    // Soft blackout keeps the real-but-empty room visible at the perimeter.
+    g.save();
+    g.fillStyle = 'rgba(4,3,10,0.55)';
+    g.fillRect(0, 0, this.ctx.stage.width, this.ctx.stage.height);
+    g.restore();
+    panel(g, x, y, w, h, { radius: 14, fill: 'rgba(18,12,34,0.98)', border: GOLD, borderWidth: 3 });
+    // Physical marquee rail, not a web-modal heading.
+    g.fillStyle = 'rgba(95,230,214,0.32)';
+    g.fillRect(x + 26, y + 72, w - 52, 2);
+    for (let i = 0; i < 9; i++) {
+      g.fillStyle = i % 2 ? CYAN : GOLD;
+      g.fillRect(x + 30 + i * ((w - 64) / 8), y + 22, 5, 5);
+    }
+    drawText(g, t('ui.noHistoryFound'), x + w / 2, y + 35, 3.2, GOLD, { align: 'center', glow: GOLD, glowBlur: 6 });
+    const body = wrapText(t('ui.noHistoryBody'), 2, w - 94);
+    let bodyY = y + 104;
+    for (const line of body) {
+      drawText(g, line, x + w / 2, bodyY, 2, INK, { align: 'center' });
+      bodyY += 22;
+    }
+    this.drawHistoryChoice(g, x + 42, y + 184, w - 84, 98, 'demo-choice', t('ui.playDemoArcade'), t('ui.playDemoSub'), GOLD, () => void this.playDemoArcade());
+    this.drawHistoryChoice(g, x + 42, y + 310, w - 84, 98, 'scan-choice', t('ui.scanAgain'), t('ui.scanAgainSub'), CYAN, () => void this.doSync());
+  }
+
+  private drawHistoryChoice(
+    g: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    id: string,
+    title: string,
+    sub: string,
+    color: string,
+    onClick: () => void,
+  ): void {
+    const hovered = this.ctx.stage.hotspot({ x, y, w, h, cursor: 'pointer', id, onClick });
+    panel(g, x, y, w, h, {
+      radius: 10,
+      fill: hovered ? '#2a1f4a' : '#120d24',
+      border: hovered ? color : 'rgba(126,118,168,0.7)',
+      borderWidth: hovered ? 3 : 2,
+    });
+    g.fillStyle = color;
+    g.fillRect(x + 16, y + 14, 5, h - 28);
+    let titleScale = 2.35;
+    while (titleScale > 1.25 && measureText(title, titleScale) > w - 72) titleScale -= 0.15;
+    drawText(g, title, x + 40, y + 21, titleScale, hovered ? color : INK, { glow: hovered ? color : undefined, glowBlur: 4 });
+    const subLines = wrapText(sub, 1.4, w - 72).slice(0, 2);
+    let subY = y + 55;
+    for (const line of subLines) {
+      drawText(g, line, x + 40, subY, 1.4, '#c9c6e0');
+      subY += 15;
     }
   }
 }

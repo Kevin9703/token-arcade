@@ -44,6 +44,36 @@ export const COLLECTIBLES: Collectible[] = [
   { id: 'l_trophy', name: 'Champion Trophy', rarity: 'legendary', type: 'trophy', description: 'Heavy, shiny, and almost certainly paid for in tokens.', sprite: 'legendaryTrophy' },
   { id: 'l_egg', name: 'Dragon Egg', rarity: 'legendary', type: 'buddy', description: 'Warm to the touch. Do not ask what it was trained on.', sprite: 'dragonEgg' },
   { id: 'l_forest', name: 'Forest Room Theme', rarity: 'legendary', type: 'theme', description: 'A quiet grove grown from a suspicious amount of computation.', sprite: 'forestTheme' },
+
+  // --- P1C collection expansion (appended to preserve the original 27 IDs/order) ---
+  // Common
+  { id: 'c_keyboard', name: 'Tiny Mech Keyboard', rarity: 'common', type: 'decor', description: 'Clicky enough to sound productive, tiny enough to lose beneath one normal keycap.', sprite: 'miniCabinet' },
+  { id: 'c_cursor', name: 'Blinking Cursor', rarity: 'common', type: 'badge', description: 'Patiently waiting at the end of the line, convinced the next thought will be the good one.', sprite: 'smiley' },
+  { id: 'c_floppy', name: 'Save Point Disk', rarity: 'common', type: 'decor', description: 'Stores one brave checkpoint and the comforting lie that you can always roll back.', sprite: 'tokenChip' },
+  { id: 'c_duck', name: 'Desk Duck', rarity: 'common', type: 'buddy', description: 'Listens to the whole explanation, judges none of it, and somehow spots the missing semicolon.', sprite: 'luckyCat' },
+  { id: 'c_patch', name: 'Patch Note', rarity: 'common', type: 'sign', description: 'A tiny notice announcing three fixes, two surprises, and one bug now promoted to feature.', sprite: 'ggSign' },
+  { id: 'c_noodle', name: 'Midnight Noodles', rarity: 'common', type: 'decor', description: 'Still warm at 2 AM, when every shortcut looks elegant and every estimate looks optional.', sprite: 'mug' },
+  { id: 'c_terminal', name: 'Pocket Terminal', rarity: 'common', type: 'decor', description: 'A command line for emergencies, side quests, and checking one last thing away from the desk.', sprite: 'miniCabinet' },
+  { id: 'c_shipit', name: 'Ship It Sticker', rarity: 'common', type: 'badge', description: 'Peel, stick, deploy. Reading the diff again is tomorrow\'s problem.', sprite: 'starBadge' },
+  // Uncommon
+  { id: 'u_lavalamp', name: 'Token Lava Lamp', rarity: 'uncommon', type: 'decor', description: 'Slow bubbles of spent context rise, merge, and become a surprisingly decent idea.', sprite: 'plantSmall' },
+  { id: 'u_lintbot', name: 'Lint Bot', rarity: 'uncommon', type: 'buddy', description: 'Polishes rough edges while muttering about trailing spaces nobody else could see.', sprite: 'astronaut' },
+  { id: 'u_bonsai', name: 'Pixel Bonsai', rarity: 'uncommon', type: 'decor', description: 'Carefully pruned one branch at a time, much like a refactor that actually stayed in scope.', sprite: 'plantSmall' },
+  { id: 'u_prompt', name: 'One More Prompt Sign', rarity: 'uncommon', type: 'sign', description: 'The official closing sign of an arcade that has never once closed on time.', sprite: 'gameoverSign' },
+  { id: 'u_enter', name: 'Golden Enter Key', rarity: 'uncommon', type: 'badge', description: 'For the precise moment hesitation ends and the expensive part begins.', sprite: 'goldCoin' },
+  { id: 'u_headphones', name: 'Focus Headphones', rarity: 'uncommon', type: 'decor', description: 'Cancels chatter, alerts, and most reasonable objections to starting another side project.', sprite: 'mug' },
+  { id: 'u_inbox', name: 'Inbox Zero Capsule', rarity: 'uncommon', type: 'badge', description: 'A sealed specimen containing the mythical state of having absolutely nothing unread.', sprite: 'gem' },
+  // Rare
+  { id: 'r_drone', name: 'Context Courier Drone', rarity: 'rare', type: 'buddy', description: 'Carries the important bits across long sessions and only drops the embarrassing TODOs.', sprite: 'astronaut' },
+  { id: 'r_clock', name: 'Deadline Clock', rarity: 'rare', type: 'decor', description: 'Runs normally until launch day, when every minute becomes approximately seven seconds.', sprite: 'trophy' },
+  { id: 'r_vending', name: 'Bug Fix Vending Machine', rarity: 'rare', type: 'decor', description: 'Insert one reproducible case. Receive a fix, a workaround, or a very confident shrug.', sprite: 'miniCabinet' },
+  { id: 'r_hologram', name: 'Hologram Commit', rarity: 'rare', type: 'sign', description: 'Projects the one perfect commit message everyone remembers writing differently.', sprite: 'oneupFlag' },
+  // Epic
+  { id: 'e_whale', name: 'Cloud Whale', rarity: 'epic', type: 'buddy', description: 'Drifts above the cabinets carrying impossible scale with the calm of a passing thought.', sprite: 'rainbowCat' },
+  { id: 'e_portal', name: 'Refactor Portal', rarity: 'epic', type: 'decor', description: 'Step through with tangled code. Step back out three hours later with cleaner code and new questions.', sprite: 'starRug' },
+  // Legendary
+  { id: 'l_pair', name: 'Golden Pair Programmer', rarity: 'legendary', type: 'buddy', description: 'Always has the missing question, the second keyboard, and impeccable timing with the snacks.', sprite: 'astronaut' },
+  { id: 'l_infinite', name: 'Infinite Token Marquee', rarity: 'legendary', type: 'sign', description: 'Its counter rolls forever, celebrating every wild idea that survived long enough to ship.', sprite: 'ggSign' },
 ];
 
 export const byId: Record<string, Collectible> = {};

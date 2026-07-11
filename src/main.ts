@@ -18,6 +18,9 @@ import { RoomScreen } from './screens/roomScreen';
 import { CabinetScreen } from './screens/cabinetScreen';
 import { CapsuleScreen } from './screens/capsuleScreen';
 import { AchievementScreen } from './screens/achievementScreen';
+import { CustomizeScreen } from './screens/customizeScreen';
+
+let roomScreen: RoomScreen;
 
 const canvas = document.getElementById('stage');
 const overlaysRoot = document.getElementById('overlays');
@@ -39,6 +42,12 @@ const overlays = new Overlays(
     // Settings -> Achievements: close the modal and route to the gallery.
     overlays.close();
     router.go('achievements');
+  },
+  () => {
+    // Settings -> real history retry always returns to the arcade room, where
+    // an empty result can surface the same truthful decision panel.
+    router.go('room');
+    void roomScreen.tryLiveScanFromSettings();
   },
 );
 
@@ -66,10 +75,12 @@ context = {
   editPlayerName: () => overlays.openPlayerName(),
 };
 
-router.register(new RoomScreen(context));
+roomScreen = new RoomScreen(context);
+router.register(roomScreen);
 router.register(new CabinetScreen(context));
 router.register(new CapsuleScreen(context));
 router.register(new AchievementScreen(context));
+router.register(new CustomizeScreen(context));
 router.go('room');
 
 stage.start((ctx, dt, now) => {

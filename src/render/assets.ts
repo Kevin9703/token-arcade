@@ -10,8 +10,15 @@
 
 export type AssetName =
   | 'roomBg'
+  | 'customizeWorkshopBackdrop'
+  | 'roomThemeSunset'
+  | 'roomThemeForest'
   | 'coinBank'
   | 'prizeWall'
+  | 'collectionNeonShelf'
+  | 'collectionPrizeLights'
+  | 'collectionPedestal'
+  | 'collectionCrownMarquee'
   | 'cabinetSkins'
   | 'capsuleRoomBg'
   | 'capsuleMachine'
@@ -37,6 +44,8 @@ export type AssetName =
   | 'homeLogoBurst'
   | 'homePlayer'
   | 'homePlayerCard'
+  | 'homeTokenGuideBoardEn'
+  | 'homeTokenGuideBoardZh'
   | 'homeCoinPlaque'
   | 'homeSyncStates'
   | 'homeShopCard'
@@ -83,12 +92,19 @@ export type AssetName =
 
 const SRC: Record<AssetName, string> = {
   roomBg: '/assets/room-bg.png',
+  customizeWorkshopBackdrop: '/assets/customization/customize-workshop-backdrop-v2.png',
+  roomThemeSunset: '/assets/customization/sunset-arcade-room-bg-v1.png',
+  roomThemeForest: '/assets/customization/forest-arcade-room-bg-v1.png',
   coinBank: '/assets/coin-bank.png',
   prizeWall: '/assets/prize-wall.png',
+  collectionNeonShelf: '/assets/collection/neon-shelf.png',
+  collectionPrizeLights: '/assets/collection/prize-lights.png',
+  collectionPedestal: '/assets/collection/collector-pedestal.png',
+  collectionCrownMarquee: '/assets/collection/crown-marquee.png',
   cabinetSkins: '/assets/cabinet-skins.png',
   capsuleRoomBg: '/assets/capsule/room-bg.png',
   capsuleMachine: '/assets/capsule/machine.png',
-  achievementDisplay: '/assets/capsule/display.png',
+  achievementDisplay: '/assets/capsule/display-50-v1.png',
   revealFrames: '/assets/capsule/reveal-frames.png',
   revealFrameLegendary: '/assets/capsule/reveal-frame-legendary.png',
   revealFrameEpic: '/assets/capsule/reveal-frame-epic.png',
@@ -110,6 +126,10 @@ const SRC: Record<AssetName, string> = {
   homeLogoBurst: '/assets/home-ui/logo-sign-flicker-burst-v1.png',
   homePlayer: '/assets/home-ui/player-character-v1-trimmed.png',
   homePlayerCard: '/assets/home-ui/player-card-frame-v1-trimmed.png',
+  // Localized physical A-frames: lettering is authored into the pixel art so
+  // it stays crisp at Home's scene scale instead of floating over the board.
+  homeTokenGuideBoardEn: '/assets/home-ui/token-guide-board-en-v2.png',
+  homeTokenGuideBoardZh: '/assets/home-ui/token-guide-board-zh-v2.png',
   homeCoinPlaque: '/assets/home-ui/coin-counter-plaque-v1-trimmed.png',
   homeSyncStates: '/assets/home-ui/sync-button-states-v2-trimmed.png',
   homeShopCard: '/assets/home-ui/shop-card-frame-v1-trimmed.png',
@@ -203,6 +223,10 @@ export class AssetStore {
       img.src = SRC[name];
       this.imgs[name] = img;
     });
+    // The Home new-cosmetic plaque must never introduce Cyan Profile Frame with
+    // its generic code-sprite fallback. Start decoding the complete earned item
+    // art at boot, before a player can reach the reward purchase.
+    collectibleIcon('r_frame');
   }
 
   /** The decoded image, or null while it's still loading / on error. */

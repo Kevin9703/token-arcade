@@ -28,13 +28,21 @@ export class Overlays {
   private readonly store: GameStore;
   private readonly onChange?: () => void;
   private readonly onOpenAchievements?: () => void;
+  private readonly onTryLiveScan?: () => void;
   private backdrop: HTMLElement | null = null;
 
-  constructor(root: HTMLElement, store: GameStore, onChange?: () => void, onOpenAchievements?: () => void) {
+  constructor(
+    root: HTMLElement,
+    store: GameStore,
+    onChange?: () => void,
+    onOpenAchievements?: () => void,
+    onTryLiveScan?: () => void,
+  ) {
     this.root = root;
     this.store = store;
     this.onChange = onChange;
     this.onOpenAchievements = onOpenAchievements;
+    this.onTryLiveScan = onTryLiveScan;
   }
 
   /** Remove any open modal. */
@@ -66,6 +74,7 @@ export class Overlays {
     for (const key of ['help.l1', 'help.l2', 'help.l3', 'help.l4']) {
       tips.appendChild(el('li', undefined, t(key)));
     }
+    if (this.store.state.mode === 'demo') tips.appendChild(el('li', undefined, t('help.demo')));
     modal.appendChild(tips);
 
     const actions = el('div', 'ta-actions');
@@ -163,19 +172,21 @@ export class Overlays {
     soundRow.appendChild(soundBtn);
     modal.appendChild(soundRow);
 
-    // Data source Live/Demo (LIVE/DEMO are stable mode keys, not translated)
+    // Data source. Demo is entered only through the explicit no-history choice;
+    // Settings keeps a one-click return to an isolated live scan instead of a
+    // misleading generic mode toggle.
     const modeRow = el('div', 'ta-row');
     modeRow.appendChild(el('span', undefined, t('ui.dataSource')));
     const modeBtn = el('button', 'ta-btn ta-switch ghost');
-    const paintMode = (): void => {
-      modeBtn.textContent = this.store.state.mode === 'demo' ? 'DEMO' : 'LIVE';
-    };
-    paintMode();
-    modeBtn.addEventListener('click', () => {
-      this.store.setMode(this.store.state.mode === 'demo' ? 'live' : 'demo');
-      paintMode();
-      this.onChange?.();
-    });
+    modeBtn.textContent = this.store.state.mode === 'demo' ? t('ui.tryLiveScan') : t('ui.liveHistory');
+    if (this.store.state.mode === 'demo') {
+      modeBtn.addEventListener('click', () => {
+        this.close();
+        this.onTryLiveScan?.();
+      });
+    } else {
+      modeBtn.disabled = true;
+    }
     modeRow.appendChild(modeBtn);
     modal.appendChild(modeRow);
 

@@ -21,6 +21,7 @@ import type { FrameWindow } from '../render/atlas';
 import { ACHIEVEMENTS } from '../content';
 import { t, tAchName, tAchDesc, fmtDate } from '../i18n';
 import { drawBackButton } from './chrome';
+import { drawDemoPlaque } from '../render/demoPlaque';
 import type { Screen, ScreenContext } from './screen';
 
 const GOLD = '#ffd23f';
@@ -66,6 +67,7 @@ export class AchievementScreen implements Screen {
     g.fillRect(0, 0, W, H);
 
     drawBackButton(g, this.ctx, () => this.ctx.router.back());
+    drawDemoPlaque(g, this.ctx, 1110, 20, 156);
     this.drawTitle(g);
     this.drawProgress(g, store);
 
