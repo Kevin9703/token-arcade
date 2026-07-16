@@ -87,7 +87,11 @@ export class Stage {
   private dragPointerId: number | null = null;
   private dragLastY = 0;
   private dragDistance = 0;
-  private suppressNextClick = false;
+  private dragHotspot: Hotspot | null = null;
+  private dragHotspotPointerId: number | null = null;
+  private dragHotspotDistance = 0;
+  private dragHotspotLast: Point = { x: 0, y: 0 };
+  private suppressClicksUntil = 0;
 
   // Bound listeners (kept for the object's lifetime so start/stop can toggle
   // rendering without losing pointer tracking).
@@ -111,6 +115,13 @@ export class Stage {
 
     this.onPointerMove = (e: PointerEvent): void => {
       this.updateMouse(e.clientX, e.clientY);
+      if (this.dragHotspotPointerId === e.pointerId && this.dragHotspot) {
+        const dx = this.mouse.x - this.dragHotspotLast.x;
+        const dy = this.mouse.y - this.dragHotspotLast.y;
+        this.dragHotspotDistance += Math.hypot(dx, dy);
+        this.dragHotspotLast = { ...this.mouse };
+        this.dragHotspot.onDragMove?.({ ...this.mouse });
+      }
       if (this.dragPointerId === e.pointerId) {
         const dy = this.dragLastY - this.mouse.y;
         this.dragLastY = this.mouse.y;
@@ -121,6 +132,18 @@ export class Stage {
     };
     this.onPointerDown = (e: PointerEvent): void => {
       this.updateMouse(e.clientX, e.clientY);
+      for (let i = this.activeHotspots.length - 1; i >= 0; i--) {
+        const hotspot = this.activeHotspots[i];
+        if (!hotspot.onDragStart || !this.isHover(hotspot.x, hotspot.y, hotspot.w, hotspot.h)) continue;
+        this.dragHotspot = hotspot;
+        this.dragHotspotPointerId = e.pointerId;
+        this.dragHotspotDistance = 0;
+        this.dragHotspotLast = { ...this.mouse };
+        this.canvas.setPointerCapture(e.pointerId);
+        hotspot.onDragStart({ ...this.mouse });
+        this.wake();
+        return;
+      }
       if (!this.pointerInScrollRegion()) return;
       this.dragPointerId = e.pointerId;
       this.dragLastY = this.mouse.y;
@@ -129,16 +152,25 @@ export class Stage {
       this.wake();
     };
     this.onPointerUp = (e: PointerEvent): void => {
+      this.updateMouse(e.clientX, e.clientY);
+      if (this.dragHotspotPointerId === e.pointerId && this.dragHotspot) {
+        if (this.dragHotspotDistance > 3) this.suppressClicksUntil = performance.now() + 180;
+        this.dragHotspot.onDragEnd?.({ ...this.mouse });
+        this.dragHotspot = null;
+        this.dragHotspotPointerId = null;
+        if (this.canvas.hasPointerCapture(e.pointerId)) this.canvas.releasePointerCapture(e.pointerId);
+        this.wake();
+        return;
+      }
       if (this.dragPointerId !== e.pointerId) return;
-      if (this.dragDistance > 3) this.suppressNextClick = true;
+      if (this.dragDistance > 3) this.suppressClicksUntil = performance.now() + 180;
       this.dragPointerId = null;
       if (this.canvas.hasPointerCapture(e.pointerId)) this.canvas.releasePointerCapture(e.pointerId);
       this.wake();
     };
     this.onClick = (e: MouseEvent): void => {
       this.wake(); // a click often kicks off an animation (coin rain, level-up)
-      if (this.suppressNextClick) {
-        this.suppressNextClick = false;
+      if (performance.now() < this.suppressClicksUntil) {
         return;
       }
       this.handleClick(e.clientX, e.clientY);
@@ -339,8 +371,9 @@ export class Stage {
 
     // ---- cursor feedback --------------------------------------------------
     let cursor = 'default';
-    for (const h of this.activeHotspots) {
-      if (h.onClick && this.isHover(h.x, h.y, h.w, h.h)) {
+    for (let i = this.activeHotspots.length - 1; i >= 0; i--) {
+      const h = this.activeHotspots[i];
+      if ((h.onClick || h.onDragStart) && this.isHover(h.x, h.y, h.w, h.h)) {
         cursor = h.cursor ?? 'pointer';
         break;
       }

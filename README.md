@@ -24,8 +24,10 @@ input: use a model, sync your history, watch the arcade grow.
   arbitrary productivity scores or judgments about how you work.
 - **Every project becomes a cabinet.** More tokens unlock richer machine stages,
   brighter lights, and a visible history of the project growing.
-- **Progress turns into a collection.** Coins fund capsule pulls, 50 collectible
-  prizes, achievements, room themes, profile frames, and permanent display upgrades.
+- **Progress changes the room.** Coins fund 50 collectible prizes, and the
+  latest signs, buddies, decor, trophies, and badges appear in your arcade.
+  Keep the tidy automatic layout or arrange them yourself in Decorate Mode,
+  while permanent display upgrades mark bigger milestones.
 - **Your history stays yours.** Scanning, aggregation, saves, and demo data all
   remain on your machine with no account, telemetry, or cloud backend.
 
@@ -34,8 +36,9 @@ input: use a model, sync your history, watch the arcade grow.
 **V0.1 local release.** The first complete arcade loop is ready to play: sync
 real local usage or deliberately enter an isolated demo, earn coins, level
 project cabinets, collect all 50 prizes, unlock permanent collection upgrades,
-and equip room themes and profile frames. Token Arcade remains a local-first
-preview rather than a hosted service.
+equip room themes and profile frames, and recycle duplicate prizes into a
+guaranteed missing collectible. Token Arcade remains a local-first preview
+rather than a hosted service.
 
 ## Demo
 
@@ -83,8 +86,11 @@ Pull capsules and fill the prize wall
 - Fifty cabinet levels across five visual stages.
 - Fifty collectible prizes with four permanent prize-wall upgrades at 10, 25,
   40, and 50 unique discoveries.
-- Capsule pulls, duplicate handling, a reviewable x10 result ticker, and a
-  physical 50-slot prize cabinet.
+- Capsule pulls, a reviewable x10 result ticker, duplicate dust, and a
+  guaranteed missing-prize exchange inside a physical 50-slot prize cabinet.
+- Automatic or player-arranged in-room collectible displays plus an
+  always-visible next arcade upgrade goal, so every useful unlock has an
+  immediate destination.
 - Unlockable room themes and profile frames with persistent equipped states.
 - Achievement gallery and Simplified Chinese / English interface switching.
 - An explicit no-history choice plus separate demo and live save slots, so

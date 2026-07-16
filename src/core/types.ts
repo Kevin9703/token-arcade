@@ -101,6 +101,17 @@ export interface EquippedCosmetics {
   profileFrame: ProfileFrameId;
 }
 
+/** A room prize can move freely inside one authored scenery zone. Coordinates
+ * are normalized inside that zone, so layouts survive canvas/viewport changes. */
+export type RoomDecorationZone = 'wall' | 'floor' | 'buddy';
+
+export interface RoomDecorationPlacement {
+  collectibleId: string;
+  zone: RoomDecorationZone;
+  x: number;
+  y: number;
+}
+
 export interface MockWorld {
   projects: ProjectUsage[];
 }
@@ -142,6 +153,9 @@ export interface GameState {
    * the shared settings payload, so demo and live arcades cannot bleed into
    * one another. */
   cosmetics: EquippedCosmetics;
+  /** null = keep using the automatic newest-prize arrangement. An array is a
+   * player-authored layout and may intentionally omit owned prizes. */
+  roomDecorations: RoomDecorationPlacement[] | null;
   settings: GameSettings;
 }
 
@@ -197,6 +211,14 @@ export interface PullResult {
 }
 
 export interface BuyResult extends PullOutcome {
+  achievements: Achievement[];
+  milestones: CollectionMilestone[];
+}
+
+export interface MissingPrizeExchangeResult {
+  collectible: Collectible;
+  cost: number;
+  shardsRemaining: number;
   achievements: Achievement[];
   milestones: CollectionMilestone[];
 }
@@ -269,6 +291,9 @@ export interface Hotspot {
   h: number;
   onClick?: () => void;
   onHover?: (hovering: boolean) => void;
+  onDragStart?: (point: Point) => void;
+  onDragMove?: (point: Point) => void;
+  onDragEnd?: (point: Point) => void;
   cursor?: string;
   /** Identifier used to preserve hover state across frames. */
   id?: string;

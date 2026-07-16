@@ -30,15 +30,16 @@ import { panel, vgrad, rrect } from '../render/canvas';
 import { drawText, wrapText, measureText, GLYPH_H } from '../render/pixelFont';
 import { drawSprite, drawSpriteCentered, drawCoin } from '../render/sprites';
 import { drawCapsuleMachine } from '../render/machines';
-import { drawImageSmooth, collectibleIcon } from '../render/assets';
+import { drawImageSmooth, collectibleIcon, currencyIcon } from '../render/assets';
 import { drawCoinHud } from '../render/hud';
 import { drawDemoPlaque } from '../render/demoPlaque';
 import { revealFrameImage, resultRowArt } from '../render/atlas';
 import { drawIconCentered, drawImageContain, EasedNumber } from '../render/widgets';
 import { DISPLAY_RARITY_RAILS, DISPLAY_SLOTS } from '../render/measured';
 import { CONFIG, fmtComma } from '../domain/economy';
+import { MISSING_PRIZE_DUST_COST } from '../domain/collection';
 import { RARITIES, RARITY_ORDER, byRarity } from '../content';
-import type { PullOutcome, Collectible } from '../core/types';
+import type { PullOutcome, PullResult, Collectible } from '../core/types';
 import type { Screen, ScreenContext } from './screen';
 import { drawBackButton } from './chrome';
 import { t, tRarity, tType, tCollectibleName, tCollectibleDesc, tAchName, tAchDesc } from '../i18n';
@@ -78,6 +79,7 @@ const WALL = { x: 760, y: 120, w: 800, h: 800 };
 // pinned until the next pull, so every x10 outcome stays reviewable.
 const FEED = { x: 638, w: 166, top: 452, rowH: 36, gap: 6, maxVisible: 4 };
 const FEED_STRIDE = FEED.rowH + FEED.gap;
+const EXCHANGE = { x: 590, y: 630, w: 220, h: 112 };
 
 /** One row in the result ticker. */
 interface FeedRow {
@@ -147,6 +149,7 @@ export class CapsuleScreen implements Screen {
   // Short summary pulse shown when a pull produced no new items (all duplicates).
   private dupPulse = 0;
   private dupPulseCount = 0;
+  private exchangeSuccess = 0;
 
   constructor(private readonly ctx: ScreenContext) {}
 
@@ -171,6 +174,7 @@ export class CapsuleScreen implements Screen {
     this.feedStart = 0;
     this.dupPulse = 0;
     this.dupPulseCount = 0;
+    this.exchangeSuccess = 0;
     // Drop achievement toasts into the empty center wall gap between the
     // machine and the cabinet — clear of the currency counters and reveal card.
     this.ctx.fx.setToastZone(726, 200, 184);
@@ -184,6 +188,7 @@ export class CapsuleScreen implements Screen {
     this.drawMachine(g, now);
     this.drawHeader(g);
     this.drawResultFeed(g, now);
+    this.drawExchangeControl(g);
     this.drawReveal(g);
     this.drawMessages(g);
     // Tooltip draws last so it floats above the card, counters and cabinet.
@@ -203,6 +208,7 @@ export class CapsuleScreen implements Screen {
     // The ticker does not auto-scroll away after a pull. It remains pinned on
     // the chosen rows until the next pull replaces the current batch (QA-005).
     this.dupPulse = Math.max(0, this.dupPulse - dt);
+    this.exchangeSuccess = Math.max(0, this.exchangeSuccess - dt);
 
     // Advance the lever. It snaps down, and as it crosses the DOWN threshold the
     // machine reacts: it shakes and bursts glow at the mouth.
@@ -343,12 +349,49 @@ export class CapsuleScreen implements Screen {
     drawBackButton(g, this.ctx, () => this.ctx.router.go('room'));
 
     // Coin counter — the same generated HUD plaque used on home + project detail
-    // so the currency reads identically across screens. Tickets and dust are
-    // hidden until they have a real sink (MVP economy audit, Option A).
+    // so the currency reads identically across screens. Dust gets one compact
+    // readout here because this is the only screen where it has a direct use.
     const HW = 252;
     const HX = 1600 - HW - 24;
     drawCoinHud(g, this.ctx.assets, HX, 14, HW, fmtComma(Math.round(this.displayCoins.value)));
     drawDemoPlaque(g, this.ctx, HX - 170, 18, 160);
+    this.drawDustHud(g, HX - 300, 18, 120, 50);
+  }
+
+  /** Purpose-specific dust meter beside the existing coin HUD. */
+  private drawDustHud(g: CanvasRenderingContext2D, x: number, y: number, w: number, h: number): void {
+    rrect(g, x + 2, y + 3, w, h, 7);
+    g.fillStyle = 'rgba(0,0,0,0.4)';
+    g.fill();
+
+    g.save();
+    rrect(g, x, y, w, h, 7);
+    g.clip();
+    vgrad(g, x, y, w, h, '#25203a', '#100d1b');
+    g.restore();
+    rrect(g, x, y, w, h, 7);
+    g.strokeStyle = '#5f5875';
+    g.lineWidth = 2;
+    g.stroke();
+
+    const dust = currencyIcon('dust');
+    if (dust) drawIconCentered(g, dust, x + 24, y + h / 2, 36);
+
+    const textCx = x + 78;
+    const textW = w - 48;
+    const label = t('ui.dust');
+    let labelScale = 1.05;
+    while (labelScale > 0.75 && measureText(label, labelScale) > textW) labelScale -= 0.05;
+    drawText(g, label, textCx, y + 7, labelScale, '#9a93bd', { align: 'center' });
+
+    const value = fmtComma(this.ctx.store.state.shards);
+    let valueScale = 1.9;
+    while (valueScale > 1 && measureText(value, valueScale) > textW) valueScale -= 0.1;
+    drawText(g, value, textCx, y + 26, valueScale, CYAN, {
+      align: 'center',
+      glow: CYAN,
+      glowBlur: 3,
+    });
   }
 
   // ---- capsule machine ----------------------------------------------------
@@ -944,6 +987,110 @@ export class CapsuleScreen implements Screen {
     g.restore();
   }
 
+  /** A compact service-machine control beneath the result ticker. The recessed
+   * lower cap is the only action; status copy stays inside the fixed housing. */
+  private drawExchangeControl(g: CanvasRenderingContext2D): void {
+    const { x, y, w, h } = EXCHANGE;
+    const store = this.ctx.store;
+    const complete = store.ownedCount() >= store.totalCollectibles();
+    const affordable = store.state.shards >= MISSING_PRIZE_DUST_COST;
+    const enabled = !complete && affordable && !this.isRevealActive();
+
+    const button = { x: x + 24, y: y + 68, w: w - 48, h: 31 };
+    const hovered = enabled && this.ctx.stage.hotspot({
+      ...button,
+      cursor: 'pointer',
+      id: 'exchange-missing-prize',
+      onClick: () => this.doMissingPrizeExchange(),
+    });
+
+    // The existing reward-ticket frame is a real authored arcade asset and a
+    // natural home for this one-shot redemption service.
+    const frame = this.ctx.assets.get('rewardTicketFrame');
+    if (frame) {
+      if (hovered) {
+        g.save();
+        g.shadowColor = GOLD;
+        g.shadowBlur = 14;
+        drawImageSmooth(g, frame, x, y, w, h);
+        g.restore();
+      }
+      drawImageSmooth(g, frame, x, y, w, h);
+    } else {
+      rrect(g, x, y, w, h, 8);
+      g.fillStyle = 'rgba(18,13,30,0.96)';
+      g.fill();
+      g.strokeStyle = enabled ? GOLD : '#4a4159';
+      g.lineWidth = 2;
+      g.stroke();
+    }
+
+    const title = t('capsule.missingPrize');
+    let titleScale = 1.4;
+    while (titleScale > 0.85 && measureText(title, titleScale) > w - 40) titleScale -= 0.05;
+    drawText(g, title, x + w / 2, y + 12, titleScale, enabled ? INK : '#777087', {
+      align: 'center',
+      glow: enabled ? MAGENTA : undefined,
+      glowBlur: enabled ? 2 : undefined,
+    });
+
+    let status = t('capsule.missingPrizeSub');
+    let statusColor = '#b9b3d6';
+    if (this.exchangeSuccess > 0) {
+      status = t('capsule.exchangeSuccess');
+      statusColor = CYAN;
+    } else if (complete) {
+      status = t('capsule.collectionComplete');
+      statusColor = GOLD;
+    } else if (!affordable) {
+      status = t('capsule.notEnoughDust');
+      statusColor = '#ff8b9a';
+    }
+
+    let statusScale = 0.9;
+    let statusLines = wrapText(status, statusScale, w - 42);
+    while (statusScale > 0.65 && statusLines.length > 2) {
+      statusScale -= 0.05;
+      statusLines = wrapText(status, statusScale, w - 42);
+    }
+    statusLines = statusLines.slice(0, 2);
+    const statusTop = y + 35 + (2 - statusLines.length) * 4;
+    for (let i = 0; i < statusLines.length; i++) {
+      drawText(g, statusLines[i], x + w / 2, statusTop + i * 9, statusScale, statusColor, { align: 'center' });
+    }
+
+    rrect(g, button.x, button.y, button.w, button.h, 7);
+    g.fillStyle = '#090712';
+    g.fill();
+    const capY = button.y + (hovered ? 4 : 2);
+    if (hovered) {
+      g.save();
+      g.shadowColor = MAGENTA;
+      g.shadowBlur = 12;
+      rrect(g, button.x + 3, capY, button.w - 6, button.h - 7, 6);
+      g.fillStyle = '#54224f';
+      g.fill();
+      g.restore();
+    } else {
+      rrect(g, button.x + 3, capY, button.w - 6, button.h - 7, 6);
+      g.fillStyle = enabled ? '#39203f' : '#211b2a';
+      g.fill();
+    }
+    rrect(g, button.x + 3, capY, button.w - 6, button.h - 7, 6);
+    g.strokeStyle = enabled ? MAGENTA : '#4a4159';
+    g.lineWidth = 2;
+    g.stroke();
+
+    const cost = `${fmtComma(MISSING_PRIZE_DUST_COST)} ${t('ui.dust')}`;
+    let costScale = 1.25;
+    while (costScale > 0.8 && measureText(cost, costScale) > button.w - 20) costScale -= 0.05;
+    drawText(g, cost, x + w / 2, capY + 9, costScale, enabled ? GOLD : '#746b80', {
+      align: 'center',
+      glow: enabled ? GOLD : undefined,
+      glowBlur: enabled ? 2 : undefined,
+    });
+  }
+
   /** Move the compact ticker by rows, always staying within this pull batch. */
   private scrollFeed(by: number): void {
     const maxStart = Math.max(0, this.feed.length - FEED.maxVisible);
@@ -1158,6 +1305,90 @@ export class CapsuleScreen implements Screen {
 
   // ---- actions ------------------------------------------------------------
 
+  /** Input lock shared with the blocking NEW-card reveal. A finished card may
+   * remain cached for drawing state, so only positive card life is blocking. */
+  private isRevealActive(): boolean {
+    return this.revealDelay > 0 || this.queue.length > 0 || (this.current !== null && this.cardLife > 0);
+  }
+
+  /** Feed a store mutation into the same recent-feed and NEW-card path used by
+   * capsule pulls. The returned list is useful to callers with extra staging. */
+  private presentRewardBatch(results: PullOutcome[]): PullOutcome[] {
+    // Fast-forward any completed/playing batch before replacing the reviewable
+    // feed. Exchange input is locked during an active reveal, while pulls retain
+    // their existing skip-on-repeat behavior.
+    this.skipReveals();
+
+    this.feed = results
+      .map((r) => ({ c: r.collectible, isNew: !r.isDup, count: r.count }))
+      .reverse();
+    this.feedStart = 0;
+
+    const newItems = results.filter((r) => !r.isDup);
+    for (const r of newItems) this.queue.push(r);
+    if (newItems.length === 0) {
+      this.dupPulse = 1.3;
+      this.dupPulseCount = results.length;
+    }
+
+    // A cosmetic from either acquisition path points directly at the dedicated
+    // backstage dressing room.
+    for (const item of newItems) {
+      if (item.collectible.type === 'theme' || item.collectible.type === 'frame') {
+        this.ctx.fx.toast(t('ui.newCosmetic'), t('ui.customizeArcade'), item.collectible.sprite);
+      }
+    }
+
+    if (results.length > 0) {
+      const best = results.reduce((a, b) =>
+        RARITIES[b.collectible.rarity].order < RARITIES[a.collectible.rarity].order ? b : a,
+      );
+      this.pullBurstGlow = RARITIES[best.collectible.rarity].glow;
+    }
+    return newItems;
+  }
+
+  private celebrateRewardProgress(
+    achievements: PullResult['achievements'],
+    milestones: PullResult['milestones'],
+  ): void {
+    for (const a of achievements) this.ctx.fx.toast(tAchName(a.id), tAchDesc(a.id), a.sprite);
+    for (const milestone of milestones) {
+      this.ctx.fx.toast(t(milestone.nameKey), t(milestone.descKey), 'starBadge');
+    }
+  }
+
+  private doMissingPrizeExchange(): void {
+    const store = this.ctx.store;
+    if (this.isRevealActive()) return;
+    if (store.ownedCount() >= store.totalCollectibles() || store.state.shards < MISSING_PRIZE_DUST_COST) {
+      this.ctx.sound.error();
+      return;
+    }
+
+    const res = store.exchangeMissingPrize();
+    if (!res) {
+      this.ctx.sound.error();
+      return;
+    }
+
+    // The store guarantees this collectible was missing. Express that guarantee
+    // explicitly so the shared reveal path always marks it NEW.
+    const outcome: PullOutcome = { collectible: res.collectible, isDup: false, count: 1 };
+    this.presentRewardBatch([outcome]);
+    this.dupPulse = 0;
+    this.dupPulseCount = 0;
+
+    // The service button has its own short physical beat; it does not throw the
+    // capsule lever or synthesize a normal capsule pop.
+    this.revealDelay = 0.18;
+    this.popFired = true;
+    this.exchangeSuccess = 1.8;
+    this.ctx.sound.pull();
+    this.ctx.fx.burst(EXCHANGE.x + EXCHANGE.w / 2, EXCHANGE.y + EXCHANGE.h * 0.78, this.pullBurstGlow, 14);
+    this.celebrateRewardProgress(res.achievements, res.milestones);
+  }
+
   private doPull(count: number): void {
     const cost = count === 10 ? CONFIG.PULL10_COST : CONFIG.PULL_COST * count;
     if (this.ctx.store.state.coins < cost) {
@@ -1171,39 +1402,7 @@ export class CapsuleScreen implements Screen {
       return;
     }
 
-    // Fast-forward any reveals still playing from a previous pull so a new pull
-    // never stacks a long backlog of cards (QA-002 skip-on-repeat).
-    this.skipReveals();
-
-    // Current batch is intentionally retained as a reviewable unit. Showing the
-    // latest result first keeps the old ticker convention, while feedStart=0
-    // pins the first four until the player wheels, drags, or taps the stepper.
-    this.feed = res.results
-      .map((r) => ({ c: r.collectible, isNew: !r.isDup, count: r.count }))
-      .reverse();
-    this.feedStart = 0;
-
-    // Only NEW items get the blocking big-reveal card. Duplicates live only in
-    // the feed. If nothing is new, show a short all-duplicates summary pulse.
-    const newItems = res.results.filter((r) => !r.isDup);
-    for (const r of newItems) this.queue.push(r);
-    if (newItems.length === 0) {
-      this.dupPulse = 1.3;
-      this.dupPulseCount = res.results.length;
-    }
-
-    // A cosmetic from the capsule is more than another card: make the first
-    // unlock point directly at the dedicated backstage dressing room.
-    for (const item of newItems) {
-      if (item.collectible.type === 'theme' || item.collectible.type === 'frame') {
-        this.ctx.fx.toast(t('ui.newCosmetic'), t('ui.customizeArcade'), item.collectible.sprite);
-      }
-    }
-
-    const best = res.results.reduce((a, b) =>
-      RARITIES[b.collectible.rarity].order < RARITIES[a.collectible.rarity].order ? b : a,
-    );
-    this.pullBurstGlow = RARITIES[best.collectible.rarity].glow;
+    this.presentRewardBatch(res.results);
 
     // Kick the lever. The shake + mouth burst fire once it snaps down (in tick),
     // then the first NEW card reveals after revealDelay. PULL X10 is one stronger
@@ -1216,10 +1415,7 @@ export class CapsuleScreen implements Screen {
     this.revealDelay = 0.58;
     this.ctx.sound.pull();
 
-    for (const a of res.achievements) this.ctx.fx.toast(tAchName(a.id), tAchDesc(a.id), a.sprite);
-    for (const milestone of res.milestones) {
-      this.ctx.fx.toast(t(milestone.nameKey), t(milestone.descKey), 'starBadge');
-    }
+    this.celebrateRewardProgress(res.achievements, res.milestones);
   }
 
   /** Fast-forward the big-reveal queue: drop any pending/current cards. The

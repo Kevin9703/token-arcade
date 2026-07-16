@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import { GameStore } from '../../src/state/store';
 import { SLOT_KEYS } from '../../src/state/persistence';
+import { MISSING_PRIZE_DUST_COST } from '../../src/domain/collection';
 import { COLLECTIBLES, SHOP } from '../../src/content';
 import { installLocalStorage, installStorageEvents } from '../helpers';
 import type { GameState, ProjectUsage } from '../../src/core/types';
@@ -38,6 +39,7 @@ test('construction: a fresh store (empty storage) has zeroed defaults', () => {
   assert.equal(s.mode, 'live');
   assert.equal(s.historyScan, 'unscanned');
   assert.deepEqual(s.cosmetics, { roomTheme: 'base', profileFrame: 'base' });
+  assert.equal(s.roomDecorations, null);
   assert.equal(s.coinResidue, 0);
   assert.equal(s.tickets, 0);
   assert.equal(s.shards, 0);
@@ -516,6 +518,110 @@ test('P1C collection tiers remain isolated between live and demo slots', () => {
   assert.equal(store.ownedCount(), 10);
 });
 
+test('P2 next collection goal follows the current valid unique count', () => {
+  installLocalStorage();
+  const store = new GameStore();
+  assert.equal(store.nextCollectionMilestone()?.milestone.threshold, 10);
+  assert.equal(store.nextCollectionMilestone()?.remaining, 10);
+
+  grantOwned(store, COLLECTIBLES.slice(0, 10).map((c) => c.id));
+  assert.equal(store.nextCollectionMilestone()?.milestone.threshold, 25);
+  assert.equal(store.nextCollectionMilestone()?.remaining, 15);
+
+  grantOwned(store, COLLECTIBLES.map((c) => c.id));
+  assert.equal(store.nextCollectionMilestone(), null);
+});
+
+// ---------------------------------------------------------------------------
+// MISSING PRIZE EXCHANGE
+// ---------------------------------------------------------------------------
+
+test('missing-prize exchange: insufficient dust is a mutation-free, unsaved no-op', () => {
+  installLocalStorage();
+  const store = new GameStore();
+  mut(store).shards = MISSING_PRIZE_DUST_COST - 1;
+  const before = JSON.stringify(store.state);
+
+  assert.equal(store.exchangeMissingPrize(), null);
+  assert.equal(JSON.stringify(store.state), before);
+  assert.equal(localStorage.getItem(SLOT_KEYS.live), null);
+});
+
+test('missing-prize exchange: selects a guaranteed new prize, spends exactly 120 dust, and persists', () => {
+  installLocalStorage();
+  const store = new GameStore();
+  const alreadyOwned = COLLECTIBLES.slice(0, 2);
+  grantOwned(store, alreadyOwned.map((c) => c.id));
+  mut(store).shards = 200;
+  const missing = COLLECTIBLES.filter((collectible) => !alreadyOwned.some((owned) => owned.id === collectible.id));
+  const expected = missing[Math.floor(missing.length / 2)];
+  const originalRandom = Math.random;
+  Math.random = () => 0.5;
+  try {
+    const result = store.exchangeMissingPrize();
+    assert.ok(result);
+    assert.equal(result.collectible.id, expected.id);
+    assert.equal(result.cost, MISSING_PRIZE_DUST_COST);
+    assert.equal(result.shardsRemaining, 80);
+    assert.equal(store.state.shards, 80);
+    assert.equal(store.state.owned[expected.id].count, 1);
+    assert.equal(Number.isNaN(Date.parse(store.state.owned[expected.id].firstUnlocked)), false);
+    assert.equal(store.state.stats.duplicates, 0);
+
+    const reloaded = new GameStore();
+    assert.equal(reloaded.state.shards, 80);
+    assert.deepEqual(reloaded.state.owned[expected.id], store.state.owned[expected.id]);
+  } finally {
+    Math.random = originalRandom;
+  }
+});
+
+test('missing-prize exchange: grants the final missing legendary when it is the only prize left', () => {
+  installLocalStorage();
+  const store = new GameStore();
+  const finalPrize = COLLECTIBLES[COLLECTIBLES.length - 1];
+  assert.equal(finalPrize.rarity, 'legendary');
+  grantOwned(store, COLLECTIBLES.slice(0, -1).map((c) => c.id));
+  mut(store).shards = MISSING_PRIZE_DUST_COST;
+
+  const result = store.exchangeMissingPrize();
+  assert.ok(result);
+  assert.equal(result.collectible.id, finalPrize.id);
+  assert.equal(result.shardsRemaining, 0);
+  assert.equal(store.state.owned[finalPrize.id].count, 1);
+  assert.equal(store.ownedCount(), COLLECTIBLES.length);
+});
+
+test('missing-prize exchange: a complete collection is a mutation-free, unsaved no-op', () => {
+  installLocalStorage();
+  const store = new GameStore();
+  grantOwned(store, COLLECTIBLES.map((c) => c.id));
+  mut(store).shards = MISSING_PRIZE_DUST_COST;
+  const before = JSON.stringify(store.state);
+
+  assert.equal(store.exchangeMissingPrize(), null);
+  assert.equal(JSON.stringify(store.state), before);
+  assert.equal(localStorage.getItem(SLOT_KEYS.live), null);
+});
+
+test('missing-prize exchange: reports crossed collection milestones and achievements', () => {
+  installLocalStorage();
+  const store = new GameStore();
+  grantOwned(store, COLLECTIBLES.slice(0, 9).map((c) => c.id));
+  mut(store).shards = MISSING_PRIZE_DUST_COST;
+  const originalRandom = Math.random;
+  Math.random = () => 0;
+  try {
+    const result = store.exchangeMissingPrize();
+    assert.ok(result);
+    assert.equal(store.ownedCount(), 10);
+    assert.deepEqual(result.milestones.map((milestone) => milestone.threshold), [10]);
+    assert.equal(result.achievements.some((achievement) => achievement.id === 'wall_starter'), true);
+  } finally {
+    Math.random = originalRandom;
+  }
+});
+
 test('buy: insufficient coins returns null', () => {
   installLocalStorage();
   const store = new GameStore();
@@ -633,6 +739,32 @@ test('persistence: a new GameStore loads identical state after sync + pull', asy
   assert.equal(reloaded.ownedCount(), expectedOwned);
   assert.equal(reloaded.state.projects.length, expectedProjects);
   assert.deepEqual(reloaded.state.stats, expectedStats);
+});
+
+test('room decorations: a custom arrangement is sanitized, saved and restored', () => {
+  installLocalStorage();
+  const store = new GameStore();
+  grantOwned(store, ['c_gg', 'c_mug']);
+  store.setRoomDecorations([
+    { collectibleId: 'c_gg', zone: 'wall', x: 0.333, y: 0.677 },
+    { collectibleId: 'c_mug', zone: 'wall', x: 0.5, y: 0.5 },
+    { collectibleId: 'not_owned', zone: 'floor', x: 0.5, y: 0.5 },
+  ]);
+
+  assert.deepEqual(store.state.roomDecorations, [
+    { collectibleId: 'c_gg', zone: 'wall', x: 0.325, y: 0.675 },
+  ]);
+  assert.deepEqual(new GameStore().state.roomDecorations, store.state.roomDecorations);
+});
+
+test('room decorations: null restores automatic mode and an empty array remains an intentional empty room', () => {
+  installLocalStorage();
+  const store = new GameStore();
+  grantOwned(store, ['c_gg']);
+  store.setRoomDecorations([]);
+  assert.deepEqual(store.state.roomDecorations, []);
+  store.setRoomDecorations(null);
+  assert.equal(store.state.roomDecorations, null);
 });
 
 // ---------------------------------------------------------------------------

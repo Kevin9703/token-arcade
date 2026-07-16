@@ -3,9 +3,12 @@ import assert from 'node:assert/strict';
 
 import {
   COLLECTION_MILESTONES,
+  MISSING_PRIZE_DUST_COST,
   collectionMilestoneTier,
   crossedCollectionMilestones,
   earnedCollectionMilestones,
+  missingCollectibles,
+  nextCollectionMilestone,
   validOwnedCount,
 } from '../../src/domain/collection';
 import { COLLECTIBLES } from '../../src/content';
@@ -32,6 +35,22 @@ test('validOwnedCount ignores unknown IDs, zero counts, and duplicate quantities
   assert.equal(validOwnedCount(owned), 2);
 });
 
+test('missingCollectibles returns every catalog prize not positively owned', () => {
+  const [positive, zero, negative] = COLLECTIBLES;
+  const owned = ownedIds([positive.id, zero.id, negative.id]);
+  owned[positive.id].count = 4;
+  owned[zero.id].count = 0;
+  owned[negative.id].count = -1;
+  owned.retired_prize = { count: 10, firstUnlocked: FIRST_UNLOCKED };
+
+  const missing = missingCollectibles(owned);
+  assert.equal(missing.length, COLLECTIBLES.length - 1);
+  assert.equal(missing.some((collectible) => collectible.id === positive.id), false);
+  assert.equal(missing.some((collectible) => collectible.id === zero.id), true);
+  assert.equal(missing.some((collectible) => collectible.id === negative.id), true);
+  assert.equal(missing.some((collectible) => collectible.id === 'retired_prize'), false);
+});
+
 test('earned milestones and tier are derived from valid unique count only', () => {
   const cases = [
     { count: 0, tiers: [], tier: 0 },
@@ -46,6 +65,31 @@ test('earned milestones and tier are derived from valid unique count only', () =
     assert.deepEqual(earnedCollectionMilestones(c.count).map((m) => m.threshold), c.tiers);
     assert.equal(collectionMilestoneTier(c.count), c.tier);
   }
+});
+
+test('nextCollectionMilestone reports the first goal above each boundary', () => {
+  const cases = [
+    { count: 0, threshold: 10, remaining: 10 },
+    { count: 9, threshold: 10, remaining: 1 },
+    { count: 10, threshold: 25, remaining: 15 },
+    { count: 24, threshold: 25, remaining: 1 },
+    { count: 25, threshold: 40, remaining: 15 },
+    { count: 39, threshold: 40, remaining: 1 },
+    { count: 40, threshold: 50, remaining: 10 },
+    { count: 49, threshold: 50, remaining: 1 },
+  ];
+  for (const c of cases) {
+    const next = nextCollectionMilestone(c.count);
+    assert.ok(next);
+    assert.equal(next.milestone.threshold, c.threshold);
+    assert.equal(next.remaining, c.remaining);
+  }
+  assert.equal(nextCollectionMilestone(50), null);
+  assert.equal(nextCollectionMilestone(51), null);
+});
+
+test('missing-prize exchange cost is fixed at 120 dust', () => {
+  assert.equal(MISSING_PRIZE_DUST_COST, 120);
 });
 
 test('crossedCollectionMilestones returns every crossed threshold in ascending order', () => {

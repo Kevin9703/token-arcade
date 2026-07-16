@@ -7,7 +7,14 @@
  */
 
 import { COLLECTIBLES } from '../content/collectibles';
-import type { CollectionMilestone, OwnedEntry } from '../core/types';
+import type { Collectible, CollectionMilestone, OwnedEntry } from '../core/types';
+
+export const MISSING_PRIZE_DUST_COST = 120;
+
+export interface NextCollectionMilestone {
+  milestone: CollectionMilestone;
+  remaining: number;
+}
 
 export const COLLECTION_MILESTONES: readonly CollectionMilestone[] = [
   {
@@ -51,6 +58,11 @@ export function validOwnedCount(owned: Readonly<Record<string, OwnedEntry>>): nu
   return count;
 }
 
+/** Valid catalog prizes whose owned count is absent or non-positive. */
+export function missingCollectibles(owned: Readonly<Record<string, OwnedEntry>>): Collectible[] {
+  return COLLECTIBLES.filter((collectible) => (owned[collectible.id]?.count ?? 0) <= 0);
+}
+
 /** All permanent display upgrades earned at the supplied valid unique count. */
 export function earnedCollectionMilestones(uniqueCount: number): CollectionMilestone[] {
   return COLLECTION_MILESTONES.filter((milestone) => uniqueCount >= milestone.threshold);
@@ -60,6 +72,12 @@ export function earnedCollectionMilestones(uniqueCount: number): CollectionMiles
 export function collectionMilestoneTier(uniqueCount: number): number {
   const earned = earnedCollectionMilestones(uniqueCount);
   return earned.length ? earned[earned.length - 1].tier : 0;
+}
+
+/** The first permanent collection goal not yet reached. */
+export function nextCollectionMilestone(uniqueCount: number): NextCollectionMilestone | null {
+  const milestone = COLLECTION_MILESTONES.find((candidate) => candidate.threshold > uniqueCount);
+  return milestone ? { milestone, remaining: milestone.threshold - uniqueCount } : null;
 }
 
 /** Every threshold crossed by one mutation, always in ascending threshold order. */

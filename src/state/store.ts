@@ -20,9 +20,14 @@ import {
   collectionMilestoneTier,
   crossedCollectionMilestones,
   earnedCollectionMilestones,
+  MISSING_PRIZE_DUST_COST,
+  missingCollectibles,
+  nextCollectionMilestone as getNextCollectionMilestone,
   validOwnedCount,
 } from '../domain/collection';
+import type { NextCollectionMilestone } from '../domain/collection';
 import { isP1CosmeticType, isProfileFrameId, isRoomThemeId } from '../domain/cosmetics';
+import { sanitizeRoomDecorations } from '../domain/roomDecorations';
 import { ACHIEVEMENTS, COLLECTIBLES } from '../content';
 import { fetchLive } from '../data/liveSource';
 import { seedMock, advanceMock } from '../data/mockSource';
@@ -44,6 +49,8 @@ import type {
   RarityKey,
   RoomThemeId,
   GameSettings,
+  MissingPrizeExchangeResult,
+  RoomDecorationPlacement,
 } from '../core/types';
 
 function freshState(mode: DataMode, settings?: GameSettings): GameState {
@@ -63,6 +70,7 @@ function freshState(mode: DataMode, settings?: GameSettings): GameState {
     achievements: {}, // id -> ISO date unlocked
     mockWorld: null,
     cosmetics: { roomTheme: 'base', profileFrame: 'base' },
+    roomDecorations: null,
     settings: settings ? { ...settings } : { muted: false, language: detectLocale(), fps: 'auto', playerName: '' },
   };
 }
@@ -124,6 +132,7 @@ export class GameStore {
     if (!['unscanned', 'no-history', 'live-history'].includes(merged.historyScan)) merged.historyScan = 'unscanned';
     if (!isRoomThemeId(merged.cosmetics.roomTheme)) merged.cosmetics.roomTheme = 'base';
     if (!isProfileFrameId(merged.cosmetics.profileFrame)) merged.cosmetics.profileFrame = 'base';
+    merged.roomDecorations = sanitizeRoomDecorations(merged.owned, saved.roomDecorations);
     return merged;
   }
 
@@ -156,6 +165,13 @@ export class GameStore {
    * Trimmed and length-capped so it always fits the card's nameplate. */
   setPlayerName(name: string): void {
     this._state.settings.playerName = name.trim().slice(0, 14);
+    this.save();
+  }
+
+  /** Persist a custom room arrangement. Passing null restores the live
+   * automatic layout that always showcases the newest prize in each family. */
+  setRoomDecorations(placements: readonly RoomDecorationPlacement[] | null): void {
+    this._state.roomDecorations = sanitizeRoomDecorations(this._state.owned, placements);
     this.save();
   }
 
@@ -312,6 +328,27 @@ export class GameStore {
     return null;
   }
 
+  exchangeMissingPrize(): MissingPrizeExchangeResult | null {
+    if (this._state.shards < MISSING_PRIZE_DUST_COST) return null;
+    const missing = missingCollectibles(this._state.owned);
+    if (!missing.length) return null;
+
+    const ownedBefore = this.ownedCount();
+    const collectible = missing[Math.floor(Math.random() * missing.length)];
+    this._state.shards -= MISSING_PRIZE_DUST_COST;
+    this._state.owned[collectible.id] = { count: 1, firstUnlocked: new Date().toISOString() };
+    const achievements = this.checkAchievements();
+    const milestones = crossedCollectionMilestones(ownedBefore, this.ownedCount());
+    this.save();
+    return {
+      collectible,
+      cost: MISSING_PRIZE_DUST_COST,
+      shardsRemaining: this._state.shards,
+      achievements,
+      milestones,
+    };
+  }
+
   checkAchievements(): Achievement[] {
     const unlocked: Achievement[] = [];
     for (const a of ACHIEVEMENTS) {
@@ -341,6 +378,11 @@ export class GameStore {
   /** Highest permanent collection-display tier earned by this slot (0..4). */
   collectionMilestoneTier(): number {
     return collectionMilestoneTier(this.ownedCount());
+  }
+
+  /** The next permanent collection goal for the current slot. */
+  nextCollectionMilestone(): NextCollectionMilestone | null {
+    return getNextCollectionMilestone(this.ownedCount());
   }
 
   /** True when a cosmetic shop card has no unowned matching reward left. */
