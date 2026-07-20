@@ -65,6 +65,12 @@ unsaved-changes close flow.
   active pointer sequence and temporarily suppress Home hotspots until the
   pointer is released. A rapid second activation must never spend coins or
   trigger any Home command.
+- **Resolved 2026-07-21**: every editor dismissal (CLOSE, DISCARD?, SAVE) now
+  routes through `closeDecorationEditor()`, which arms a 400 ms global click
+  suppression on the Stage before Home's hotspots reactivate. Regression is
+  automated in `scripts/shots-decor-polish.mjs`: with 5,000 coins, a
+  human-speed double-click on CLOSE leaves the balance untouched (the script
+  reports FAIL and the leaked purchase when the guard is removed).
 
 ### Remaining Visual/Product Issues
 

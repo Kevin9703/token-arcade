@@ -685,6 +685,10 @@ export class RoomDecorController {
     this.decorDrag = null;
     this.decorSelectedId = null;
     this.decorCloseArmedUntil = 0;
+    // The frame after closing, Home's hotspots (shop cards, bank, prize wall)
+    // reoccupy these coordinates. Swallow clicks briefly so a rapid second
+    // CLOSE/SAVE click can't fall through and, e.g., buy the trophy card.
+    this.ctx.stage.suppressClicks(400);
   }
 
   drawEditor(g: CanvasRenderingContext2D, now: number): void {

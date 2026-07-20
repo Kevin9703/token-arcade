@@ -77,6 +77,21 @@ try {
   // Second click discards.
   await page.mouse.click(1448 + 61, 888 + 31); await sleep(400); await shot('room-after-discard');
 
+  // Regression (design-qa 2026-07-20 blocking issue): a rapid double-click on
+  // CLOSE must not fall through to the Home shop card at the same coordinates
+  // and spend coins. Give the player enough coins that the trophy-card buy
+  // WOULD succeed if the click leaked, then double-click CLOSE fast.
+  await page.evaluate(() => { window.arcade.store.state.coins = 5000; });
+  await page.mouse.click(1146, 865); await sleep(500); // open editor (clean draft -> CLOSE closes on first click)
+  const coinsBefore = await page.evaluate(() => window.arcade.store.state.coins);
+  await page.mouse.click(1448 + 61, 888 + 31);
+  await sleep(80); // a frame renders; Home hotspots reoccupy these coordinates
+  await page.mouse.click(1448 + 61, 888 + 31); // human-speed second click, same spot
+  await sleep(500);
+  const coinsAfter = await page.evaluate(() => window.arcade.store.state.coins);
+  if (coinsAfter !== coinsBefore) log('FAIL: double-click CLOSE leaked to Home and spent coins:', coinsBefore, '->', coinsAfter);
+  else log('PASS: double-click CLOSE spent no coins (' + coinsAfter + ')');
+
   // 中文 quick pass of the editor chrome.
   await page.evaluate(() => window.arcade.store.setLanguage('zh-CN'));
   await page.mouse.click(1146, 865); await sleep(400); await shot('editor-zh');

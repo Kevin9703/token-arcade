@@ -242,6 +242,18 @@ export class Stage {
     if (until > this.activeUntil) this.activeUntil = until;
   }
 
+  /**
+   * Ignore click events for the next `ms` milliseconds. A screen calls this
+   * when dismissing a modal layer (e.g. decorate mode) so that a rapid second
+   * click on the same spot cannot fall through onto whatever hotspot reappears
+   * underneath — without this, double-clicking CLOSE could buy the shop card
+   * that occupies those coordinates on the screen below.
+   */
+  suppressClicks(ms: number): void {
+    const until = performance.now() + ms;
+    if (until > this.suppressClicksUntil) this.suppressClicksUntil = until;
+  }
+
   /** Set the frame-rate cap: 'auto' (30fps idle, 60fps while interacting), or a
    * flat 30 / 60. Applied on the very next frame. */
   setFrameMode(mode: FrameMode): void {
