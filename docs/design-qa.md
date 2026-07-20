@@ -4,7 +4,7 @@ Date: 2026-07-16
 
 Reference: `assets/prototypes/room-decoration-mode-v1.png`
 
-Status: PASS
+Status: CONDITIONAL PASS
 
 ## Visual Review
 
@@ -36,3 +36,52 @@ The mock shows hard glowing sockets. The implementation uses broad magnetic scen
 - `npm run typecheck`: pass.
 - `npm test`: 142 tests pass.
 - `npm run build`: pass.
+
+## Re-Audit: 2026-07-20
+
+Viewport: 1600 x 1000. Reviewed Home, Decorate Mode, inventory selection,
+click-to-place, drag-to-place, incompatible drops, Auto Arrange, and the
+unsaved-changes close flow.
+
+### Passed
+
+- Decorate Mode now reads as a real editing state rather than loose controls on
+  top of Home. Zone outlines, capacity counters, the inventory bench, filters,
+  paging, and actions form one understandable workflow.
+- Click placement and drag placement both work. Compatible drops land cleanly;
+  incompatible drops preserve the current layout and explain the rejection.
+- Inventory tiles distinguish placed prizes, selected prizes, and available
+  prizes. The Home entry badge exposes that there are prizes still available to
+  place.
+- Auto Arrange gives immediate confirmation. Unsaved changes produce a clear,
+  high-contrast warning before a normal single-click close can discard them.
+
+### Blocking Interaction Issue
+
+- Rapidly activating `CLOSE` twice can close the editor on the first activation
+  and send the second activation to the Home shop card occupying the same screen
+  coordinates. This was reproduced with the 3,000-coin Trophy Card purchase.
+- Acceptance criterion: closing or discarding Decorate Mode must consume the
+  active pointer sequence and temporarily suppress Home hotspots until the
+  pointer is released. A rapid second activation must never spend coins or
+  trigger any Home command.
+
+### Remaining Visual/Product Issues
+
+- The editor is substantially better than the resting Home composition. Outside
+  edit mode, wall prizes still float in a bare rectangle and floor prizes read as
+  separate objects placed near each other, not a deliberately staged display.
+- The Home `DECOR` entry sits in leftover floor space between the player and Prize
+  Wall. It is functional, but it does not yet feel physically integrated into
+  the arcade scene.
+- The badge says how many prizes are available to place, but the editor opens on
+  a mixed `ALL` inventory. Add an `UNPLACED` filter or open on unplaced prizes
+  when the badge is non-zero so the promised task is immediately visible.
+- At reduced browser widths the fixed canvas scales the entire editor down;
+  helper text, filters, and counters become too small before the layout changes.
+
+### Accessibility Risk
+
+- The browser accessibility tree exposes the app as one generic canvas instead
+  of named controls. The visual editor can be reviewed with a mouse, but keyboard
+  operation and screen-reader access are not currently available.

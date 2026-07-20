@@ -50,16 +50,86 @@ const INK = '#f6f4ff';
 type Rect = { x: number; y: number; w: number; h: number };
 type DecorationFilter = RoomDecorationZone | 'all';
 
-/** Magnetic scenery zones. They protect machines and UI, but placements remain
- * free within each rectangle instead of snapping to a handful of hard slots. */
+/** Scenery zones — each is the bounding box of a piece of display furniture
+ * (pegboard / riser / rug) rather than an abstract rectangle. They protect
+ * machines and UI; x is free (grid-snapped) while y quantizes to the
+ * furniture's rows/baseline. Floor bottom edge = riser feet at y868; buddy
+ * ends above the DECOR entry card so the rug never slides under the button. */
 const DECORATION_ZONES: Readonly<Record<RoomDecorationZone, Rect>> = {
   wall: { x: 405, y: 214, w: 198, h: 286 },
-  floor: { x: 398, y: 785, w: 214, h: 83 },
-  buddy: { x: 1080, y: 708, w: 132, h: 176 },
+  floor: { x: 398, y: 768, w: 214, h: 100 },
+  buddy: { x: 1080, y: 700, w: 132, h: 136 },
 };
 
 const DECOR_INVENTORY = { x: 16, y: 878, w: 1568, h: 112 };
 const DECOR_PAGE_SIZE = 8;
+
+/** The DECOR entry card on the Home screen; the buddy rug also keys off it so
+ * the rug never slides under the button. */
+const DECOR_ENTRY = { x: 1084, y: 838, w: 124, h: 54 };
+
+// ---- furniture geometry ---------------------------------------------------
+// Prizes no longer float at arbitrary points inside a rectangle. Each zone has
+// a piece of furniture (generated art with a procedural fallback) that defines
+// WHERE things rest, the way Animal Crossing furniture defines surfaces:
+//   wall  -> a pegboard display with two hook rails; prizes hang from a rail
+//   floor -> a low display riser; prizes stand on its top surface
+//   buddy -> a cozy rug; buddies sit on it
+// Fractions are MEASURED off the production sprites (see docs/
+// ROOM_DISPLAY_INFRASTRUCTURE_ASSETS.md): the pegboard's magenta rails sit at
+// y=65/172 of 248, the riser's gold lip at y=25 of 48, the rug fills its box.
+const WALL_BOARD_ART = { w: 198, h: 248, rails: [65 / 248, 172 / 248] as const };
+const FLOOR_RISER_ART = { w: 232, h: 48, surface: 25 / 48 };
+const BUDDY_RUG_ART = { w: 148, h: 70, sit: 0.52 };
+
+/** Stored y values for the two wall rails — exact 40-grid steps (10/40, 30/40)
+ * so sanitizeRoomDecorations round-trips them unchanged. */
+const WALL_ROW_Y = [0.25, 0.75] as const;
+
+function clamp01(v: number): number {
+  return Math.max(0, Math.min(1, v));
+}
+
+/** The wall board, contain-fit by width and vertically centered in its zone. */
+function wallBoardRect(): Rect {
+  const z = DECORATION_ZONES.wall;
+  const h = z.w * (WALL_BOARD_ART.h / WALL_BOARD_ART.w);
+  return { x: z.x, y: z.y + (z.h - h) / 2, w: z.w, h };
+}
+
+/** Screen y of a wall hook rail (row 0 = upper, 1 = lower). */
+function wallRailY(row: 0 | 1): number {
+  const b = wallBoardRect();
+  return b.y + b.h * WALL_BOARD_ART.rails[row];
+}
+
+/** The floor riser, slightly wider than its zone, feet on the zone bottom. */
+function floorRiserRect(): Rect {
+  const z = DECORATION_ZONES.floor;
+  const w = z.w + 18;
+  const h = w * (FLOOR_RISER_ART.h / FLOOR_RISER_ART.w);
+  return { x: z.x - 9, y: z.y + z.h - h, w, h };
+}
+
+/** Screen y where floor prizes' feet rest (on the riser's top surface). */
+function floorBaselineY(): number {
+  const r = floorRiserRect();
+  return r.y + r.h * FLOOR_RISER_ART.surface + 2;
+}
+
+/** The buddy rug, kept fully clear of the DECOR entry card below it. */
+function buddyRugRect(): Rect {
+  const z = DECORATION_ZONES.buddy;
+  const w = z.w + 16;
+  const h = w * (BUDDY_RUG_ART.h / BUDDY_RUG_ART.w);
+  return { x: z.x - 8, y: DECOR_ENTRY.y - 2 - h, w, h };
+}
+
+/** Screen y where buddies' feet rest on the rug. */
+function buddyBaselineY(): number {
+  const r = buddyRugRect();
+  return r.y + r.h * BUDDY_RUG_ART.sit;
+}
 
 /** A tiny pencil glyph (edit affordance), centered on (cx, cy). A diagonal
  *  shaft with a nib at the lower-left, sized by `s`. Shared with the player
@@ -137,7 +207,9 @@ export class RoomDecorController {
     this.roomDisplayTip = null;
     if (this.decorEditing) return;
     const placements = resolveRoomDecorations(this.ctx.store.state.owned, this.ctx.store.state.roomDecorations);
-    this.drawRoomDisplayInfrastructure(g);
+    // Only furnish zones that hold at least one prize: a fresh room stays the
+    // clean painted arcade, and furniture appears the moment it has a job.
+    this.drawRoomDisplayInfrastructure(g, false, new Set(placements.map((p) => p.zone)));
 
     for (const placement of this.sortedPlacements(placements)) {
       const collectible = collectibleById[placement.collectibleId];
@@ -174,30 +246,145 @@ export class RoomDecorController {
     return hash;
   }
 
-  /** Permanent collection-milestone furniture (neon shelf / pedestal). */
-  private drawRoomDisplayInfrastructure(g: CanvasRenderingContext2D, editing = false): void {
+  /** The zones' furniture. Every display area is a physical object prizes rest
+   * ON — a wall pegboard, a floor riser, a buddy rug — so nothing floats over
+   * the painted room. Collection milestones upgrade the furniture: the tier-1
+   * neon shelf mounts under the pegboard, the tier-3 collector pedestal
+   * replaces the plain riser. Each asset has a procedural fallback. */
+  private drawRoomDisplayInfrastructure(
+    g: CanvasRenderingContext2D,
+    editing = false,
+    occupied?: ReadonlySet<RoomDecorationZone>,
+  ): void {
     const tier = this.ctx.store.collectionMilestoneTier();
-    if (tier >= 1) {
+    const wants = (zone: RoomDecorationZone): boolean => editing || !occupied || occupied.has(zone);
+
+    // Wall pegboard.
+    const board = wallBoardRect();
+    if (wants('wall')) {
+      const boardImg = this.ctx.assets.get('decorWallBoard');
+      if (boardImg) {
+        drawImageSmooth(g, boardImg, board.x, board.y, board.w, board.h);
+      } else {
+        this.drawWallBoardFallback(g, board);
+      }
+    }
+    if (wants('wall') && tier >= 1) {
       const shelf = this.ctx.assets.get('collectionNeonShelf');
       if (shelf) {
-        const zone = DECORATION_ZONES.wall;
-        const cx = zone.x + zone.w / 2;
-        const cy = zone.y + zone.h - 7;
+        const cx = board.x + board.w / 2;
+        const cy = board.y + board.h + 8;
         g.save();
         g.shadowColor = MAGENTA;
         g.shadowBlur = editing ? 14 : 7;
-        drawImageContain(g, shelf, cx, cy, zone.w + 8, 25);
+        drawImageContain(g, shelf, cx, cy, board.w + 8, 25);
         g.restore();
-        drawImageContain(g, shelf, cx, cy, zone.w + 8, 25);
+        drawImageContain(g, shelf, cx, cy, board.w + 8, 25);
       }
     }
-    if (tier >= 3) {
-      const pedestal = this.ctx.assets.get('collectionPedestal');
+
+    // Floor riser — upgraded to the collector pedestal art at tier 3.
+    if (wants('floor')) {
+      const riser = floorRiserRect();
+      const pedestal = tier >= 3 ? this.ctx.assets.get('collectionPedestal') : null;
+      const riserImg = this.ctx.assets.get('decorFloorRiser');
       if (pedestal) {
-        const zone = DECORATION_ZONES.floor;
-        drawImageContain(g, pedestal, zone.x + zone.w / 2, zone.y + zone.h - 3, zone.w + 18, 55);
+        drawImageContain(g, pedestal, riser.x + riser.w / 2, riser.y + riser.h - riser.h / 2, riser.w, riser.h + 12);
+      } else if (riserImg) {
+        drawImageSmooth(g, riserImg, riser.x, riser.y, riser.w, riser.h);
+      } else {
+        this.drawFloorRiserFallback(g, riser);
       }
     }
+
+    // Buddy rug.
+    if (wants('buddy')) {
+      const rug = buddyRugRect();
+      const rugImg = this.ctx.assets.get('decorBuddyRug');
+      if (rugImg) {
+        drawImageSmooth(g, rugImg, rug.x, rug.y, rug.w, rug.h);
+      } else {
+        this.drawBuddyRugFallback(g, rug);
+      }
+    }
+  }
+
+  /** Procedural pegboard: dark panel, peg-hole texture, two magenta rails. */
+  private drawWallBoardFallback(g: CanvasRenderingContext2D, b: Rect): void {
+    g.save();
+    rrect(g, b.x, b.y, b.w, b.h, 6);
+    g.fillStyle = '#1b1230';
+    g.fill();
+    g.strokeStyle = '#3a3452';
+    g.lineWidth = 3;
+    g.stroke();
+    g.fillStyle = 'rgba(10,7,20,0.85)';
+    for (let py = b.y + 12; py < b.y + b.h - 10; py += 14) {
+      for (let px = b.x + 10; px < b.x + b.w - 8; px += 14) {
+        g.fillRect(px, py, 2, 2);
+      }
+    }
+    for (const row of [0, 1] as const) {
+      const y = b.y + b.h * WALL_BOARD_ART.rails[row];
+      g.save();
+      g.shadowColor = MAGENTA;
+      g.shadowBlur = 6;
+      g.fillStyle = MAGENTA;
+      g.fillRect(b.x + 8, y, b.w - 16, 2);
+      g.restore();
+      g.fillStyle = '#8a3a85';
+      g.fillRect(b.x + 8, y + 2, b.w - 16, 1);
+    }
+    g.restore();
+  }
+
+  /** Procedural riser: checkered top, dark face, glowing gold lip. */
+  private drawFloorRiserFallback(g: CanvasRenderingContext2D, r: Rect): void {
+    const topH = r.h * FLOOR_RISER_ART.surface;
+    g.save();
+    g.fillStyle = '#241a38';
+    g.fillRect(r.x, r.y, r.w, topH);
+    g.fillStyle = '#2c2144';
+    const cell = 16;
+    for (let i = 0; i < Math.ceil(r.w / cell); i++) {
+      if (i % 2 === 0) g.fillRect(r.x + i * cell, r.y, Math.min(cell, r.x + r.w - (r.x + i * cell)), topH);
+    }
+    g.save();
+    g.shadowColor = GOLD;
+    g.shadowBlur = 5;
+    g.fillStyle = GOLD;
+    g.fillRect(r.x, r.y + topH, r.w, 2);
+    g.restore();
+    g.fillStyle = '#171126';
+    g.fillRect(r.x, r.y + topH + 2, r.w, r.h - topH - 2);
+    g.fillStyle = CYAN;
+    for (let i = 1; i <= 4; i++) {
+      g.fillRect(r.x + (r.w * i) / 5, r.y + topH + (r.h - topH) / 2, 3, 3);
+    }
+    g.restore();
+  }
+
+  /** Procedural rug: cyan-bordered oval with a gold star motif. */
+  private drawBuddyRugFallback(g: CanvasRenderingContext2D, r: Rect): void {
+    const cx = r.x + r.w / 2;
+    const cy = r.y + r.h / 2;
+    g.save();
+    g.beginPath();
+    g.ellipse(cx, cy, r.w / 2, r.h / 2, 0, 0, Math.PI * 2);
+    g.fillStyle = '#1e1633';
+    g.fill();
+    g.strokeStyle = CYAN;
+    g.lineWidth = 2.5;
+    g.stroke();
+    g.beginPath();
+    g.ellipse(cx, cy, r.w / 2 - 5, r.h / 2 - 4, 0, 0, Math.PI * 2);
+    g.strokeStyle = '#2f8a80';
+    g.lineWidth = 1;
+    g.stroke();
+    g.fillStyle = GOLD;
+    g.fillRect(cx - 1.5, cy - 6, 3, 12);
+    g.fillRect(cx - 6, cy - 1.5, 12, 3);
+    g.restore();
   }
 
   /** One scenery zone in the editor. Zones are living UI now: marching-ants
@@ -283,15 +470,36 @@ export class RoomDecorController {
     return collectible.type === 'trophy' ? 70 : 64;
   }
 
+  /** Placement → sprite CENTER on screen. Prizes rest on furniture instead of
+   * floating at free points: wall prizes hang centered on one of two hook
+   * rails; floor/buddy prizes are bottom-anchored so their FEET sit on the
+   * riser surface / rug line regardless of sprite size. x stays free (grid-
+   * snapped) along the row. Stored y remains a 0..1 fraction so old saves and
+   * sanitize round-trips keep working — it now selects/encodes the row. */
   private decorationPoint(placement: RoomDecorationPlacement, collectible: Collectible): Point {
     const zone = DECORATION_ZONES[placement.zone];
     const size = this.decorationSize(collectible);
     const padX = Math.min(size * 0.48, zone.w * 0.24);
-    const padY = Math.min(size * 0.48, zone.h * 0.3);
-    return {
-      x: zone.x + padX + placement.x * Math.max(0, zone.w - padX * 2),
-      y: zone.y + padY + placement.y * Math.max(0, zone.h - padY * 2),
-    };
+    const x = zone.x + padX + placement.x * Math.max(0, zone.w - padX * 2);
+    if (placement.zone === 'wall') {
+      // Nearer stored row wins; the sprite HANGS from the rail — its top edge
+      // tucks 6px behind the hooks, like a real pegboard item.
+      const row = placement.y < 0.5 ? 0 : 1;
+      return { x, y: wallRailY(row) + size / 2 - 6 };
+    }
+    const baseline = placement.zone === 'floor' ? floorBaselineY() : buddyBaselineY();
+    return { x, y: baseline - size / 2 };
+  }
+
+  /** Quantize a stored placement onto its zone's row structure so the ghost
+   * previews and the final resting spot are byte-identical. */
+  private snapPlacementToRow(placement: RoomDecorationPlacement): RoomDecorationPlacement {
+    if (placement.zone === 'wall') {
+      return { ...placement, y: placement.y < 0.5 ? WALL_ROW_Y[0] : WALL_ROW_Y[1] };
+    }
+    // Floor/buddy y is ignored by rendering (baseline-anchored); store the
+    // grid-aligned midpoint so saves stay stable and sanitize-safe.
+    return { ...placement, y: 0.5 };
   }
 
   private drawRoomCollectible(
@@ -665,10 +873,11 @@ export class RoomDecorController {
   }
 
   /** The placement a click/drop at `point` would produce: normalized, snapped
-   * to the magnetic grid — the editor-side mirror of sanitizeRoomDecorations. */
+   * to the magnetic grid AND onto the zone's row structure — the editor-side
+   * mirror of sanitizeRoomDecorations plus the furniture baseline rules. */
   private snappedPlacement(collectibleId: string, zone: RoomDecorationZone, point: Point): RoomDecorationPlacement {
     const raw = this.decorationPlacementAt(collectibleId, zone, point);
-    return { ...raw, x: alignRoomDecorationCoord(raw.x), y: alignRoomDecorationCoord(raw.y) };
+    return this.snapPlacementToRow({ ...raw, x: alignRoomDecorationCoord(raw.x), y: alignRoomDecorationCoord(raw.y) });
   }
 
   private drawDecorationInventory(g: CanvasRenderingContext2D, now: number): void {
@@ -991,33 +1200,36 @@ export class RoomDecorController {
     };
   }
 
+  /** Slide the candidate along its row (and, on the wall, onto the other hook
+   * rail) until it stops overlapping neighbours. Row-based placement means the
+   * search is one-dimensional per row instead of a 2D scatter. */
   private findOpenDecorationPosition(
     candidate: RoomDecorationPlacement,
     collectible: Collectible,
     existing: readonly RoomDecorationPlacement[],
   ): RoomDecorationPlacement {
-    const offsets: Array<[number, number]> = [
-      [0, 0], [0.15, 0], [-0.15, 0], [0, 0.18], [0, -0.18],
-      [0.15, 0.18], [-0.15, 0.18], [0.28, 0], [-0.28, 0],
-    ];
-    const sameZone = existing.filter((placement) => placement.zone === candidate.zone);
-    for (const [dx, dy] of offsets) {
-      const attempt = {
-        ...candidate,
-        x: Math.max(0, Math.min(1, candidate.x + dx)),
-        y: Math.max(0, Math.min(1, candidate.y + dy)),
-      };
-      const point = this.decorationPoint(attempt, collectible);
-      const clear = sameZone.every((placement) => {
-        const other = collectibleById[placement.collectibleId];
-        if (!other) return true;
-        const otherPoint = this.decorationPoint(placement, other);
-        const minimum = (this.decorationSize(collectible) + this.decorationSize(other)) * 0.38;
-        return Math.hypot(point.x - otherPoint.x, point.y - otherPoint.y) >= minimum;
-      });
-      if (clear) return attempt;
+    const snapped = this.snapPlacementToRow(candidate);
+    const xOffsets = [0, 0.1, -0.1, 0.2, -0.2, 0.3, -0.3, 0.4, -0.4];
+    // Wall prizes may hop to the other rail once the preferred one is packed.
+    const rows: number[] = snapped.zone === 'wall'
+      ? (snapped.y === WALL_ROW_Y[0] ? [WALL_ROW_Y[0], WALL_ROW_Y[1]] : [WALL_ROW_Y[1], WALL_ROW_Y[0]])
+      : [snapped.y];
+    const sameZone = existing.filter((placement) => placement.zone === snapped.zone);
+    for (const y of rows) {
+      for (const dx of xOffsets) {
+        const attempt = { ...snapped, x: clamp01(snapped.x + dx), y };
+        const point = this.decorationPoint(attempt, collectible);
+        const clear = sameZone.every((placement) => {
+          const other = collectibleById[placement.collectibleId];
+          if (!other) return true;
+          const otherPoint = this.decorationPoint(placement, other);
+          const minimum = (this.decorationSize(collectible) + this.decorationSize(other)) * 0.38;
+          return Math.hypot(point.x - otherPoint.x, point.y - otherPoint.y) >= minimum;
+        });
+        if (clear) return attempt;
+      }
     }
-    return candidate;
+    return snapped;
   }
 
   private decorationZoneAt(point: Point): RoomDecorationZone | null {

@@ -69,7 +69,7 @@ try {
   await page.mouse.move(268 + 34, 886 + 32); await page.mouse.down();
   await page.mouse.move(500, 320, { steps: 12 }); await sleep(200); await shot('editor-drag-wrong-zone');
   // ...then over its correct floor zone -> green + landing ghost.
-  await page.mouse.move(505, 815, { steps: 12 }); await sleep(200); await shot('editor-drag-right-zone');
+  await page.mouse.move(505, 810, { steps: 12 }); await sleep(200); await shot('editor-drag-right-zone');
   await page.mouse.up(); await sleep(400); await shot('editor-after-drop');
 
   // Dirty state: SAVE should pulse. CLOSE first click -> DISCARD? confirm.

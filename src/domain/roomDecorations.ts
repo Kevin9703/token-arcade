@@ -21,12 +21,15 @@ export const ROOM_DECORATION_CAPACITY: Readonly<Record<RoomDecorationZone, numbe
   buddy: 2,
 };
 
+// Auto-arrange drops each family's newest prize at a tidy default. Wall y
+// selects a pegboard hook rail (0.25 = upper, 0.75 = lower); floor/buddy y is
+// baseline-anchored by the renderer, so 0.5 is simply the stable stored value.
 const AUTO_POSITIONS: Readonly<Record<CollectibleType, { x: number; y: number }>> = {
-  sign: { x: 0.28, y: 0.34 },
-  badge: { x: 0.74, y: 0.6 },
-  decor: { x: 0.22, y: 0.56 },
-  trophy: { x: 0.72, y: 0.48 },
-  buddy: { x: 0.42, y: 0.55 },
+  sign: { x: 0.3, y: 0.25 },
+  badge: { x: 0.7, y: 0.75 },
+  decor: { x: 0.25, y: 0.5 },
+  trophy: { x: 0.75, y: 0.5 },
+  buddy: { x: 0.5, y: 0.5 },
   frame: { x: 0.5, y: 0.5 },
   theme: { x: 0.5, y: 0.5 },
 };

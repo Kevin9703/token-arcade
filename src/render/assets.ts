@@ -19,6 +19,10 @@ export type AssetName =
   | 'collectionPrizeLights'
   | 'collectionPedestal'
   | 'collectionCrownMarquee'
+  // Room-decoration furniture: the surfaces player prizes rest on.
+  | 'decorWallBoard'
+  | 'decorFloorRiser'
+  | 'decorBuddyRug'
   | 'cabinetSkins'
   | 'capsuleRoomBg'
   | 'capsuleMachine'
@@ -101,6 +105,9 @@ const SRC: Record<AssetName, string> = {
   collectionPrizeLights: '/assets/collection/prize-lights.png',
   collectionPedestal: '/assets/collection/collector-pedestal.png',
   collectionCrownMarquee: '/assets/collection/crown-marquee.png',
+  decorWallBoard: '/assets/collection/wall-display-board.png',
+  decorFloorRiser: '/assets/collection/floor-display-riser.png',
+  decorBuddyRug: '/assets/collection/buddy-rug.png',
   cabinetSkins: '/assets/cabinet-skins.png',
   capsuleRoomBg: '/assets/capsule/room-bg.png',
   capsuleMachine: '/assets/capsule/machine.png',
