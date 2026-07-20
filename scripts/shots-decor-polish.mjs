@@ -91,6 +91,7 @@ try {
   const coinsAfter = await page.evaluate(() => window.arcade.store.state.coins);
   if (coinsAfter !== coinsBefore) log('FAIL: double-click CLOSE leaked to Home and spent coins:', coinsBefore, '->', coinsAfter);
   else log('PASS: double-click CLOSE spent no coins (' + coinsAfter + ')');
+  await shot('home-after-doubleclick-close');
 
   // 中文 quick pass of the editor chrome.
   await page.evaluate(() => window.arcade.store.setLanguage('zh-CN'));
