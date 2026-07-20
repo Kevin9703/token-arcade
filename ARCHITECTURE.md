@@ -74,6 +74,8 @@ screens/     Composition. Reads the store, draws with render/, wires input.
              Screens receive ALL services (stage, store, router, fx, sound,
              assets, modal openers) via ScreenContext — no module singletons.
   roomScreen.ts cabinetScreen.ts capsuleScreen.ts achievementScreen.ts
+  roomDecor.ts   RoomDecorController: the Home room's placed-prize displays +
+                 the decorate-mode editor, composed by RoomScreen
   (screen.ts + router.ts)
 
 ui/          DOM overlays (help / settings modals only).

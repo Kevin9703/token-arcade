@@ -105,6 +105,24 @@ function error(): void {
   tone(180, 0.15, 'sawtooth', 0.08);
 }
 
+/** Soft rising pop for setting a decoration down in the room. */
+function place(): void {
+  tone(587, 0.05, 'triangle', 0.09);
+  tone(880, 0.09, 'triangle', 0.08, 0.04);
+}
+
+/** Descending counterpart: a decoration lifted back into the inventory. */
+function unplace(): void {
+  tone(494, 0.05, 'triangle', 0.07);
+  tone(330, 0.09, 'triangle', 0.06, 0.045);
+}
+
+/** Two-note confirmation, lighter than the level-up fanfare (layout saved). */
+function confirm(): void {
+  tone(587, 0.07, 'square', 0.07);
+  tone(784, 0.12, 'square', 0.08, 0.06);
+}
+
 function reveal(rarity: string): void {
   const sets: Record<string, number[]> = {
     common: [523],
@@ -137,6 +155,9 @@ export const sound = {
   pull,
   levelUp,
   error,
+  place,
+  unplace,
+  confirm,
   reveal,
   setMuted,
   getMuted,

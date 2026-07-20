@@ -41,10 +41,13 @@ function clamp01(value: number): number {
 }
 
 /** A quiet 40-step magnetic grid keeps rows and edges crisp while still
- * yielding hundreds of possible positions inside each scenery zone. */
-function align(value: number): number {
+ * yielding hundreds of possible positions inside each scenery zone. Exported so
+ * the editor's live ghost can preview the exact resting spot before a drop. */
+export function alignRoomDecorationCoord(value: number): number {
   return Math.round(clamp01(value) * 40) / 40;
 }
+
+const align = alignRoomDecorationCoord;
 
 export function roomDecorationZoneFor(type: CollectibleType): RoomDecorationZone | null {
   return TYPE_ZONE[type] ?? null;

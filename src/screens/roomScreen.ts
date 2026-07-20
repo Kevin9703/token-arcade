@@ -50,26 +50,11 @@ import { drawIconCentered, drawImageContain, drawCropContain, radial, EasedNumbe
 import { ROOM_CENTER_X, PRIZE_WALL_SLOTS } from '../render/measured';
 import { CONFIG, fmtComma, fmtCompact } from '../domain/economy';
 import { levelInfo } from '../domain/levels';
-import {
-  autoArrangeRoomDecorations,
-  resolveRoomDecorations,
-  roomDecorationCollectibles,
-  roomDecorationZoneFor,
-  ROOM_DECORATION_CAPACITY,
-  sanitizeRoomDecorations,
-} from '../domain/roomDecorations';
+import { RoomDecorController, drawPencil, rarityGlow } from './roomDecor';
 import { COLLECTIBLES, RARITIES, SHOP } from '../content';
-import { byId as collectibleById } from '../content/collectibles';
-import type {
-  Collectible,
-  Point,
-  Project,
-  RoomDecorationPlacement,
-  RoomDecorationZone,
-  ShopItem,
-} from '../core/types';
+import type { Project, ShopItem } from '../core/types';
 import type { Screen, ScreenContext } from './screen';
-import { t, tAchName, tAchDesc, tCollectibleDesc, tCollectibleName, tRarity, tType } from '../i18n';
+import { t, tAchName, tAchDesc, tCollectibleName } from '../i18n';
 
 // ---- palette --------------------------------------------------------------
 const GOLD = '#ffd23f';
@@ -101,20 +86,6 @@ const BANK_W = 360;
 const BANK = { x: Math.round(ROOM_CENTER_X * 1600 - BANK_W / 2), y: 200, w: BANK_W, h: 520 };
 const WALL = { x: 1224, y: 150, w: 360, h: 750 };
 const RAIL = { x: 16, y: 904, w: 1568, h: 82 };
-
-type Rect = { x: number; y: number; w: number; h: number };
-type DecorationFilter = RoomDecorationZone | 'all';
-
-/** Magnetic scenery zones. They protect machines and UI, but placements remain
- * free within each rectangle instead of snapping to a handful of hard slots. */
-const DECORATION_ZONES: Readonly<Record<RoomDecorationZone, Rect>> = {
-  wall: { x: 405, y: 214, w: 198, h: 286 },
-  floor: { x: 398, y: 785, w: 214, h: 83 },
-  buddy: { x: 1080, y: 708, w: 132, h: 176 },
-};
-
-const DECOR_INVENTORY = { x: 16, y: 878, w: 1568, h: 112 };
-const DECOR_PAGE_SIZE = 8;
 
 // ---- small drawing helpers ------------------------------------------------
 
@@ -294,29 +265,6 @@ function drawPadlock(g: CanvasRenderingContext2D, cx: number, cy: number, color:
   g.restore();
 }
 
-/** A tiny pencil glyph (edit affordance), centered on (cx, cy). A diagonal
- *  shaft with a nib at the lower-left, sized by `s`. */
-function drawPencil(g: CanvasRenderingContext2D, cx: number, cy: number, s: number, color: string): void {
-  g.save();
-  g.strokeStyle = color;
-  g.fillStyle = color;
-  g.lineWidth = 2;
-  g.lineCap = 'round';
-  // shaft, lower-left -> upper-right
-  g.beginPath();
-  g.moveTo(cx - s * 0.42, cy + s * 0.42);
-  g.lineTo(cx + s * 0.42, cy - s * 0.42);
-  g.stroke();
-  // nib triangle at the writing end
-  g.beginPath();
-  g.moveTo(cx - s * 0.5, cy + s * 0.5);
-  g.lineTo(cx - s * 0.5 + 4, cy + s * 0.5 - 1.5);
-  g.lineTo(cx - s * 0.5 + 1.5, cy + s * 0.5 - 4);
-  g.closePath();
-  g.fill();
-  g.restore();
-}
-
 export class RoomScreen implements Screen {
   readonly name = 'room';
 
@@ -338,24 +286,8 @@ export class RoomScreen implements Screen {
   /** Full cyan frame ignition after an equip, then a steady low glow. */
   private profileFramePulseUntil = 0;
   private lastProfileFrame = this.ctx.store.state.cosmetics.profileFrame;
-  /** Hovered world prize; rendered last so its tooltip clears machines/UI. */
-  private roomDisplayTip: { collectible: Collectible; cx: number; cy: number } | null = null;
-  private decorEditing = false;
-  private decorDraft: RoomDecorationPlacement[] = [];
-  private decorDraftIsAutomatic = false;
-  private decorInitial: RoomDecorationPlacement[] = [];
-  private decorInitialIsAutomatic = false;
-  private decorFilter: DecorationFilter = 'all';
-  private decorPage = 0;
-  private decorSelectedId: string | null = null;
-  private decorDrag: {
-    collectibleId: string;
-    start: Point;
-    point: Point;
-    moved: boolean;
-    origin: RoomDecorationPlacement | null;
-  } | null = null;
-  private decorNotice: { key: string; until: number } | null = null;
+  /** Room decorations: resting displays + the decorate-mode editor. */
+  private readonly decor = new RoomDecorController(this.ctx);
 
   constructor(private readonly ctx: ScreenContext) {
     this.displayCoins.set(ctx.store.state.coins);
@@ -363,8 +295,7 @@ export class RoomScreen implements Screen {
 
   enter(): void {
     this.displayCoins.set(this.ctx.store.state.coins);
-    this.decorEditing = false;
-    this.decorDrag = null;
+    this.decor.reset();
   }
 
   render(g: CanvasRenderingContext2D, dt: number, now: number): void {
@@ -386,16 +317,16 @@ export class RoomScreen implements Screen {
 
     this.drawBackground(g);
     this.drawCabinets(g);
-    this.drawRoomDisplays(g);
+    this.decor.drawDisplays(g, now);
     this.drawCenter(g, now);
     this.drawPrizeWall(g);
     this.drawTopBar(g, now);
-    if (this.decorEditing) {
-      this.drawDecorationEditor(g, now);
+    if (this.decor.editing) {
+      this.decor.drawEditor(g, now);
     } else {
       this.drawSpendRail(g);
-      this.drawDecorateEntry(g);
-      this.drawRoomDisplayTooltip(g);
+      this.decor.drawEntry(g, now);
+      this.decor.drawTooltip(g);
       this.drawNoHistoryDecision(g);
     }
   }
@@ -1102,584 +1033,6 @@ export class RoomScreen implements Screen {
     drawImageSmooth(g, sign, x, y, w, h);
   }
 
-  /** Draw the saved arrangement, or a tidy live arrangement of the newest
-   * prize in each family until the player saves a custom layout. */
-  private drawRoomDisplays(g: CanvasRenderingContext2D): void {
-    this.roomDisplayTip = null;
-    const placements = this.decorEditing
-      ? this.decorDraft
-      : resolveRoomDecorations(this.ctx.store.state.owned, this.ctx.store.state.roomDecorations);
-    this.drawRoomDisplayInfrastructure(g, this.decorEditing);
-
-    const visible = placements
-      .filter((placement) => !(this.decorDrag?.moved && this.decorDrag.collectibleId === placement.collectibleId))
-      .sort((a, b) => {
-        const zoneOrder = { wall: 0, floor: 1, buddy: 2 } as const;
-        return zoneOrder[a.zone] - zoneOrder[b.zone] || a.y - b.y;
-      });
-    for (const placement of visible) {
-      const collectible = collectibleById[placement.collectibleId];
-      if (!collectible) continue;
-      const point = this.decorationPoint(placement, collectible);
-      const size = this.decorationSize(collectible);
-      const hovered = !this.decorEditing && this.ctx.stage.hotspot({
-        x: point.x - size / 2,
-        y: point.y - size / 2,
-        w: size,
-        h: size,
-        cursor: 'help',
-        id: 'room-display-' + collectible.id,
-      });
-      this.drawRoomCollectible(g, collectible, point.x, point.y, size, hovered, placement.zone !== 'wall');
-      if (hovered) this.roomDisplayTip = { collectible, cx: point.x, cy: point.y };
-    }
-  }
-
-  private drawRoomDisplayInfrastructure(g: CanvasRenderingContext2D, editing: boolean): void {
-    if (editing) {
-      this.drawDecorationZone(g, 'wall', MAGENTA);
-      this.drawDecorationZone(g, 'floor', GOLD);
-      this.drawDecorationZone(g, 'buddy', CYAN);
-    }
-
-    const tier = this.ctx.store.collectionMilestoneTier();
-    if (tier >= 1) {
-      const shelf = this.ctx.assets.get('collectionNeonShelf');
-      if (shelf) {
-        const zone = DECORATION_ZONES.wall;
-        const cx = zone.x + zone.w / 2;
-        const cy = zone.y + zone.h - 7;
-        g.save();
-        g.shadowColor = MAGENTA;
-        g.shadowBlur = editing ? 14 : 7;
-        drawImageContain(g, shelf, cx, cy, zone.w + 8, 25);
-        g.restore();
-        drawImageContain(g, shelf, cx, cy, zone.w + 8, 25);
-      }
-    }
-    if (tier >= 3) {
-      const pedestal = this.ctx.assets.get('collectionPedestal');
-      if (pedestal) {
-        const zone = DECORATION_ZONES.floor;
-        drawImageContain(g, pedestal, zone.x + zone.w / 2, zone.y + zone.h - 3, zone.w + 18, 55);
-      }
-    }
-  }
-
-  private drawDecorationZone(g: CanvasRenderingContext2D, zone: RoomDecorationZone, color: string): void {
-    const r = DECORATION_ZONES[zone];
-    g.save();
-    g.fillStyle = color + '0d';
-    g.fillRect(r.x, r.y, r.w, r.h);
-    g.strokeStyle = color + 'b8';
-    g.lineWidth = 2;
-    g.setLineDash([8, 7]);
-    g.strokeRect(r.x + 1, r.y + 1, r.w - 2, r.h - 2);
-    g.setLineDash([]);
-    const label = t('decor.zone.' + zone);
-    const labelW = measureText(label, 1.2) + 16;
-    rrect(g, r.x + 8, r.y + 8, labelW, 22, 4);
-    g.fillStyle = 'rgba(7,5,14,0.88)';
-    g.fill();
-    drawText(g, label, r.x + 16, r.y + 14, 1.2, color);
-    g.restore();
-  }
-
-  private decorationSize(collectible: Collectible): number {
-    if (collectible.type === 'sign') return 78;
-    if (collectible.type === 'badge') return 54;
-    if (collectible.type === 'buddy') return 72;
-    return collectible.type === 'trophy' ? 70 : 64;
-  }
-
-  private decorationPoint(placement: RoomDecorationPlacement, collectible: Collectible): Point {
-    const zone = DECORATION_ZONES[placement.zone];
-    const size = this.decorationSize(collectible);
-    const padX = Math.min(size * 0.48, zone.w * 0.24);
-    const padY = Math.min(size * 0.48, zone.h * 0.3);
-    return {
-      x: zone.x + padX + placement.x * Math.max(0, zone.w - padX * 2),
-      y: zone.y + padY + placement.y * Math.max(0, zone.h - padY * 2),
-    };
-  }
-
-  private drawRoomCollectible(
-    g: CanvasRenderingContext2D,
-    collectible: Collectible,
-    cx: number,
-    cy: number,
-    size: number,
-    hovered: boolean,
-    floorItem: boolean,
-  ): void {
-    if (floorItem) {
-      g.save();
-      g.fillStyle = 'rgba(0,0,0,0.4)';
-      g.beginPath();
-      g.ellipse(cx, cy + size * 0.39, size * 0.38, size * 0.1, 0, 0, Math.PI * 2);
-      g.fill();
-      g.restore();
-    }
-    const rarity = RARITIES[collectible.rarity];
-    radial(g, cx, cy, size * 0.66, this.rarityGlow(collectible.rarity));
-    const icon = collectibleIcon(collectible.id);
-    g.save();
-    g.shadowColor = rarity.glow;
-    g.shadowBlur = hovered ? 18 : 8;
-    if (icon) drawIconCentered(g, icon, cx, cy, size);
-    else drawSpriteCentered(g, collectible.sprite, cx, cy, size * 0.82, collectible.tint);
-    g.restore();
-  }
-
-  private drawRoomDisplayTooltip(g: CanvasRenderingContext2D): void {
-    const tip = this.roomDisplayTip;
-    if (!tip) return;
-
-    const c = tip.collectible;
-    const rarity = RARITIES[c.rarity];
-    const w = 270;
-    const pad = 14;
-    const descScale = 1.2;
-    const lines = wrapText(tCollectibleDesc(c.id), descScale, w - pad * 2).slice(0, 4);
-    const h = 66 + lines.length * 13;
-    let x = tip.cx < 800 ? tip.cx + 54 : tip.cx - w - 54;
-    let y = tip.cy - h / 2;
-    x = Math.max(10, Math.min(this.ctx.stage.width - w - 10, x));
-    y = Math.max(10, Math.min(this.ctx.stage.height - h - 10, y));
-
-    panel(g, x, y, w, h, {
-      radius: 8,
-      fill: 'rgba(12,8,24,0.96)',
-      border: rarity.color,
-      borderWidth: 2,
-    });
-    let nameScale = 1.7;
-    const name = tCollectibleName(c.id);
-    while (nameScale > 1 && measureText(name, nameScale) > w - pad * 2) nameScale -= 0.1;
-    drawText(g, name, x + pad, y + 12, nameScale, INK, { glow: rarity.glow, glowBlur: 3 });
-    drawText(g, tRarity(c.rarity) + ' / ' + tType(c.type), x + pad, y + 33, 1.05, rarity.color);
-    for (let i = 0; i < lines.length; i++) {
-      drawText(g, lines[i], x + pad, y + 53 + i * 13, descScale, '#c8c2dc');
-    }
-  }
-
-  private drawDecorateEntry(g: CanvasRenderingContext2D): void {
-    const x = 1084;
-    const y = 838;
-    const w = 124;
-    const h = 54;
-    const hovered = this.ctx.stage.hotspot({
-      x,
-      y,
-      w,
-      h,
-      cursor: 'pointer',
-      id: 'decorate-room',
-      onClick: () => this.openDecorationEditor(),
-    });
-    const frame = this.ctx.assets.get('homeShopCard');
-    if (frame) {
-      if (hovered) {
-        g.save();
-        g.shadowColor = CYAN;
-        g.shadowBlur = 12;
-        drawImageSmooth(g, frame, x, y, w, h);
-        g.restore();
-      }
-      drawImageSmooth(g, frame, x, y, w, h);
-    } else {
-      panel(g, x, y, w, h, { radius: 6, fill: 'rgba(10,7,20,0.9)', border: CYAN, borderWidth: 2 });
-    }
-    drawPencil(g, x + 27, y + h / 2, 17, CYAN);
-    drawText(g, t('decor.edit'), x + 48, y + 21, 1.3, hovered ? '#ffffff' : CYAN);
-  }
-
-  private openDecorationEditor(): void {
-    const saved = this.ctx.store.state.roomDecorations;
-    this.decorDraft = resolveRoomDecorations(this.ctx.store.state.owned, saved).map((placement) => ({ ...placement }));
-    this.decorDraftIsAutomatic = saved == null;
-    this.decorInitial = this.decorDraft.map((placement) => ({ ...placement }));
-    this.decorInitialIsAutomatic = this.decorDraftIsAutomatic;
-    this.decorEditing = true;
-    this.decorFilter = 'all';
-    this.decorPage = 0;
-    this.decorSelectedId = null;
-    this.decorDrag = null;
-    this.decorNotice = null;
-    this.ctx.stage.wake(900);
-  }
-
-  private drawDecorationEditor(g: CanvasRenderingContext2D, now: number): void {
-    // This late, full-screen hotspot shields the editor from the room's bank,
-    // cabinet and prize-wall hotspots. Editor controls registered below it win.
-    this.ctx.stage.hotspot({
-      x: 0,
-      y: 0,
-      w: this.ctx.stage.width,
-      h: this.ctx.stage.height,
-      id: 'decor-editor-shield',
-      onClick: () => undefined,
-    });
-
-    g.fillStyle = 'rgba(4,3,10,0.16)';
-    g.fillRect(0, 0, this.ctx.stage.width, DECOR_INVENTORY.y);
-    panel(g, 632, 118, 336, 36, {
-      radius: 5,
-      fill: 'rgba(5,7,16,0.9)',
-      border: 'rgba(95,230,214,0.72)',
-      borderWidth: 1,
-    });
-    drawText(g, t('decor.title'), 800, 128, 1.8, CYAN, { align: 'center', glow: CYAN, glowBlur: 4 });
-
-    for (const zone of ['wall', 'floor', 'buddy'] as const) {
-      const rect = DECORATION_ZONES[zone];
-      this.ctx.stage.hotspot({
-        ...rect,
-        id: 'decor-zone-' + zone,
-        cursor: this.decorSelectedId ? 'crosshair' : 'default',
-        onClick: () => {
-          if (this.decorSelectedId) this.placeDecoration(this.decorSelectedId, zone, { ...this.ctx.stage.mouse });
-        },
-      });
-    }
-
-    for (const placement of this.decorDraft) {
-      if (this.decorDrag?.moved && this.decorDrag.collectibleId === placement.collectibleId) continue;
-      const collectible = collectibleById[placement.collectibleId];
-      if (!collectible) continue;
-      const point = this.decorationPoint(placement, collectible);
-      const size = this.decorationSize(collectible);
-      this.ctx.stage.hotspot({
-        x: point.x - size / 2,
-        y: point.y - size / 2,
-        w: size,
-        h: size,
-        id: 'decor-placed-' + collectible.id,
-        cursor: 'grab',
-        onClick: () => { this.decorSelectedId = collectible.id; },
-        onDragStart: (start) => this.beginDecorationDrag(collectible.id, start),
-        onDragMove: (pointNow) => this.moveDecorationDrag(pointNow),
-        onDragEnd: (end) => this.endDecorationDrag(end),
-      });
-      if (this.decorSelectedId === collectible.id) {
-        g.strokeStyle = CYAN;
-        g.lineWidth = 2;
-        g.strokeRect(point.x - size / 2 - 4, point.y - size / 2 - 4, size + 8, size + 8);
-      }
-    }
-
-    this.drawDecorationInventory(g);
-    this.drawDecorationDrag(g);
-    if (this.decorNotice && now < this.decorNotice.until) {
-      panel(g, 580, 830, 440, 38, { radius: 6, fill: 'rgba(8,5,18,0.94)', border: MAGENTA, borderWidth: 2 });
-      drawText(g, t(this.decorNotice.key), 800, 841, 1.55, INK, { align: 'center' });
-    }
-  }
-
-  private drawDecorationInventory(g: CanvasRenderingContext2D): void {
-    const r = DECOR_INVENTORY;
-    g.fillStyle = 'rgba(6,4,13,0.97)';
-    g.fillRect(r.x, r.y, r.w, r.h);
-    const lip = g.createLinearGradient(0, r.y, 0, r.y + 12);
-    lip.addColorStop(0, '#6e5530');
-    lip.addColorStop(0.28, '#ffd23f');
-    lip.addColorStop(0.48, '#3b2a24');
-    lip.addColorStop(1, '#16101f');
-    g.fillStyle = lip;
-    g.fillRect(r.x, r.y, r.w, 12);
-    g.fillStyle = 'rgba(95,230,214,0.6)';
-    g.fillRect(r.x + 238, r.y + 10, 774, 2);
-    g.fillRect(r.x + 1020, r.y + 10, r.w - 1036, 2);
-    g.strokeStyle = 'rgba(255,210,63,0.38)';
-    g.lineWidth = 2;
-    g.strokeRect(r.x + 1, r.y + 1, r.w - 2, r.h - 2);
-    for (const x of [r.x + 10, r.x + r.w - 10]) {
-      g.fillStyle = '#8c7650';
-      g.fillRect(x - 2, r.y + 8, 4, 4);
-      g.fillRect(x - 2, r.y + r.h - 12, 4, 4);
-    }
-
-    const all = roomDecorationCollectibles(this.ctx.store.state.owned);
-    const filtered = this.decorFilter === 'all'
-      ? all
-      : all.filter((collectible) => roomDecorationZoneFor(collectible.type) === this.decorFilter);
-    const pages = Math.max(1, Math.ceil(filtered.length / DECOR_PAGE_SIZE));
-    this.decorPage = Math.max(0, Math.min(pages - 1, this.decorPage));
-    const page = filtered.slice(this.decorPage * DECOR_PAGE_SIZE, (this.decorPage + 1) * DECOR_PAGE_SIZE);
-
-    panel(g, 30, 884, 208, 98, { radius: 6, fill: 'rgba(8,7,18,0.94)', border: 'rgba(255,210,63,0.72)', borderWidth: 2 });
-    drawText(g, t('decor.inventory'), 52, 895, 1.5, GOLD);
-    drawText(g, t('decor.ownedCount', { n: this.ctx.store.ownedCount(), total: this.ctx.store.totalCollectibles() }), 52, 925, 1.2, '#bdb5d6');
-    drawText(g, t('decor.storeHint'), 52, 953, 0.95, CYAN);
-
-    const frame = this.ctx.assets.get('homeIconBtn');
-    for (let i = 0; i < DECOR_PAGE_SIZE; i++) {
-      const x = 268 + i * 86;
-      const y = 886;
-      const size = 64;
-      const collectible = page[i];
-      g.globalAlpha = collectible ? 1 : 0.32;
-      if (frame) drawImageSmooth(g, frame, x, y, size, size);
-      else panel(g, x, y, size, size, { radius: 5, fill: '#151126', border: '#4f456d', borderWidth: 2 });
-      g.globalAlpha = 1;
-      if (!collectible) continue;
-
-      const selected = this.decorSelectedId === collectible.id;
-      const placed = this.decorDraft.some((placement) => placement.collectibleId === collectible.id);
-      const hovered = this.ctx.stage.hotspot({
-        x,
-        y,
-        w: size,
-        h: size,
-        id: 'decor-inventory-' + collectible.id,
-        cursor: 'grab',
-        onClick: () => { this.decorSelectedId = collectible.id; },
-        onDragStart: (start) => this.beginDecorationDrag(collectible.id, start),
-        onDragMove: (pointNow) => this.moveDecorationDrag(pointNow),
-        onDragEnd: (end) => this.endDecorationDrag(end),
-      });
-      if (selected || hovered) {
-        g.strokeStyle = selected ? GOLD : CYAN;
-        g.lineWidth = 3;
-        g.strokeRect(x + 2, y + 2, size - 4, size - 4);
-      }
-      const icon = collectibleIcon(collectible.id);
-      if (icon) drawIconCentered(g, icon, x + size / 2, y + size / 2, 50);
-      else drawSpriteCentered(g, collectible.sprite, x + size / 2, y + size / 2, 43, collectible.tint);
-      if (placed) {
-        g.fillStyle = GREEN;
-        g.fillRect(x + size - 12, y + 5, 7, 7);
-      }
-    }
-
-    this.drawDecorationFilters(g);
-    this.drawDecorPageButton(g, 928, 958, '<', this.decorPage > 0, () => { this.decorPage--; });
-    drawText(g, `${this.decorPage + 1}/${pages}`, 981, 968, 1.2, '#bdb5d6', { align: 'center' });
-    this.drawDecorPageButton(g, 1010, 958, '>', this.decorPage + 1 < pages, () => { this.decorPage++; });
-
-    this.drawDecorationAction(g, 1040, 888, t('ui.save'), GREEN, () => this.saveDecorationLayout());
-    this.drawDecorationAction(g, 1176, 888, t('decor.auto'), CYAN, () => {
-      this.decorDraft = autoArrangeRoomDecorations(this.ctx.store.state.owned).map((placement) => ({ ...placement }));
-      this.decorDraftIsAutomatic = true;
-      this.decorSelectedId = null;
-      this.setDecorNotice('decor.autoDone');
-    });
-    this.drawDecorationAction(g, 1312, 888, t('ui.reset'), '#ff6f70', () => {
-      this.decorDraft = this.decorInitial.map((placement) => ({ ...placement }));
-      this.decorDraftIsAutomatic = this.decorInitialIsAutomatic;
-      this.decorSelectedId = null;
-      this.setDecorNotice('decor.restored');
-    });
-    this.drawDecorationAction(g, 1448, 888, t('ui.close'), '#b98cff', () => {
-      this.decorEditing = false;
-      this.decorDrag = null;
-      this.decorSelectedId = null;
-    });
-  }
-
-  private drawDecorationFilters(g: CanvasRenderingContext2D): void {
-    const filters: Array<{ key: DecorationFilter; label: string }> = [
-      { key: 'all', label: t('decor.filter.all') },
-      { key: 'wall', label: t('decor.filter.wall') },
-      { key: 'floor', label: t('decor.filter.floor') },
-      { key: 'buddy', label: t('decor.filter.buddy') },
-    ];
-    for (let i = 0; i < filters.length; i++) {
-      const filter = filters[i];
-      const x = 268 + i * 128;
-      const y = 954;
-      const w = 116;
-      const h = 30;
-      const active = this.decorFilter === filter.key;
-      const hovered = this.ctx.stage.hotspot({
-        x,
-        y,
-        w,
-        h,
-        id: 'decor-filter-' + filter.key,
-        cursor: 'pointer',
-        onClick: () => {
-          this.decorFilter = filter.key;
-          this.decorPage = 0;
-        },
-      });
-      panel(g, x, y, w, h, {
-        radius: 5,
-        fill: active ? 'rgba(225,90,216,0.32)' : 'rgba(13,10,25,0.9)',
-        border: active ? MAGENTA : hovered ? CYAN : '#4d4568',
-        borderWidth: active ? 2 : 1,
-      });
-      drawText(g, filter.label, x + w / 2, y + 9, 1.05, active ? '#ffffff' : '#bbb3d4', { align: 'center' });
-    }
-  }
-
-  private drawDecorPageButton(g: CanvasRenderingContext2D, x: number, y: number, label: string, enabled: boolean, onClick: () => void): void {
-    const hovered = this.ctx.stage.hotspot({ x, y, w: 28, h: 28, id: 'decor-page-' + label, cursor: enabled ? 'pointer' : 'default', onClick: enabled ? onClick : undefined });
-    drawText(g, label, x + 14, y + 6, 1.8, enabled ? (hovered ? '#ffffff' : CYAN) : '#4d4568', { align: 'center' });
-  }
-
-  private drawDecorationAction(g: CanvasRenderingContext2D, x: number, y: number, label: string, color: string, onClick: () => void): void {
-    const w = 122;
-    const h = 62;
-    const hovered = this.ctx.stage.hotspot({ x, y, w, h, id: 'decor-action-' + label, cursor: 'pointer', onClick });
-    const frame = this.ctx.assets.get('homeShopCard');
-    if (frame) {
-      if (hovered) {
-        g.save();
-        g.shadowColor = color;
-        g.shadowBlur = 12;
-        drawImageSmooth(g, frame, x, y, w, h);
-        g.restore();
-      }
-      drawImageSmooth(g, frame, x, y, w, h);
-    } else {
-      panel(g, x, y, w, h, { radius: 6, fill: '#151126', border: color, borderWidth: 2 });
-    }
-    let scale = 1.45;
-    while (scale > 0.9 && measureText(label, scale) > w - 18) scale -= 0.05;
-    drawText(g, label, x + w / 2, y + 24, scale, hovered ? '#ffffff' : color, { align: 'center', glow: color, glowBlur: hovered ? 4 : 1 });
-  }
-
-  private beginDecorationDrag(collectibleId: string, start: Point): void {
-    this.decorDrag = {
-      collectibleId,
-      start: { ...start },
-      point: { ...start },
-      moved: false,
-      origin: this.decorDraft.find((placement) => placement.collectibleId === collectibleId) ?? null,
-    };
-  }
-
-  private moveDecorationDrag(point: Point): void {
-    if (!this.decorDrag) return;
-    this.decorDrag.point = { ...point };
-    if (Math.hypot(point.x - this.decorDrag.start.x, point.y - this.decorDrag.start.y) > 4) {
-      this.decorDrag.moved = true;
-    }
-  }
-
-  private endDecorationDrag(point: Point): void {
-    const drag = this.decorDrag;
-    if (!drag) return;
-    this.decorDrag = null;
-    if (!drag.moved) return;
-    if (point.y >= DECOR_INVENTORY.y) {
-      if (drag.origin) {
-        this.decorDraft = this.decorDraft.filter((placement) => placement.collectibleId !== drag.collectibleId);
-        this.decorDraftIsAutomatic = false;
-        this.setDecorNotice('decor.stored');
-      }
-      return;
-    }
-    const zone = this.decorationZoneAt(point);
-    if (!zone) {
-      this.setDecorNotice('decor.invalid');
-      return;
-    }
-    this.placeDecoration(drag.collectibleId, zone, point);
-  }
-
-  private placeDecoration(collectibleId: string, zone: RoomDecorationZone, point: Point): void {
-    const collectible = collectibleById[collectibleId];
-    if (!collectible || roomDecorationZoneFor(collectible.type) !== zone) {
-      this.setDecorNotice('decor.invalidType');
-      return;
-    }
-    const without = this.decorDraft.filter((placement) => placement.collectibleId !== collectibleId);
-    if (without.filter((placement) => placement.zone === zone).length >= ROOM_DECORATION_CAPACITY[zone]) {
-      this.setDecorNotice('decor.zoneFull');
-      return;
-    }
-    const candidate = this.decorationPlacementAt(collectibleId, zone, point);
-    const placed = this.findOpenDecorationPosition(candidate, collectible, without);
-    const clean = sanitizeRoomDecorations(this.ctx.store.state.owned, [...without, placed]);
-    this.decorDraft = clean ?? without;
-    this.decorDraftIsAutomatic = false;
-    this.decorSelectedId = collectibleId;
-  }
-
-  private decorationPlacementAt(collectibleId: string, zone: RoomDecorationZone, point: Point): RoomDecorationPlacement {
-    const r = DECORATION_ZONES[zone];
-    return {
-      collectibleId,
-      zone,
-      x: Math.max(0, Math.min(1, (point.x - r.x) / r.w)),
-      y: Math.max(0, Math.min(1, (point.y - r.y) / r.h)),
-    };
-  }
-
-  private findOpenDecorationPosition(
-    candidate: RoomDecorationPlacement,
-    collectible: Collectible,
-    existing: readonly RoomDecorationPlacement[],
-  ): RoomDecorationPlacement {
-    const offsets: Array<[number, number]> = [
-      [0, 0], [0.15, 0], [-0.15, 0], [0, 0.18], [0, -0.18],
-      [0.15, 0.18], [-0.15, 0.18], [0.28, 0], [-0.28, 0],
-    ];
-    const sameZone = existing.filter((placement) => placement.zone === candidate.zone);
-    for (const [dx, dy] of offsets) {
-      const attempt = {
-        ...candidate,
-        x: Math.max(0, Math.min(1, candidate.x + dx)),
-        y: Math.max(0, Math.min(1, candidate.y + dy)),
-      };
-      const point = this.decorationPoint(attempt, collectible);
-      const clear = sameZone.every((placement) => {
-        const other = collectibleById[placement.collectibleId];
-        if (!other) return true;
-        const otherPoint = this.decorationPoint(placement, other);
-        const minimum = (this.decorationSize(collectible) + this.decorationSize(other)) * 0.38;
-        return Math.hypot(point.x - otherPoint.x, point.y - otherPoint.y) >= minimum;
-      });
-      if (clear) return attempt;
-    }
-    return candidate;
-  }
-
-  private decorationZoneAt(point: Point): RoomDecorationZone | null {
-    for (const zone of ['wall', 'floor', 'buddy'] as const) {
-      const r = DECORATION_ZONES[zone];
-      if (point.x >= r.x && point.x <= r.x + r.w && point.y >= r.y && point.y <= r.y + r.h) return zone;
-    }
-    return null;
-  }
-
-  private drawDecorationDrag(g: CanvasRenderingContext2D): void {
-    const drag = this.decorDrag;
-    if (!drag?.moved) return;
-    const collectible = collectibleById[drag.collectibleId];
-    if (!collectible) return;
-    const zone = this.decorationZoneAt(drag.point);
-    const expected = roomDecorationZoneFor(collectible.type);
-    const storing = drag.point.y >= DECOR_INVENTORY.y;
-    const valid = storing || (zone !== null && zone === expected);
-    const color = valid ? GREEN : '#ff5c6a';
-    const size = this.decorationSize(collectible);
-    g.save();
-    g.globalAlpha = 0.76;
-    g.shadowColor = color;
-    g.shadowBlur = 18;
-    this.drawRoomCollectible(g, collectible, drag.point.x, drag.point.y, size, false, zone !== 'wall');
-    g.restore();
-    g.strokeStyle = color;
-    g.lineWidth = 3;
-    g.strokeRect(drag.point.x - size / 2 - 5, drag.point.y - size / 2 - 5, size + 10, size + 10);
-  }
-
-  private setDecorNotice(key: string): void {
-    this.decorNotice = { key, until: performance.now() + 1500 };
-    this.ctx.stage.wake(1600);
-  }
-
-  private saveDecorationLayout(): void {
-    this.ctx.store.setRoomDecorations(this.decorDraftIsAutomatic ? null : this.decorDraft);
-    this.decorEditing = false;
-    this.decorDrag = null;
-    this.decorSelectedId = null;
-    this.ctx.fx.banner(t('decor.saved'), 800, 174, GREEN, { scale: 2.2, life: 1.4 });
-  }
-
   // ---- right column: prize wall preview ----------------------------------
 
   private drawPrizeWall(g: CanvasRenderingContext2D): void {
@@ -1793,7 +1146,7 @@ export class RoomScreen implements Screen {
       const isOwned = !!store.state.owned[c.id];
       if (isOwned) {
         radial(g, cx, cy, 34, 'rgba(255,255,255,0.10)');
-        radial(g, cx, cy, 26, this.rarityGlow(c.rarity));
+        radial(g, cx, cy, 26, rarityGlow(c.rarity));
         const icon = collectibleIcon(c.id);
         if (icon) drawIconCentered(g, icon, cx, cy, 46);
         else drawSpriteCentered(g, c.sprite, cx, cy, 46, c.tint);
@@ -1812,11 +1165,6 @@ export class RoomScreen implements Screen {
       GOLD,
       { align: 'center', glow: GOLD, glowBlur: 3, shadow: 'rgba(0,0,0,0.6)' },
     );
-  }
-
-  private rarityGlow(rarity: keyof typeof RARITIES): string {
-    const c = RARITIES[rarity].glow;
-    return c.length === 7 ? c + '55' : c;
   }
 
   /** Procedural fallback prize wall (asset missing / still loading). */
