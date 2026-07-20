@@ -442,9 +442,12 @@ export class RoomDecorController {
     }
     g.stroke();
 
-    // Name plate + capacity readout mounted on the zone's top edge. The name
-    // shrinks to fit beside the capacity plate so narrow zones (buddy corner)
-    // never clip or overlap the two.
+    // Name plate + capacity readout on the zone's top edge. The name shrinks
+    // to fit beside the capacity plate so narrow zones (buddy corner) never
+    // clip or overlap the two. The floor zone is short — prizes standing on
+    // the riser reach its top edge — so its plates mount just ABOVE the zone
+    // instead of inside, where they'd sit on the prizes' heads.
+    const plateY = zone === 'floor' ? r.y - 30 : r.y + 8;
     const label = t('decor.zone.' + zone);
     const capText = used + '/' + cap;
     const capW = measureText(capText, 1.2) + 12;
@@ -452,14 +455,14 @@ export class RoomDecorController {
     const labelMax = r.w - capW - 30;
     while (labelScale > 0.8 && measureText(label, labelScale) > labelMax) labelScale -= 0.05;
     const labelW = Math.min(labelMax, measureText(label, labelScale)) + 16;
-    rrect(g, r.x + 8, r.y + 8, labelW, 22, 4);
+    rrect(g, r.x + 8, plateY, labelW, 22, 4);
     g.fillStyle = 'rgba(7,5,14,0.88)';
     g.fill();
-    drawText(g, label, r.x + 16, r.y + 14 + (1.2 - labelScale) * 3, labelScale, color);
-    rrect(g, r.x + r.w - capW - 8, r.y + 8, capW, 22, 4);
+    drawText(g, label, r.x + 16, plateY + 6 + (1.2 - labelScale) * 3, labelScale, color);
+    rrect(g, r.x + r.w - capW - 8, plateY, capW, 22, 4);
     g.fillStyle = 'rgba(7,5,14,0.88)';
     g.fill();
-    drawText(g, capText, r.x + r.w - 14, r.y + 14, 1.2, full ? '#ff5c6a' : color, { align: 'right' });
+    drawText(g, capText, r.x + r.w - 14, plateY + 6, 1.2, full ? '#ff5c6a' : color, { align: 'right' });
     g.restore();
   }
 
