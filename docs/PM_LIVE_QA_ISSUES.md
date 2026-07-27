@@ -858,6 +858,20 @@ Automated evidence:
 
 ## Passed Recently
 
+### QA-P004: Home Asset Pop-In On Cold Start
+
+Status: Passed (PM browser acceptance)
+
+- The canvas no longer renders its procedural Home fallback while authored
+  sprites are still downloading.
+- A dedicated pixel-arcade boot curtain reports decode progress while demo
+  seeding and the complete visible Home asset set load in parallel.
+- The room background, Coin Bank, and Prize Wall begin preloading from HTML;
+  secondary-room assets wait until Home is ready.
+- Browser acceptance captured the first frame and the completed Home frame.
+  No incomplete cabinet, placeholder Prize Wall, or oversized procedural label
+  appeared between them, and the final console error log was empty.
+
 ### QA-P001: Project Detail Stat Icons Alignment
 
 Status: Passed

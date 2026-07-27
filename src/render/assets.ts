@@ -2,10 +2,10 @@
  * assets.ts — loads the generated raster art (room background, coin bank, prize
  * wall shelf, cabinet skins) and hands them to the screens.
  *
- * Loading is async and non-blocking: `get()` returns null until an image is
- * fully decoded, so every screen keeps a procedural fallback and the game stays
- * fully playable if an asset is missing or slow to load. Nothing here touches
- * game state — it's pure presentation.
+ * The authored Home scene is decoded behind a boot curtain; secondary rooms
+ * load in the background afterward. `get()` still returns null for missing or
+ * failed images, so screens retain their resilient procedural fallbacks.
+ * Nothing here touches game state — it's pure presentation.
  */
 
 export type AssetName =
@@ -222,27 +222,69 @@ export function currencyIcon(name: CurrencyIconName): HTMLImageElement | null {
 export class AssetStore {
   private imgs: Partial<Record<AssetName, HTMLImageElement>> = {};
   private ready: Partial<Record<AssetName, boolean>> = {};
-  private started = false;
+  private requested = new Set<AssetName>();
+  private settled = new Set<AssetName>();
+  private pending = new Map<AssetName, Promise<void>>();
 
-  /** Kick off loading every asset. Safe to call once at boot. */
-  load(): void {
-    if (this.started) return;
-    this.started = true;
-    (Object.keys(SRC) as AssetName[]).forEach((name) => {
+  /** Kick off loading selected assets, or every remaining asset when omitted. */
+  load(names: readonly AssetName[] = Object.keys(SRC) as AssetName[]): void {
+    names.forEach((name) => {
+      if (this.requested.has(name)) return;
+      this.requested.add(name);
       const img = new Image();
-      img.onload = () => {
-        this.ready[name] = true;
-      };
-      img.onerror = () => {
-        /* leave un-ready -> screens fall back to procedural art */
-      };
+      const pending = new Promise<void>((resolve) => {
+        img.onload = () => {
+          this.ready[name] = true;
+          this.settled.add(name);
+          resolve();
+        };
+        img.onerror = () => {
+          // A failed optional asset still settles boot. Screens retain their
+          // procedural fallback for genuine network/file failures.
+          this.settled.add(name);
+          resolve();
+        };
+      });
       img.src = publicUrl(SRC[name]);
       this.imgs[name] = img;
+      this.pending.set(name, pending);
     });
     // The Home new-cosmetic plaque must never introduce Cyan Profile Frame with
     // its generic code-sprite fallback. Start decoding the complete earned item
     // art at boot, before a player can reach the reward purchase.
     collectibleIcon('r_frame');
+  }
+
+  /**
+   * Hold the first game frame until the authored Home art has settled. A
+   * timeout preserves the old resilient fallback behavior on broken networks,
+   * while normal visitors see one coherent reveal instead of an asset pop-in.
+   */
+  async waitFor(
+    names: readonly AssetName[],
+    onProgress?: (fraction: number) => void,
+    timeoutMs = 20_000,
+  ): Promise<void> {
+    this.load(names);
+    const report = (): void => {
+      const done = names.filter((name) => this.settled.has(name)).length;
+      onProgress?.(names.length ? done / names.length : 1);
+    };
+    report();
+    const timer = window.setInterval(report, 80);
+    let timeout: number | undefined;
+    try {
+      await Promise.race([
+        Promise.all(names.map((name) => this.pending.get(name) ?? Promise.resolve())),
+        new Promise<void>((resolve) => {
+          timeout = window.setTimeout(resolve, timeoutMs);
+        }),
+      ]);
+    } finally {
+      window.clearInterval(timer);
+      if (timeout != null) window.clearTimeout(timeout);
+      report();
+    }
   }
 
   /** The decoded image, or null while it's still loading / on error. */

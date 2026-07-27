@@ -18,9 +18,23 @@
       name="description"
       content="Turn Claude Code and Codex token history into a playable pixel arcade."
     />
+    <link rel="preload" href="./assets/room-bg.png" as="image" fetchpriority="high" />
+    <link rel="preload" href="./assets/coin-bank.png" as="image" fetchpriority="high" />
+    <link rel="preload" href="./assets/prize-wall.png" as="image" fetchpriority="high" />
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
+    <div id="boot" role="status" aria-live="polite">
+      <div class="ta-boot-sign" aria-hidden="true">
+        <span class="ta-boot-token">TOKEN</span>
+        <span class="ta-boot-arcade">ARCADE</span>
+      </div>
+      <div class="ta-boot-track" aria-hidden="true">
+        <span id="boot-progress"></span>
+      </div>
+      <p id="boot-label">POWERING UP ARCADE... 0%</p>
+    </div>
+
     <!-- The whole arcade is rendered here. -->
     <canvas id="stage" aria-label="Token Arcade"></canvas>
 

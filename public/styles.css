@@ -46,6 +46,74 @@ body {
   touch-action: none;
 }
 
+#boot {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 28px;
+  background:
+    repeating-linear-gradient(0deg, rgba(95, 230, 214, 0.025) 0 1px, transparent 1px 5px),
+    radial-gradient(90% 72% at 50% 42%, #241338 0%, #10091d 48%, #050308 100%);
+  opacity: 1;
+  transition: opacity 220ms ease;
+}
+
+#boot.ta-boot-ready {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.ta-boot-sign {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 0.88;
+  font-family: var(--pixel);
+  font-size: clamp(32px, 6vw, 72px);
+  text-align: center;
+  filter: drop-shadow(0 0 16px rgba(225, 90, 216, 0.35));
+}
+
+.ta-boot-token {
+  color: #ff82e8;
+  text-shadow: 0 0 4px #e15ad8, 0 0 18px rgba(225, 90, 216, 0.7);
+}
+
+.ta-boot-arcade {
+  color: #7ef4ee;
+  text-shadow: 0 0 4px #5fe6d6, 0 0 18px rgba(95, 230, 214, 0.65);
+}
+
+.ta-boot-track {
+  width: min(420px, 72vw);
+  height: 18px;
+  padding: 3px;
+  border: 2px solid #ffd23f;
+  background: #0a0712;
+  box-shadow: 0 0 16px rgba(255, 210, 63, 0.22);
+}
+
+#boot-progress {
+  display: block;
+  width: 0;
+  height: 100%;
+  background: repeating-linear-gradient(90deg, #5fe6d6 0 18px, #2f8a80 18px 22px);
+  box-shadow: 0 0 12px rgba(95, 230, 214, 0.7);
+  transition: width 100ms linear;
+}
+
+#boot-label {
+  margin: 0;
+  color: #ffd23f;
+  font-family: var(--pixel);
+  font-size: clamp(9px, 1.3vw, 14px);
+  letter-spacing: 0;
+}
+
 #overlays {
   position: fixed;
   inset: 0;

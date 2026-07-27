@@ -11,6 +11,7 @@ import { GameStore } from './state/store';
 import { fx } from './render/fx';
 import { sound } from './render/sound';
 import { assets } from './render/assets';
+import type { AssetName } from './render/assets';
 import { Overlays } from './ui/overlays';
 import { Router } from './screens/router';
 import type { ScreenContext } from './screens/screen';
@@ -34,6 +35,59 @@ if (!(canvas instanceof HTMLCanvasElement) || !overlaysRoot) {
 const stage = new Stage(canvas);
 const store = new GameStore();
 if (hostedDemo) store.setMode('demo');
+
+const currentRoomAsset: AssetName = store.state.cosmetics.roomTheme === 'e_sunset'
+  ? 'roomThemeSunset'
+  : store.state.cosmetics.roomTheme === 'l_forest'
+    ? 'roomThemeForest'
+    : 'roomBg';
+const currentGuideAsset: AssetName = store.state.settings.language === 'zh-CN'
+  ? 'homeTokenGuideBoardZh'
+  : 'homeTokenGuideBoardEn';
+const HOME_CRITICAL: AssetName[] = [
+  currentRoomAsset,
+  'coinBank',
+  'prizeWall',
+  'collectionNeonShelf',
+  'collectionPrizeLights',
+  'collectionPedestal',
+  'collectionCrownMarquee',
+  'decorWallBoard',
+  'decorFloorRiser',
+  'decorBuddyRug',
+  'cabinetSkins',
+  'homeLevelCabinets',
+  'levelUiKit',
+  'homeLogo',
+  'homePlayer',
+  'homePlayerCard',
+  currentGuideAsset,
+  'homeSyncStates',
+  'homeShopCard',
+  'homeProjectRow',
+  'homeIconBtn',
+  'homeUtilityButtons',
+  'coinHudPlaque',
+  'tokenHudPlaque',
+  'priceTagPlaque',
+  'coinSocket',
+  'shopCapsuleSingle',
+  'shopCapsuleBundle',
+];
+
+const boot = document.getElementById('boot');
+const bootProgress = document.getElementById('boot-progress');
+const bootLabel = document.getElementById('boot-label');
+function paintBoot(fraction: number): void {
+  const pct = Math.max(0, Math.min(100, Math.round(fraction * 100)));
+  if (bootProgress instanceof HTMLElement) bootProgress.style.width = pct + '%';
+  if (bootLabel) {
+    bootLabel.textContent = store.state.settings.language === 'zh-CN'
+      ? `街机厅通电中... ${pct}%`
+      : `POWERING UP ARCADE... ${pct}%`;
+  }
+}
+
 const overlays = new Overlays(
   overlaysRoot,
   store,
@@ -61,10 +115,6 @@ const overlays = new Overlays(
 sound.setMuted(store.state.settings.muted);
 stage.setFrameMode(store.state.settings.fps);
 
-// Start loading the generated room art. Screens fall back to procedural art
-// until each image is ready, so this never blocks first paint.
-assets.load();
-
 // The router needs the context, and the context references the router, so the
 // context is supplied lazily via a closure.
 let context: ScreenContext;
@@ -89,15 +139,26 @@ router.register(new AchievementScreen(context));
 router.register(new CustomizeScreen(context));
 
 async function launch(): Promise<void> {
-  // The hosted build is an explicitly fictional, isolated arcade. Seed it
-  // before first paint so visitors land in the game instead of a dead local
-  // scanner prompt. Existing hosted-demo progress remains untouched.
-  if (hostedDemo && store.state.projects.length === 0) await store.sync();
+  // Seed the fictional hosted slot and decode the authored Home scene in
+  // parallel. The boot curtain prevents the temporary procedural fallbacks
+  // from flashing before the final room art is ready.
+  await Promise.all([
+    hostedDemo && store.state.projects.length === 0 ? store.sync() : Promise.resolve(),
+    assets.waitFor(HOME_CRITICAL, paintBoot),
+  ]);
+  paintBoot(1);
 
   router.go('room');
   stage.start((ctx, dt, now) => {
     fx.update(dt);
     router.render(ctx, dt, now);
+  });
+
+  // Secondary rooms continue loading behind the now-complete Home screen.
+  assets.load();
+  requestAnimationFrame(() => {
+    boot?.classList.add('ta-boot-ready');
+    window.setTimeout(() => boot?.remove(), 260);
   });
 }
 

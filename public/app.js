@@ -1766,23 +1766,59 @@
     constructor() {
       this.imgs = {};
       this.ready = {};
-      this.started = false;
+      this.requested = /* @__PURE__ */ new Set();
+      this.settled = /* @__PURE__ */ new Set();
+      this.pending = /* @__PURE__ */ new Map();
     }
-    /** Kick off loading every asset. Safe to call once at boot. */
-    load() {
-      if (this.started) return;
-      this.started = true;
-      Object.keys(SRC).forEach((name) => {
+    /** Kick off loading selected assets, or every remaining asset when omitted. */
+    load(names = Object.keys(SRC)) {
+      names.forEach((name) => {
+        if (this.requested.has(name)) return;
+        this.requested.add(name);
         const img = new Image();
-        img.onload = () => {
-          this.ready[name] = true;
-        };
-        img.onerror = () => {
-        };
+        const pending = new Promise((resolve) => {
+          img.onload = () => {
+            this.ready[name] = true;
+            this.settled.add(name);
+            resolve();
+          };
+          img.onerror = () => {
+            this.settled.add(name);
+            resolve();
+          };
+        });
         img.src = publicUrl(SRC[name]);
         this.imgs[name] = img;
+        this.pending.set(name, pending);
       });
       collectibleIcon("r_frame");
+    }
+    /**
+     * Hold the first game frame until the authored Home art has settled. A
+     * timeout preserves the old resilient fallback behavior on broken networks,
+     * while normal visitors see one coherent reveal instead of an asset pop-in.
+     */
+    async waitFor(names, onProgress, timeoutMs = 2e4) {
+      this.load(names);
+      const report = () => {
+        const done = names.filter((name) => this.settled.has(name)).length;
+        onProgress?.(names.length ? done / names.length : 1);
+      };
+      report();
+      const timer = window.setInterval(report, 80);
+      let timeout;
+      try {
+        await Promise.race([
+          Promise.all(names.map((name) => this.pending.get(name) ?? Promise.resolve())),
+          new Promise((resolve) => {
+            timeout = window.setTimeout(resolve, timeoutMs);
+          })
+        ]);
+      } finally {
+        window.clearInterval(timer);
+        if (timeout != null) window.clearTimeout(timeout);
+        report();
+      }
     }
     /** The decoded image, or null while it's still loading / on error. */
     get(name) {
@@ -8485,6 +8521,48 @@
   var stage = new Stage(canvas);
   var store = new GameStore();
   if (hostedDemo) store.setMode("demo");
+  var currentRoomAsset = store.state.cosmetics.roomTheme === "e_sunset" ? "roomThemeSunset" : store.state.cosmetics.roomTheme === "l_forest" ? "roomThemeForest" : "roomBg";
+  var currentGuideAsset = store.state.settings.language === "zh-CN" ? "homeTokenGuideBoardZh" : "homeTokenGuideBoardEn";
+  var HOME_CRITICAL = [
+    currentRoomAsset,
+    "coinBank",
+    "prizeWall",
+    "collectionNeonShelf",
+    "collectionPrizeLights",
+    "collectionPedestal",
+    "collectionCrownMarquee",
+    "decorWallBoard",
+    "decorFloorRiser",
+    "decorBuddyRug",
+    "cabinetSkins",
+    "homeLevelCabinets",
+    "levelUiKit",
+    "homeLogo",
+    "homePlayer",
+    "homePlayerCard",
+    currentGuideAsset,
+    "homeSyncStates",
+    "homeShopCard",
+    "homeProjectRow",
+    "homeIconBtn",
+    "homeUtilityButtons",
+    "coinHudPlaque",
+    "tokenHudPlaque",
+    "priceTagPlaque",
+    "coinSocket",
+    "shopCapsuleSingle",
+    "shopCapsuleBundle"
+  ];
+  var boot = document.getElementById("boot");
+  var bootProgress = document.getElementById("boot-progress");
+  var bootLabel = document.getElementById("boot-label");
+  function paintBoot(fraction) {
+    const pct = Math.max(0, Math.min(100, Math.round(fraction * 100)));
+    if (bootProgress instanceof HTMLElement) bootProgress.style.width = pct + "%";
+    if (bootLabel) {
+      bootLabel.textContent = store.state.settings.language === "zh-CN" ? `\u8857\u673A\u5385\u901A\u7535\u4E2D... ${pct}%` : `POWERING UP ARCADE... ${pct}%`;
+    }
+  }
   var overlays = new Overlays(
     overlaysRoot,
     store,
@@ -8503,7 +8581,6 @@
   );
   sound.setMuted(store.state.settings.muted);
   stage.setFrameMode(store.state.settings.fps);
-  assets.load();
   var context;
   var router = new Router(() => context);
   context = {
@@ -8524,11 +8601,20 @@
   router.register(new AchievementScreen(context));
   router.register(new CustomizeScreen(context));
   async function launch() {
-    if (hostedDemo && store.state.projects.length === 0) await store.sync();
+    await Promise.all([
+      hostedDemo && store.state.projects.length === 0 ? store.sync() : Promise.resolve(),
+      assets.waitFor(HOME_CRITICAL, paintBoot)
+    ]);
+    paintBoot(1);
     router.go("room");
     stage.start((ctx2, dt, now) => {
       fx.update(dt);
       router.render(ctx2, dt, now);
+    });
+    assets.load();
+    requestAnimationFrame(() => {
+      boot?.classList.add("ta-boot-ready");
+      window.setTimeout(() => boot?.remove(), 260);
     });
   }
   void launch();
