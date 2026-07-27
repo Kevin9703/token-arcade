@@ -868,6 +868,8 @@ Status: Passed (PM browser acceptance)
   seeding and the complete visible Home asset set load in parallel.
 - The room background, Coin Bank, and Prize Wall begin preloading from HTML;
   secondary-room assets wait until Home is ready.
+- The 31 Home-critical runtime images use high-quality WebP derivatives totaling
+  about 3.9 MB; original PNG masters remain untouched for future art work.
 - Browser acceptance captured the first frame and the completed Home frame.
   No incomplete cabinet, placeholder Prize Wall, or oversized procedural label
   appeared between them, and the final console error log was empty.
