@@ -178,12 +178,18 @@ export class Overlays {
     const modeRow = el('div', 'ta-row');
     modeRow.appendChild(el('span', undefined, t('ui.dataSource')));
     const modeBtn = el('button', 'ta-btn ta-switch ghost');
-    modeBtn.textContent = this.store.state.mode === 'demo' ? t('ui.tryLiveScan') : t('ui.liveHistory');
+    modeBtn.textContent = this.store.state.mode === 'demo'
+      ? (this.onTryLiveScan ? t('ui.tryLiveScan') : t('ui.demoArcade'))
+      : t('ui.liveHistory');
     if (this.store.state.mode === 'demo') {
-      modeBtn.addEventListener('click', () => {
-        this.close();
-        this.onTryLiveScan?.();
-      });
+      if (this.onTryLiveScan) {
+        modeBtn.addEventListener('click', () => {
+          this.close();
+          this.onTryLiveScan?.();
+        });
+      } else {
+        modeBtn.disabled = true;
+      }
     } else {
       modeBtn.disabled = true;
     }

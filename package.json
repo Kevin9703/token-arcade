@@ -1,16 +1,89 @@
 {
   "name": "token-arcade",
   "version": "0.1.0",
-  "private": true,
   "description": "Turn AI coding token usage into a cozy pixel arcade.",
+  "license": "MIT",
   "type": "module",
+  "bin": {
+    "token-arcade": "bin/token-arcade.mjs"
+  },
+  "files": [
+    "bin",
+    "dist",
+    "ARCHITECTURE.md",
+    "LICENSE",
+    "README.md",
+    "public/index.html",
+    "public/styles.css",
+    "public/app.js",
+    "public/assets/achievement-showcase/items",
+    "public/assets/collectibles/items",
+    "public/assets/collection",
+    "public/assets/customization",
+    "public/assets/hud/items",
+    "public/assets/level-system",
+    "public/assets/project-detail",
+    "public/assets/shop/items",
+    "public/assets/cabinet-skins.png",
+    "public/assets/coin-bank.png",
+    "public/assets/prize-wall.png",
+    "public/assets/room-bg.png",
+    "public/assets/capsule/capsule-result-item-row-legendary-v1.png",
+    "public/assets/capsule/capsule-result-item-rows-v2.png",
+    "public/assets/capsule/display-50-v1.png",
+    "public/assets/capsule/machine.png",
+    "public/assets/capsule/reveal-frame-common.png",
+    "public/assets/capsule/reveal-frame-epic.png",
+    "public/assets/capsule/reveal-frame-legendary.png",
+    "public/assets/capsule/reveal-frame-rare.png",
+    "public/assets/capsule/reveal-frame-uncommon.png",
+    "public/assets/capsule/reveal-frames.png",
+    "public/assets/capsule/room-bg.png",
+    "public/assets/home-ui/coin-counter-plaque-v1-trimmed.png",
+    "public/assets/home-ui/home-utility-buttons-sheet-v2.png",
+    "public/assets/home-ui/icon-button-frame-v1-trimmed.png",
+    "public/assets/home-ui/logo-sign-flicker-burst-v1.png",
+    "public/assets/home-ui/logo-sign-flicker-dropout-v1.png",
+    "public/assets/home-ui/logo-sign-v1-trimmed.png",
+    "public/assets/home-ui/player-card-frame-v1-trimmed.png",
+    "public/assets/home-ui/player-character-v1-trimmed.png",
+    "public/assets/home-ui/project-row-frame-v1-trimmed.png",
+    "public/assets/home-ui/shop-card-frame-v1-trimmed.png",
+    "public/assets/home-ui/sync-button-states-v2-trimmed.png",
+    "public/assets/home-ui/token-guide-board-en-v2.png",
+    "public/assets/home-ui/token-guide-board-zh-v2.png"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Kevin9703/token-arcade.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Kevin9703/token-arcade/issues"
+  },
+  "homepage": "https://kevin9703.github.io/token-arcade/?demo=1",
+  "keywords": [
+    "claude-code",
+    "codex",
+    "token-tracking",
+    "pixel-art",
+    "arcade-game",
+    "local-first",
+    "gamification"
+  ],
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "build": "esbuild src/main.ts --bundle --format=iife --outfile=public/app.js --sourcemap --loader:.ts=ts",
+    "build": "npm run build:client && npm run build:server",
+    "build:client": "esbuild src/main.ts --bundle --format=iife --outfile=public/app.js --sourcemap --loader:.ts=ts",
+    "build:server": "esbuild server/index.ts --bundle --platform=node --format=esm --target=node22 --outfile=dist/server.mjs",
     "watch": "esbuild src/main.ts --bundle --format=iife --outfile=public/app.js --sourcemap --loader:.ts=ts --watch",
     "start": "node --experimental-strip-types --no-warnings server/index.ts",
     "dev": "npm run build && npm run start",
-    "test": "node scripts/run-tests.mjs"
+    "test": "node scripts/run-tests.mjs",
+    "capture:readme": "node scripts/capture-readme-demo.mjs",
+    "prepack": "npm run build"
   },
   "devDependencies": {
     "@types/node": "^22.20.0",

@@ -2,17 +2,28 @@
 
 > Turn AI coding tokens into a tiny pixel arcade.
 
-[![Version](https://img.shields.io/badge/version-v0.1-f04acb?style=flat-square)](#status)
+[![Version](https://img.shields.io/badge/version-v0.1.0-f04acb?style=flat-square)](https://github.com/Kevin9703/token-arcade/releases/tag/v0.1.0)
 [![Node.js](https://img.shields.io/badge/node.js-22%2B-56d364?style=flat-square)](#run-locally)
 [![Local-first](https://img.shields.io/badge/data-local--first-53e0d5?style=flat-square)](#privacy)
 [![License: MIT](https://img.shields.io/badge/license-MIT-ffc928?style=flat-square)](LICENSE)
 
+**[PLAY THE FICTIONAL DEMO](https://kevin9703.github.io/token-arcade/?demo=1)**
+&nbsp; | &nbsp;
+**[DOWNLOAD V0.1.0](https://github.com/Kevin9703/token-arcade/releases/tag/v0.1.0)**
+
+```bash
+npx --yes github:Kevin9703/token-arcade
+```
+
 Token Arcade is a local-first game for Claude Code and Codex usage. It groups
 your model token history by project, turns newly discovered tokens into arcade
 coins, and lets you spend those coins on capsule pulls, collectibles, cabinets,
-and achievements.
+and achievements. It is a game, not another token dashboard.
 
-![Token Arcade home screen with fictional demo cabinets](docs/readme-assets/demo-home.png)
+![Token Arcade fictional demo: sync tokens, mint coins, and pull capsules](docs/readme-assets/token-arcade-demo.gif)
+
+The recording and hosted demo use an isolated fictional save. No real project
+names or local usage history are included.
 
 This is deliberately **not** a productivity dashboard. It does not score your
 commits, tests, documentation, or output quality. Tokens are the only gameplay
@@ -33,12 +44,12 @@ input: use a model, sync your history, watch the arcade grow.
 
 ## Status
 
-**V0.1 local release.** The first complete arcade loop is ready to play: sync
-real local usage or deliberately enter an isolated demo, earn coins, level
-project cabinets, collect all 50 prizes, unlock permanent collection upgrades,
-equip room themes and profile frames, and recycle duplicate prizes into a
-guaranteed missing collectible. Token Arcade remains a local-first preview
-rather than a hosted service.
+**V0.1.0.** The first complete arcade loop is ready to play: sync real local
+usage or enter an isolated demo, earn coins, level project cabinets, collect
+all 50 prizes, unlock permanent collection upgrades, equip room themes and
+profile frames, and recycle duplicate prizes into a guaranteed missing
+collectible. The hosted build is demo-only; real history scanning remains
+strictly local.
 
 ## Demo
 
@@ -101,14 +112,23 @@ Pull capsules and fill the prize wall
 
 Requirements: Node.js 22+ and npm.
 
+Run the latest GitHub release in one command:
+
+```bash
+npx --yes github:Kevin9703/token-arcade
+```
+
+Token Arcade opens at [http://localhost:4173](http://localhost:4173). Press
+`Ctrl+C` in the terminal to stop it.
+
+To work from source:
+
 ```bash
 git clone https://github.com/Kevin9703/token-arcade.git
 cd token-arcade
 npm install
 npm run dev
 ```
-
-Then open [http://localhost:4173](http://localhost:4173).
 
 Use `SYNC` to scan local usage. If no readable history is available, the app
 can be explored in demo mode. Progress stays in browser `localStorage` on your

@@ -178,6 +178,15 @@ const SRC: Record<AssetName, string> = {
   capsuleResultRowLegendary: '/assets/capsule/capsule-result-item-row-legendary-v1.png',
 };
 
+/**
+ * Resolve public files relative to the document instead of the host root.
+ * Local play is served from `/`, while the hosted demo lives under
+ * `/token-arcade/`; one resolver keeps both builds on the exact same assets.
+ */
+function publicUrl(path: string): string {
+  return new URL(path.replace(/^\/+/, ''), document.baseURI).toString();
+}
+
 // ---- lazy per-id collectible + currency icons -----------------------------
 // One transparent PNG per collectible id (docs/COLLECTIBLE_GENERATED_ASSETS.md).
 // Loaded on first request so we don't balloon the boot SRC map; returns null
@@ -201,13 +210,13 @@ function loadIcon(key: string, url: string): HTMLImageElement | null {
 
 /** Generated icon for a collectible id, or null while loading / on error. */
 export function collectibleIcon(id: string): HTMLImageElement | null {
-  return loadIcon('c:' + id, `/assets/collectibles/items/${id}.png`);
+  return loadIcon('c:' + id, publicUrl(`/assets/collectibles/items/${id}.png`));
 }
 
 export type CurrencyIconName = 'coin' | 'token_chip' | 'ticket' | 'dust';
 /** Generated static currency icon, or null while loading / on error. */
 export function currencyIcon(name: CurrencyIconName): HTMLImageElement | null {
-  return loadIcon('cur:' + name, `/assets/collectibles/items/currency_${name}.png`);
+  return loadIcon('cur:' + name, publicUrl(`/assets/collectibles/items/currency_${name}.png`));
 }
 
 export class AssetStore {
@@ -227,7 +236,7 @@ export class AssetStore {
       img.onerror = () => {
         /* leave un-ready -> screens fall back to procedural art */
       };
-      img.src = SRC[name];
+      img.src = publicUrl(SRC[name]);
       this.imgs[name] = img;
     });
     // The Home new-cosmetic plaque must never introduce Cyan Profile Frame with

@@ -22,6 +22,9 @@ import { CustomizeScreen } from './screens/customizeScreen';
 
 let roomScreen: RoomScreen;
 
+const params = new URLSearchParams(window.location.search);
+const hostedDemo = params.get('demo') === '1' || window.location.hostname.endsWith('github.io');
+
 const canvas = document.getElementById('stage');
 const overlaysRoot = document.getElementById('overlays');
 if (!(canvas instanceof HTMLCanvasElement) || !overlaysRoot) {
@@ -30,6 +33,7 @@ if (!(canvas instanceof HTMLCanvasElement) || !overlaysRoot) {
 
 const stage = new Stage(canvas);
 const store = new GameStore();
+if (hostedDemo) store.setMode('demo');
 const overlays = new Overlays(
   overlaysRoot,
   store,
@@ -43,12 +47,14 @@ const overlays = new Overlays(
     overlays.close();
     router.go('achievements');
   },
-  () => {
-    // Settings -> real history retry always returns to the arcade room, where
-    // an empty result can surface the same truthful decision panel.
-    router.go('room');
-    void roomScreen.tryLiveScanFromSettings();
-  },
+  hostedDemo
+    ? undefined
+    : () => {
+        // Settings -> real history retry always returns to the arcade room,
+        // where an empty result can surface the same truthful decision panel.
+        router.go('room');
+        void roomScreen.tryLiveScanFromSettings();
+      },
 );
 
 // Apply the persisted mute setting + frame-rate cap up front.
@@ -81,15 +87,24 @@ router.register(new CabinetScreen(context));
 router.register(new CapsuleScreen(context));
 router.register(new AchievementScreen(context));
 router.register(new CustomizeScreen(context));
-router.go('room');
 
-stage.start((ctx, dt, now) => {
-  fx.update(dt);
-  router.render(ctx, dt, now);
-});
+async function launch(): Promise<void> {
+  // The hosted build is an explicitly fictional, isolated arcade. Seed it
+  // before first paint so visitors land in the game instead of a dead local
+  // scanner prompt. Existing hosted-demo progress remains untouched.
+  if (hostedDemo && store.state.projects.length === 0) await store.sync();
+
+  router.go('room');
+  stage.start((ctx, dt, now) => {
+    fx.update(dt);
+    router.render(ctx, dt, now);
+  });
+}
+
+void launch();
 
 // Browsers require a user gesture before audio can start; resume on first tap.
 window.addEventListener('pointerdown', () => sound.resume(), { once: true });
 
 // Debug handle for the console.
-(window as unknown as { arcade: unknown }).arcade = { store, router, stage };
+(window as unknown as { arcade: unknown }).arcade = { store, router, stage, hostedDemo };
