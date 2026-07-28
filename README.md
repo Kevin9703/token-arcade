@@ -2,14 +2,14 @@
 
 > Turn AI coding tokens into a tiny pixel arcade.
 
-[![Version](https://img.shields.io/badge/version-v0.1.2-f04acb?style=flat-square)](https://github.com/Kevin9703/token-arcade/releases/tag/v0.1.2)
+[![Version](https://img.shields.io/badge/version-v0.1.3-f04acb?style=flat-square)](https://github.com/Kevin9703/token-arcade/releases/tag/v0.1.3)
 [![Node.js](https://img.shields.io/badge/node.js-22%2B-56d364?style=flat-square)](#run-locally)
 [![Local-first](https://img.shields.io/badge/data-local--first-53e0d5?style=flat-square)](#privacy)
 [![License: MIT](https://img.shields.io/badge/license-MIT-ffc928?style=flat-square)](LICENSE)
 
 **[PLAY THE FICTIONAL DEMO](https://kevin9703.github.io/token-arcade/?demo=1)**
 &nbsp; | &nbsp;
-**[DOWNLOAD V0.1.2](https://github.com/Kevin9703/token-arcade/releases/tag/v0.1.2)**
+**[DOWNLOAD V0.1.3](https://github.com/Kevin9703/token-arcade/releases/tag/v0.1.3)**
 
 ```bash
 npx --yes github:Kevin9703/token-arcade
@@ -44,7 +44,7 @@ input: use a model, sync your history, watch the arcade grow.
 
 ## Status
 
-**V0.1.2.** The first complete arcade loop is ready to play: sync real local
+**V0.1.3.** The first complete arcade loop is ready to play: sync real local
 usage or enter an isolated demo, earn coins, level project cabinets, collect
 all 50 prizes, unlock permanent collection upgrades, equip room themes and
 profile frames, and recycle duplicate prizes into a guaranteed missing

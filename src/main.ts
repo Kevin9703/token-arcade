@@ -78,14 +78,17 @@ const HOME_CRITICAL: AssetName[] = [
 const boot = document.getElementById('boot');
 const bootProgress = document.getElementById('boot-progress');
 const bootLabel = document.getElementById('boot-label');
+const bootPercent = document.getElementById('boot-percent');
 function paintBoot(fraction: number): void {
   const pct = Math.max(0, Math.min(100, Math.round(fraction * 100)));
+  if (boot instanceof HTMLElement) boot.dataset.locale = store.state.settings.language;
   if (bootProgress instanceof HTMLElement) bootProgress.style.width = pct + '%';
   if (bootLabel) {
     bootLabel.textContent = store.state.settings.language === 'zh-CN'
-      ? `街机厅通电中... ${pct}%`
-      : `POWERING UP ARCADE... ${pct}%`;
+      ? pct === 100 ? '街机厅已就绪' : '街机厅电网接通中'
+      : pct === 100 ? 'ARCADE READY' : 'ARCADE POWER GRID';
   }
+  if (bootPercent) bootPercent.textContent = pct + '%';
 }
 
 const overlays = new Overlays(

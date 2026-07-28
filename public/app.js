@@ -8556,12 +8556,15 @@
   var boot = document.getElementById("boot");
   var bootProgress = document.getElementById("boot-progress");
   var bootLabel = document.getElementById("boot-label");
+  var bootPercent = document.getElementById("boot-percent");
   function paintBoot(fraction) {
     const pct = Math.max(0, Math.min(100, Math.round(fraction * 100)));
+    if (boot instanceof HTMLElement) boot.dataset.locale = store.state.settings.language;
     if (bootProgress instanceof HTMLElement) bootProgress.style.width = pct + "%";
     if (bootLabel) {
-      bootLabel.textContent = store.state.settings.language === "zh-CN" ? `\u8857\u673A\u5385\u901A\u7535\u4E2D... ${pct}%` : `POWERING UP ARCADE... ${pct}%`;
+      bootLabel.textContent = store.state.settings.language === "zh-CN" ? pct === 100 ? "\u8857\u673A\u5385\u5DF2\u5C31\u7EEA" : "\u8857\u673A\u5385\u7535\u7F51\u63A5\u901A\u4E2D" : pct === 100 ? "ARCADE READY" : "ARCADE POWER GRID";
     }
+    if (bootPercent) bootPercent.textContent = pct + "%";
   }
   var overlays = new Overlays(
     overlaysRoot,

@@ -1,6 +1,6 @@
 # PM Live QA Issues
 
-Last updated: 2026-07-11
+Last updated: 2026-07-28
 
 This is the running QA memory for Token Arcade. Every visual/product acceptance pass should update this file before giving the user a final conclusion.
 
@@ -19,6 +19,43 @@ Each QA pass should add:
 - exact fix request for Claude if failed
 
 ## Current QA Items
+
+### QA-013: Startup Curtain Looked Like A Generic Web Loader
+
+Status: Passed (2026-07-28, PM browser acceptance)
+
+Area: Cold-start and staged asset loading.
+
+The first staged loader correctly prevented incomplete Home art from flashing,
+but its flat purple field, CSS text logo, thin progress outline, and detached
+percentage read as a placeholder web page rather than the opening beat of the
+arcade. That weakened the product before the game had even appeared.
+
+Accepted correction:
+
+- Replaced the flat field with an authored, symmetrical pixel-art arcade power
+  chamber that visually leads into the Home room.
+- Reused the production `TOKEN ARCADE` neon sign instead of approximating the
+  identity with CSS text.
+- Added an authored transparent mechanical power meter with a clipped,
+  genuinely dynamic cyan energy fill and separate localized status/percentage
+  readouts.
+- The screen now reports `ARCADE POWER GRID` / `ARCADE READY` in English and
+  `街机厅电网接通中` / `街机厅已就绪` in Simplified Chinese.
+- Boot art is preloaded at high priority, while the existing staged asset
+  contract still keeps Home hidden until all Home-critical art is decoded.
+- Desktop and narrow mobile compositions were visually checked. The logo,
+  central power conduit, and meter remain readable without cropping or overlap.
+- The final 100% state uses a four-direction dark pixel outline so status and
+  percentage retain contrast when the cyan fill reaches them.
+
+Accepted runtime assets:
+
+- `public/assets/boot/boot-power-chamber-v1.webp`
+- `public/assets/boot/loading-frame-v1.webp`
+
+Editable generated sources remain under `assets/generated/boot/`. Temporary
+QA-only URL controls were removed before release.
 
 ### QA-012: Home Value Proposition Floats Under The Logo Instead Of Existing In The Room
 

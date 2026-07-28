@@ -50,16 +50,36 @@ body {
   position: fixed;
   inset: 0;
   z-index: 30;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 28px;
+  overflow: hidden;
+  background-color: #050308;
   background:
-    repeating-linear-gradient(0deg, rgba(95, 230, 214, 0.025) 0 1px, transparent 1px 5px),
-    radial-gradient(90% 72% at 50% 42%, #241338 0%, #10091d 48%, #050308 100%);
+    linear-gradient(180deg, rgba(5, 3, 8, 0.18), rgba(5, 3, 8, 0.02) 58%, rgba(5, 3, 8, 0.32)),
+    url('./assets/boot/boot-power-chamber-v1.webp') center / cover no-repeat;
   opacity: 1;
   transition: opacity 220ms ease;
+}
+
+#boot::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    repeating-linear-gradient(0deg, rgba(95, 230, 214, 0.028) 0 1px, transparent 1px 5px),
+    radial-gradient(ellipse at center, transparent 40%, rgba(4, 2, 8, 0.52) 100%);
+}
+
+#boot::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: 5%;
+  width: min(620px, 55vw);
+  height: 14%;
+  transform: translateX(-50%);
+  background: radial-gradient(ellipse, rgba(95, 230, 214, 0.16), transparent 68%);
+  animation: ta-boot-power-breathe 2.4s ease-in-out infinite;
+  pointer-events: none;
 }
 
 #boot.ta-boot-ready {
@@ -67,51 +87,172 @@ body {
   pointer-events: none;
 }
 
-.ta-boot-sign {
+.ta-boot-layout {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
-  line-height: 0.88;
-  font-family: var(--pixel);
-  font-size: clamp(32px, 6vw, 72px);
-  text-align: center;
-  filter: drop-shadow(0 0 16px rgba(225, 90, 216, 0.35));
+  justify-content: space-between;
+  padding: clamp(28px, 5vh, 62px) 4vw clamp(32px, 5.5vh, 72px);
 }
 
-.ta-boot-token {
-  color: #ff82e8;
-  text-shadow: 0 0 4px #e15ad8, 0 0 18px rgba(225, 90, 216, 0.7);
+.ta-boot-logo {
+  display: block;
+  width: min(620px, 44vw);
+  max-height: 34vh;
+  object-fit: contain;
+  image-rendering: pixelated;
+  filter:
+    drop-shadow(0 0 5px rgba(225, 90, 216, 0.9))
+    drop-shadow(0 0 22px rgba(95, 230, 214, 0.38));
+  animation: ta-boot-logo-breathe 2.8s ease-in-out infinite;
 }
 
-.ta-boot-arcade {
-  color: #7ef4ee;
-  text-shadow: 0 0 4px #5fe6d6, 0 0 18px rgba(95, 230, 214, 0.65);
+.ta-boot-meter {
+  position: relative;
+  width: min(820px, 76vw);
+  aspect-ratio: 1589 / 380;
+  flex: 0 0 auto;
+  filter: drop-shadow(0 10px 18px rgba(0, 0, 0, 0.72));
 }
 
-.ta-boot-track {
-  width: min(420px, 72vw);
-  height: 18px;
-  padding: 3px;
-  border: 2px solid #ffd23f;
-  background: #0a0712;
-  box-shadow: 0 0 16px rgba(255, 210, 63, 0.22);
+.ta-boot-meter-frame {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  image-rendering: pixelated;
+  pointer-events: none;
+}
+
+.ta-boot-fill-window {
+  position: absolute;
+  z-index: 2;
+  left: 15.5%;
+  top: 24%;
+  width: 69%;
+  height: 30%;
+  overflow: hidden;
+  background: #080713;
+  clip-path: polygon(1.5% 0, 98.5% 0, 100% 22%, 100% 78%, 98.5% 100%, 1.5% 100%, 0 78%, 0 22%);
 }
 
 #boot-progress {
   display: block;
   width: 0;
   height: 100%;
-  background: repeating-linear-gradient(90deg, #5fe6d6 0 18px, #2f8a80 18px 22px);
-  box-shadow: 0 0 12px rgba(95, 230, 214, 0.7);
-  transition: width 100ms linear;
+  min-width: 4px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.72), transparent 32%),
+    repeating-linear-gradient(90deg, #5fe6d6 0 22px, #2f8a80 22px 27px);
+  box-shadow:
+    0 0 12px rgba(95, 230, 214, 0.88),
+    0 0 28px rgba(95, 230, 214, 0.42);
+  transition: width 120ms linear;
+}
+
+.ta-boot-readout {
+  position: absolute;
+  z-index: 3;
+  left: 17.5%;
+  right: 17.5%;
+  top: 24%;
+  height: 30%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 0 4%;
+  pointer-events: none;
 }
 
 #boot-label {
   margin: 0;
-  color: #ffd23f;
+  overflow: hidden;
+  color: #f6f4ff;
   font-family: var(--pixel);
-  font-size: clamp(9px, 1.3vw, 14px);
+  font-size: clamp(7px, 1vw, 12px);
   letter-spacing: 0;
+  line-height: 1.5;
+  white-space: nowrap;
+  text-shadow:
+    -1px -1px 0 #090615,
+    1px -1px 0 #090615,
+    -1px 1px 0 #090615,
+    1px 1px 0 #090615,
+    0 0 8px rgba(95, 230, 214, 0.9);
+}
+
+#boot[data-locale='zh-CN'] #boot-label {
+  font-family: ui-monospace, 'PingFang SC', 'Microsoft YaHei', monospace;
+  font-size: clamp(12px, 1.45vw, 18px);
+  font-weight: 700;
+}
+
+#boot-percent {
+  flex: 0 0 auto;
+  color: #fff1a6;
+  font-family: var(--pixel);
+  font-size: clamp(9px, 1.3vw, 16px);
+  text-shadow:
+    -1px -1px 0 #090615,
+    1px -1px 0 #090615,
+    -1px 1px 0 #090615,
+    1px 1px 0 #090615,
+    0 0 10px rgba(255, 210, 63, 0.8);
+}
+
+@keyframes ta-boot-logo-breathe {
+  0%,
+  100% {
+    opacity: 0.92;
+    transform: translateY(0);
+  }
+  50% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
+}
+
+@keyframes ta-boot-power-breathe {
+  0%,
+  100% {
+    opacity: 0.45;
+    transform: translateX(-50%) scaleX(0.9);
+  }
+  50% {
+    opacity: 0.9;
+    transform: translateX(-50%) scaleX(1.04);
+  }
+}
+
+@media (max-aspect-ratio: 4 / 5) {
+  #boot {
+    background-position: center;
+  }
+
+  .ta-boot-layout {
+    padding-top: 10vh;
+    padding-bottom: 9vh;
+  }
+
+  .ta-boot-logo {
+    width: min(78vw, 520px);
+  }
+
+  .ta-boot-meter {
+    width: min(94vw, 760px);
+  }
+
+  #boot-label {
+    max-width: 68%;
+    text-overflow: ellipsis;
+  }
 }
 
 #overlays {
