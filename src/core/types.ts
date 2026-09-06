@@ -156,6 +156,9 @@ export interface GameState {
   /** null = keep using the automatic newest-prize arrangement. An array is a
    * player-authored layout and may intentionally omit owned prizes. */
   roomDecorations: RoomDecorationPlacement[] | null;
+  /** Token-only growth gifts, saved independently in each mode. */
+  growthClaims: string[];
+  featuredProjectId: string | null;
   settings: GameSettings;
 }
 

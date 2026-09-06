@@ -47,6 +47,12 @@ const currentGuideAsset: AssetName = store.state.settings.language === 'zh-CN'
 const HOME_CRITICAL: AssetName[] = [
   currentRoomAsset,
   'coinBank',
+  'projCabStage1',
+  'projCabStage2',
+  'projCabStage3',
+  'projCabStage4',
+  'projCabStage5',
+  'capsuleMachine',
   'prizeWall',
   'collectionNeonShelf',
   'collectionPrizeLights',

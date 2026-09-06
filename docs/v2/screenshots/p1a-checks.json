@@ -1,0 +1,14 @@
+[
+  "Click-to-walk works",
+  "Dialog blocks movement",
+  "Journal object placement works",
+  "Book pages turn",
+  "Sample collect changes coins and companion",
+  "Capsule real clicks spend exactly 25 sample coins",
+  "Language switch works",
+  "No save mutations, usage API calls, or external runtime requests",
+  "Reload resets only sample state",
+  "Keyboard object focus and activation work",
+  "Reduced-motion mode keeps interactions usable",
+  "No page errors or failed asset responses"
+]

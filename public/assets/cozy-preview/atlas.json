@@ -1,0 +1,227 @@
+{
+  "source": "assets/concepts/v2",
+  "status": "P1-A sample; not approved production art",
+  "sprites": {
+    "cabinet-1": {
+      "source": "cabinet-study.png",
+      "crop": {
+        "left": 56,
+        "top": 178,
+        "width": 275,
+        "height": 508
+      },
+      "pivot": [
+        0.5,
+        1
+      ]
+    },
+    "cabinet-2": {
+      "source": "cabinet-study.png",
+      "crop": {
+        "left": 433,
+        "top": 140,
+        "width": 304,
+        "height": 560
+      },
+      "pivot": [
+        0.5,
+        1
+      ]
+    },
+    "cabinet-3": {
+      "source": "cabinet-study.png",
+      "crop": {
+        "left": 831,
+        "top": 101,
+        "width": 323,
+        "height": 599
+      },
+      "pivot": [
+        0.5,
+        1
+      ]
+    },
+    "cabinet-4": {
+      "source": "cabinet-study.png",
+      "crop": {
+        "left": 1214,
+        "top": 79,
+        "width": 327,
+        "height": 621
+      },
+      "pivot": [
+        0.5,
+        1
+      ]
+    },
+    "cabinet-5": {
+      "source": "cabinet-study.png",
+      "crop": {
+        "left": 1586,
+        "top": 52,
+        "width": 375,
+        "height": 656
+      },
+      "pivot": [
+        0.5,
+        1
+      ]
+    },
+    "keeper-0": {
+      "source": "character-study.png",
+      "crop": {
+        "left": 88,
+        "top": 23,
+        "width": 279,
+        "height": 446
+      },
+      "pivot": [
+        0.5,
+        1
+      ]
+    },
+    "lumi-0": {
+      "source": "character-study.png",
+      "crop": {
+        "left": 139,
+        "top": 711,
+        "width": 193,
+        "height": 151
+      },
+      "pivot": [
+        0.5,
+        1
+      ]
+    },
+    "keeper-1": {
+      "source": "character-study.png",
+      "crop": {
+        "left": 528,
+        "top": 27,
+        "width": 278,
+        "height": 443
+      },
+      "pivot": [
+        0.5,
+        1
+      ]
+    },
+    "lumi-1": {
+      "source": "character-study.png",
+      "crop": {
+        "left": 531,
+        "top": 622,
+        "width": 269,
+        "height": 232
+      },
+      "pivot": [
+        0.5,
+        1
+      ]
+    },
+    "keeper-2": {
+      "source": "character-study.png",
+      "crop": {
+        "left": 973,
+        "top": 24,
+        "width": 269,
+        "height": 446
+      },
+      "pivot": [
+        0.5,
+        1
+      ]
+    },
+    "lumi-2": {
+      "source": "character-study.png",
+      "crop": {
+        "left": 931,
+        "top": 535,
+        "width": 346,
+        "height": 327
+      },
+      "pivot": [
+        0.5,
+        1
+      ]
+    },
+    "keeper-3": {
+      "source": "character-study.png",
+      "crop": {
+        "left": 1409,
+        "top": 28,
+        "width": 272,
+        "height": 442
+      },
+      "pivot": [
+        0.5,
+        1
+      ]
+    },
+    "lumi-3": {
+      "source": "character-study.png",
+      "crop": {
+        "left": 1349,
+        "top": 480,
+        "width": 387,
+        "height": 382
+      },
+      "pivot": [
+        0.5,
+        1
+      ]
+    },
+    "journal": {
+      "source": "ui-study.png",
+      "crop": {
+        "left": 40,
+        "top": 71,
+        "width": 729,
+        "height": 442
+      },
+      "pivot": [
+        0.5,
+        1
+      ]
+    },
+    "dialogue": {
+      "source": "ui-study.png",
+      "crop": {
+        "left": 808,
+        "top": 142,
+        "width": 749,
+        "height": 260
+      },
+      "pivot": [
+        0.5,
+        1
+      ]
+    },
+    "hud": {
+      "source": "ui-study.png",
+      "crop": {
+        "left": 53,
+        "top": 640,
+        "width": 711,
+        "height": 208
+      },
+      "pivot": [
+        0.5,
+        1
+      ]
+    },
+    "book": {
+      "source": "ui-study.png",
+      "crop": {
+        "left": 1007,
+        "top": 514,
+        "width": 370,
+        "height": 434
+      },
+      "pivot": [
+        0.5,
+        1
+      ]
+    }
+  }
+}

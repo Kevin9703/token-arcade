@@ -53,7 +53,11 @@
     "public/assets/home-ui/shop-card-frame-v1-trimmed.webp",
     "public/assets/home-ui/sync-button-states-v2-trimmed.webp",
     "public/assets/home-ui/token-guide-board-en-v2.webp",
-    "public/assets/home-ui/token-guide-board-zh-v2.webp"
+    "public/assets/home-ui/token-guide-board-zh-v2.webp",
+    "public/cozy.html",
+    "public/cozy.js",
+    "public/assets/cozy-preview",
+    "public/assets/fonts"
   ],
   "engines": {
     "node": ">=22"
@@ -77,7 +81,7 @@
   ],
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "build": "npm run build:client && npm run build:server",
+    "build": "npm run build:client && npm run build:preview && npm run build:server",
     "build:client": "esbuild src/main.ts --bundle --format=iife --outfile=public/app.js --sourcemap --loader:.ts=ts",
     "build:server": "esbuild server/index.ts --bundle --platform=node --format=esm --target=node22 --outfile=dist/server.mjs",
     "watch": "esbuild src/main.ts --bundle --format=iife --outfile=public/app.js --sourcemap --loader:.ts=ts --watch",
@@ -85,7 +89,8 @@
     "dev": "npm run build && npm run start",
     "test": "node scripts/run-tests.mjs",
     "capture:readme": "node scripts/capture-readme-demo.mjs",
-    "prepack": "npm run build"
+    "prepack": "npm run build",
+    "build:preview": "esbuild src/preview.ts --bundle --format=iife --outfile=public/cozy.js --sourcemap"
   },
   "devDependencies": {
     "@types/node": "^22.20.0",

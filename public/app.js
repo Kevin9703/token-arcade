@@ -355,6 +355,31 @@
     return { coins: coins2, residue: pool % CONFIG.TOKENS_PER_COIN };
   }
 
+  // src/domain/growth.ts
+  var GROWTH_CHAPTERS = [
+    { id: "first-light", tokens: 1e4, reward: "c_sprout", zh: "\u7B2C\u4E00\u76CF\u706F", en: "The first light", storyZh: "\u7ED9\u521A\u5F00\u5F20\u7684\u5C0F\u5E97\u6DFB\u4E00\u70B9\u7EFF\u3002", storyEn: "A little green for your new corner." },
+    { id: "settle-in", tokens: 1e5, reward: "c_mug", zh: "\u5728\u8FD9\u91CC\u5B89\u5BB6", en: "Make yourself at home", storyZh: "\u653E\u597D\u676F\u5B50\uFF0C\u6162\u6162\u6765\u5C31\u597D\u3002", storyEn: "Set down your mug. Take your time." },
+    { id: "new-friend", tokens: 25e4, reward: "r_cat", zh: "\u8FCE\u63A5\u65B0\u670B\u53CB", en: "A friend moves in", storyZh: "\u4F60\u7684\u8857\u673A\u5385\uFF0C\u6709\u732B\u4E86\u3002", storyEn: "Your arcade now has a cat." },
+    { id: "neon-bloom", tokens: 1e6, reward: "r_rug", zh: "\u661F\u5149\u5C0F\u5929\u5730", en: "A place among the stars", storyZh: "\u94FA\u4E0A\u661F\u661F\u5730\u6BEF\uFF0C\u8BA9\u5C0F\u5E97\u66F4\u50CF\u5BB6\u3002", storyEn: "A starry rug makes this place yours." },
+    { id: "golden-hour", tokens: 5e6, reward: "e_sunset", zh: "\u628A\u9EC4\u660F\u7559\u4E0B", en: "Keep the golden hour", storyZh: "\u89E3\u9501\u6574\u95F4\u8857\u673A\u5385\u7684\u843D\u65E5\u4E3B\u9898\u3002", storyEn: "Unlock a sunset for your whole arcade." },
+    { id: "space-friend", tokens: 1e7, reward: "e_astro", zh: "\u6765\u81EA\u661F\u7A7A\u7684\u5BA2\u4EBA", en: "A visitor from space", storyZh: "\u65B0\u7684\u4F19\u4F34\uFF0C\u65B0\u7684\u5192\u9669\u3002", storyEn: "A new companion for the next adventure." },
+    { id: "forest-home", tokens: 5e7, reward: "l_forest", zh: "\u68EE\u6797\u91CC\u7684\u4F20\u8BF4", en: "A little forest legend", storyZh: "\u8BA9\u4F60\u7684\u8857\u673A\u5385\u751F\u957F\u6210\u4E00\u5EA7\u68EE\u6797\u3002", storyEn: "Let your arcade grow into a forest." }
+  ];
+  function growthStatus(state) {
+    return GROWTH_CHAPTERS.map((chapter) => ({
+      ...chapter,
+      ready: state.stats.lifetimeTokens >= chapter.tokens,
+      claimed: state.growthClaims.includes(chapter.id),
+      progress: Math.max(0, Math.min(1, state.stats.lifetimeTokens / chapter.tokens))
+    }));
+  }
+  function companionGrowth(tokens) {
+    const thresholds = [0, 1e5, 1e6, 1e7];
+    const stage2 = thresholds.reduce((current2, value, index) => tokens >= value ? index : current2, 0);
+    const next = thresholds[stage2 + 1] ?? null;
+    return { stage: stage2, next, progress: next === null ? 1 : Math.max(0, (tokens - thresholds[stage2]) / (next - thresholds[stage2])) };
+  }
+
   // src/domain/levels.ts
   var MAX_LEVEL = 50;
   var ANCHORS = [
@@ -1348,6 +1373,8 @@
       mockWorld: null,
       cosmetics: { roomTheme: "base", profileFrame: "base" },
       roomDecorations: null,
+      growthClaims: [],
+      featuredProjectId: null,
       settings: settings ? { ...settings } : { muted: false, language: detectLocale(), fps: "auto", playerName: "" }
     };
   }
@@ -1391,6 +1418,8 @@
       if (!isRoomThemeId(merged.cosmetics.roomTheme)) merged.cosmetics.roomTheme = "base";
       if (!isProfileFrameId(merged.cosmetics.profileFrame)) merged.cosmetics.profileFrame = "base";
       merged.roomDecorations = sanitizeRoomDecorations(merged.owned, saved.roomDecorations);
+      merged.growthClaims = Array.isArray(saved.growthClaims) ? [...new Set(saved.growthClaims.filter((id) => GROWTH_CHAPTERS.some((c) => c.id === id)))] : [];
+      merged.featuredProjectId = merged.projects.some((p) => p.id === saved.featuredProjectId) ? saved.featuredProjectId : null;
       return merged;
     }
     save() {
@@ -1503,6 +1532,24 @@
       };
     }
     // ---- collectibles -----------------------------------------------------
+    featureProject(id) {
+      if (!this._state.projects.some((p) => p.id === id)) return false;
+      this._state.featuredProjectId = id;
+      this.save();
+      return true;
+    }
+    /** Claim exactly once. Existing owners receive dust, never a second coin mint. */
+    claimGrowth(id) {
+      const chapter = GROWTH_CHAPTERS.find((c) => c.id === id);
+      if (!chapter || this._state.growthClaims.includes(id) || this._state.stats.lifetimeTokens < chapter.tokens) return null;
+      const collectible = COLLECTIBLES.find((c) => c.id === chapter.reward);
+      if (!collectible) return null;
+      this._state.growthClaims.push(id);
+      const isDup = this.addOwned(collectible);
+      this.checkAchievements();
+      this.save();
+      return { collectible, isDup };
+    }
     addOwned(collectible) {
       const cur = this._state.owned[collectible.id];
       if (cur) {
@@ -1520,6 +1567,7 @@
     // Pull the capsule machine `count` times. Assumes cost already checked by UI,
     // but re-checks here to stay authoritative.
     pull(count) {
+      if (count !== 1 && count !== 10) return null;
       const cost = count === 10 ? CONFIG.PULL10_COST : CONFIG.PULL_COST * count;
       if (this._state.coins < cost) return null;
       const ownedBefore = this.ownedCount();
@@ -2569,8 +2617,8 @@
   function advance(scale) {
     return (GLYPH_W + 1) * scale;
   }
-  function measureText(text, scale) {
-    const str = String(text);
+  function measureText(text2, scale) {
+    const str = String(text2);
     if (CJK_RE.test(str)) {
       const c = measCtx();
       if (c) {
@@ -2581,8 +2629,8 @@
     }
     return str.length * advance(scale) - scale;
   }
-  function wrapText(text, scale, maxWidth) {
-    const str = String(text);
+  function wrapText(text2, scale, maxWidth) {
+    const str = String(text2);
     if (CJK_RE.test(str)) {
       const lines2 = [];
       let line2 = "";
@@ -2618,9 +2666,9 @@
     if (line) lines.push(line);
     return lines;
   }
-  function drawText(ctx2, text, x, y, scale, color, opts) {
+  function drawText(ctx2, text2, x, y, scale, color, opts) {
     const o = opts || {};
-    const raw = String(text);
+    const raw = String(text2);
     if (CJK_RE.test(raw)) return drawCJK(ctx2, raw, x, y, scale, color, o);
     const str = raw.toUpperCase();
     let startX = x;
@@ -2662,11 +2710,11 @@
     ctx2.restore();
     return w;
   }
-  function blit(ctx2, text, x, y, scale, color) {
+  function blit(ctx2, text2, x, y, scale, color) {
     ctx2.fillStyle = color;
     let cx = x;
-    for (let i = 0; i < text.length; i++) {
-      const glyph = FONT[text[i]] || FONT["?"];
+    for (let i = 0; i < text2.length; i++) {
+      const glyph = FONT[text2[i]] || FONT["?"];
       for (let row = 0; row < GLYPH_H; row++) {
         const line = glyph[row];
         for (let col = 0; col < GLYPH_W; col++) {
@@ -2852,10 +2900,10 @@
       spark(x, y, color);
     }
   }
-  function banner(text, x, y, color, opts = {}) {
+  function banner(text2, x, y, color, opts = {}) {
     const life = opts.life ?? 1.8;
     banners.push({
-      text,
+      text: text2,
       x,
       y,
       color,
@@ -3177,10 +3225,10 @@
   };
 
   // src/ui/overlays.ts
-  function el(tag, className, text) {
+  function el(tag, className, text2) {
     const node = document.createElement(tag);
     if (className) node.className = className;
-    if (text != null) node.textContent = text;
+    if (text2 != null) node.textContent = text2;
     return node;
   }
   var Overlays = class {
@@ -3648,225 +3696,7 @@
     ctx2.restore();
   }
 
-  // src/render/machines.ts
-  function dot2(ctx2, cx, cy, r, c) {
-    ctx2.fillStyle = c;
-    ctx2.beginPath();
-    ctx2.arc(cx, cy, r, 0, Math.PI * 2);
-    ctx2.fill();
-  }
-  function drawCapsuleMachine(ctx2, x, y, w, h, opts) {
-    const o = opts || {};
-    const shake = o.shake || 0;
-    ctx2.save();
-    ctx2.translate(x + shake, y);
-    const baseY = h * 0.55;
-    rrect(ctx2, w * 0.12, baseY, w * 0.76, h * 0.42, 8);
-    vgrad(ctx2, w * 0.12, baseY, w * 0.76, h * 0.42, "#ef5d78", "#7a1f33");
-    ctx2.fill();
-    ctx2.fillStyle = "#2a2440";
-    ctx2.fillRect(w * 0.2, baseY + h * 0.18, w * 0.6, h * 0.14);
-    rrect(ctx2, w * 0.4, baseY + h * 0.2, w * 0.2, h * 0.1, 3);
-    ctx2.fillStyle = "#8a8ab0";
-    ctx2.fill();
-    ctx2.fillStyle = "#160f1f";
-    ctx2.fillRect(w * 0.46, baseY + h * 0.05, w * 0.02, h * 0.08);
-    const lblFs = Math.max(1, Math.floor(w * 0.02));
-    drawText(ctx2, o.label || "INSERT COIN", w / 2, baseY + h * 0.35, lblFs, "#ffd23f", { align: "center" });
-    const domeCx = w / 2;
-    const domeCy = h * 0.4;
-    const domeR = w * 0.36;
-    ctx2.beginPath();
-    ctx2.arc(domeCx, domeCy, domeR, Math.PI, 0);
-    ctx2.lineTo(domeCx + domeR, h * 0.55);
-    ctx2.lineTo(domeCx - domeR, h * 0.55);
-    ctx2.closePath();
-    ctx2.fillStyle = "rgba(180,230,255,0.14)";
-    ctx2.fill();
-    ctx2.save();
-    ctx2.beginPath();
-    ctx2.arc(domeCx, domeCy, domeR - 2, Math.PI, 0);
-    ctx2.lineTo(domeCx + domeR, h * 0.54);
-    ctx2.lineTo(domeCx - domeR, h * 0.54);
-    ctx2.closePath();
-    ctx2.clip();
-    const ballCols = ["#ef5d78", "#ffd23f", "#5fd66f", "#4aa3ff", "#9a6cff", "#5fe6d6", "#ff8fce", "#ff9a3c"];
-    const br = domeR * 0.2;
-    let bi = 0;
-    for (let ry = 0; ry < 4; ry++) {
-      for (let rx = -3; rx <= 3; rx++) {
-        const cx = domeCx + rx * br * 1.05 + (ry % 2 ? br * 0.5 : 0);
-        const cy = h * 0.5 - ry * br * 1.1;
-        const col = ballCols[bi++ % ballCols.length];
-        dot2(ctx2, cx, cy, br, col);
-        ctx2.fillStyle = "rgba(255,255,255,0.5)";
-        dot2(ctx2, cx - br * 0.3, cy - br * 0.3, br * 0.28, "rgba(255,255,255,0.6)");
-      }
-    }
-    ctx2.restore();
-    ctx2.strokeStyle = "rgba(200,240,255,0.5)";
-    ctx2.lineWidth = 2;
-    ctx2.beginPath();
-    ctx2.arc(domeCx, domeCy, domeR, Math.PI, 0);
-    ctx2.stroke();
-    ctx2.fillStyle = "rgba(255,255,255,0.25)";
-    ctx2.beginPath();
-    ctx2.arc(domeCx - domeR * 0.4, domeCy - domeR * 0.2, domeR * 0.18, 0, Math.PI * 2);
-    ctx2.fill();
-    rrect(ctx2, w * 0.36, h * 0.02, w * 0.28, h * 0.08, 3);
-    vgrad(ctx2, w * 0.36, h * 0.02, w * 0.28, h * 0.08, "#9a6cff", "#5a3ab0");
-    ctx2.fill();
-    ctx2.restore();
-  }
-  function drawCoinBank(ctx2, x, y, w, h, opts) {
-    const o = opts || {};
-    const t2 = o.t || 0;
-    const fillFrac = Math.max(0, Math.min(1, o.fill == null ? 0.6 : o.fill));
-    const label = o.label || "COIN BANK";
-    const sublabel = o.sublabel || "1,000 TOKENS = 1 COIN";
-    const cx = x + w / 2;
-    ctx2.save();
-    const baseH = h * 0.17;
-    const baseY = y + h - baseH;
-    rrect(ctx2, x + w * 0.08, baseY, w * 0.84, baseH, 10);
-    vgrad(ctx2, x + w * 0.08, baseY, w * 0.84, baseH, "#241c34", "#0d0a16");
-    ctx2.fill();
-    rrect(ctx2, x + w * 0.08, baseY, w * 0.84, baseH, 10);
-    ctx2.strokeStyle = "#2f9fa0";
-    ctx2.lineWidth = 2;
-    ctx2.stroke();
-    ctx2.fillStyle = "#160f1f";
-    ctx2.fillRect(x + w * 0.14, baseY + baseH - 3, w * 0.1, 3);
-    ctx2.fillRect(x + w * 0.76, baseY + baseH - 3, w * 0.1, 3);
-    const glassX = x + w * 0.14;
-    const glassW = w * 0.72;
-    const glassTop = y + h * 0.19;
-    const glassH = baseY - glassTop + h * 0.03;
-    const glassR = w * 0.14;
-    rrect(ctx2, glassX, glassTop, glassW, glassH, glassR);
-    vgrad(ctx2, glassX, glassTop, glassW, glassH, "rgba(95,230,214,0.12)", "rgba(47,159,160,0.24)");
-    ctx2.fill();
-    ctx2.save();
-    rrect(ctx2, glassX, glassTop, glassW, glassH, glassR);
-    ctx2.clip();
-    const coinR = w * 0.055;
-    const rows = 2 + Math.round(fillFrac * 3);
-    const pileBottom = glassTop + glassH - coinR;
-    for (let r = 0; r < rows; r++) {
-      const inRow = rows - r + 1;
-      const rowW = (inRow - 1) * coinR * 1.05;
-      const ry = pileBottom - r * coinR * 1.05;
-      for (let c = 0; c < inRow; c++) {
-        const px = cx - rowW / 2 + c * coinR * 1.05;
-        drawCoin(ctx2, px, ry, coinR, 1);
-      }
-    }
-    const bubbleCount = 5;
-    const bubbleR = w * 0.05;
-    for (let i = 0; i < bubbleCount; i++) {
-      const colFrac = i % 3 / 2;
-      const bx = glassX + glassW * (0.26 + colFrac * 0.48);
-      const rowIdx = Math.floor(i / 3);
-      const baseYb = glassTop + glassH * (0.26 + rowIdx * 0.2);
-      const by = baseYb + Math.sin(t2 + i) * (h * 0.02);
-      dot2(ctx2, bx, by, bubbleR, "#5fe6d6");
-      ctx2.strokeStyle = "rgba(20,15,31,0.45)";
-      ctx2.lineWidth = 2;
-      ctx2.beginPath();
-      ctx2.arc(bx, by, bubbleR, 0, Math.PI * 2);
-      ctx2.stroke();
-      dot2(ctx2, bx - bubbleR * 0.3, by - bubbleR * 0.3, bubbleR * 0.3, "rgba(255,255,255,0.4)");
-      const tf = Math.max(1, Math.round(bubbleR * 0.42));
-      drawText(ctx2, "T", bx, by - tf * 3.5, tf, "#f6f4ff", { align: "center" });
-    }
-    ctx2.restore();
-    rrect(ctx2, glassX + glassW * 0.12, glassTop + glassH * 0.05, glassW * 0.16, glassH * 0.8, glassW * 0.08);
-    ctx2.fillStyle = "rgba(255,255,255,0.10)";
-    ctx2.fill();
-    ctx2.save();
-    ctx2.shadowColor = "#5fe6d6";
-    ctx2.shadowBlur = 12;
-    rrect(ctx2, glassX, glassTop, glassW, glassH, glassR);
-    ctx2.strokeStyle = "#5fe6d6";
-    ctx2.lineWidth = 3;
-    ctx2.stroke();
-    ctx2.restore();
-    const my = y + h * 0.015;
-    const mh = h * 0.085;
-    const chuteTop = my + mh;
-    const chuteBot = glassTop + 2;
-    const topHalf = w * 0.16;
-    const botHalf = w * 0.07;
-    ctx2.beginPath();
-    ctx2.moveTo(cx - topHalf, chuteTop);
-    ctx2.lineTo(cx + topHalf, chuteTop);
-    ctx2.lineTo(cx + botHalf, chuteBot);
-    ctx2.lineTo(cx - botHalf, chuteBot);
-    ctx2.closePath();
-    const cg = ctx2.createLinearGradient(0, chuteTop, 0, chuteBot);
-    cg.addColorStop(0, "#3a3350");
-    cg.addColorStop(1, "#160f1f");
-    ctx2.fillStyle = cg;
-    ctx2.fill();
-    ctx2.strokeStyle = "#2f9fa0";
-    ctx2.lineWidth = 1.5;
-    ctx2.stroke();
-    const arrowCy = (chuteTop + chuteBot) / 2;
-    const aw = w * 0.05;
-    const ah = h * 0.028;
-    ctx2.fillStyle = "#5fe6d6";
-    ctx2.fillRect(cx - aw * 0.35, arrowCy - ah, aw * 0.7, ah);
-    ctx2.beginPath();
-    ctx2.moveTo(cx - aw, arrowCy);
-    ctx2.lineTo(cx + aw, arrowCy);
-    ctx2.lineTo(cx, arrowCy + ah);
-    ctx2.closePath();
-    ctx2.fill();
-    const mx = x + w * 0.06;
-    const mw = w * 0.88;
-    rrect(ctx2, mx, my, mw, mh, 6);
-    vgrad(ctx2, mx, my, mw, mh, "#241c34", "#0d0a16");
-    ctx2.fill();
-    rrect(ctx2, mx, my, mw, mh, 6);
-    ctx2.strokeStyle = "#c98f24";
-    ctx2.lineWidth = 2;
-    ctx2.stroke();
-    const mfs = Math.max(1, Math.floor(mw * 0.82 / (label.length * 6)));
-    drawText(ctx2, label, cx, my + mh / 2 - mfs * 3.5, mfs, "#ffd23f", { align: "center", glow: "#ffd23f", glowBlur: 4 });
-    const plateW = w * 0.74;
-    const plateH = h * 0.07;
-    const plateX = cx - plateW / 2;
-    const plateY = baseY + baseH * 0.28;
-    rrect(ctx2, plateX, plateY, plateW, plateH, 5);
-    ctx2.fillStyle = "#0d0a16";
-    ctx2.fill();
-    rrect(ctx2, plateX, plateY, plateW, plateH, 5);
-    ctx2.strokeStyle = "#2f9fa0";
-    ctx2.lineWidth = 1.5;
-    ctx2.stroke();
-    const sfs = Math.max(1, Math.floor(plateW / (sublabel.length * 6)));
-    drawText(ctx2, sublabel, cx, plateY + plateH / 2 - sfs * 3.5, sfs, "#5fe6d6", {
-      align: "center",
-      glow: "#2f9fa0",
-      glowBlur: 3
-    });
-    ctx2.restore();
-  }
-
   // src/render/atlas.ts
-  var CABINET_CROPS = [
-    { sx: 83, sy: 108, sw: 316, sh: 563 },
-    { sx: 469, sy: 109, sw: 320, sh: 562 },
-    { sx: 856, sy: 109, sw: 318, sh: 562 },
-    { sx: 1231, sy: 109, sw: 347, sh: 562 },
-    { sx: 1625, sy: 108, sw: 325, sh: 563 }
-  ];
-  function cabinetSkinIndex(id) {
-    return hashStr(id) % CABINET_CROPS.length;
-  }
-  function cabinetCropFor(id) {
-    return CABINET_CROPS[cabinetSkinIndex(id)];
-  }
   var CAB_WINDOWS = {
     white: {
       marquee: { x: 0.075, y: 0.142, w: 0.901, h: 0.056 },
@@ -3908,76 +3738,8 @@
   function stageAccent(stageIndex) {
     return stageCabinet(stageIndex).accent;
   }
-  var HOME_LEVEL_CABINET_CROPS = [
-    { sx: 35, sy: 141, sw: 299, sh: 637 },
-    { sx: 392, sy: 141, sw: 307, sh: 636 },
-    { sx: 746, sy: 141, sw: 304, sh: 636 },
-    { sx: 1079, sy: 102, sw: 336, sh: 676 },
-    { sx: 1426, sy: 102, sw: 315, sh: 676 }
-  ];
-  function homeLevelCabinetCrop(stageIndex) {
-    const i = Math.max(0, Math.min(HOME_LEVEL_CABINET_CROPS.length - 1, stageIndex | 0));
-    return HOME_LEVEL_CABINET_CROPS[i];
-  }
-  var LEVEL_UIKIT_CROPS = [
-    [
-      { sx: 42, sy: 69, sw: 289, sh: 180 },
-      { sx: 389, sy: 71, sw: 281, sh: 178 },
-      { sx: 711, sy: 68, sw: 284, sh: 181 },
-      { sx: 1036, sy: 46, sw: 330, sh: 203 },
-      { sx: 1366, sy: 43, sw: 299, sh: 206 }
-    ],
-    [
-      { sx: 77, sy: 286, sw: 215, sh: 230 },
-      { sx: 411, sy: 293, sw: 233, sh: 226 },
-      { sx: 727, sy: 279, sw: 246, sh: 255 },
-      { sx: 1054, sy: 272, sw: 267, sh: 277 },
-      { sx: 1381, sy: 279, sw: 281, sh: 266 }
-    ],
-    [
-      { sx: 41, sy: 566, sw: 277, sh: 99 },
-      { sx: 384, sy: 567, sw: 275, sh: 98 },
-      { sx: 711, sy: 567, sw: 276, sh: 98 },
-      { sx: 1036, sy: 567, sw: 285, sh: 98 },
-      { sx: 1372, sy: 570, sw: 279, sh: 93 }
-    ],
-    [
-      { sx: 82, sy: 708, sw: 184, sh: 150 },
-      { sx: 422, sy: 712, sw: 193, sh: 146 },
-      { sx: 761, sy: 715, sw: 185, sh: 145 },
-      { sx: 1078, sy: 714, sw: 185, sh: 148 },
-      { sx: 1419, sy: 714, sw: 183, sh: 142 }
-    ]
-  ];
-  var HOME_CABINET_SCREEN = [
-    { cx: 0.5, cy: 0.364 },
-    { cx: 0.5, cy: 0.364 },
-    { cx: 0.502, cy: 0.364 },
-    { cx: 0.512, cy: 0.364 },
-    { cx: 0.498, cy: 0.364 }
-  ];
-  function homeCabinetScreen(stageIndex) {
-    const i = Math.max(0, Math.min(HOME_CABINET_SCREEN.length - 1, stageIndex | 0));
-    return HOME_CABINET_SCREEN[i];
-  }
-  function uiKitCrop(row, stageIndex) {
-    const s = Math.max(0, Math.min(4, stageIndex | 0));
-    return LEVEL_UIKIT_CROPS[row][s];
-  }
-  var uiKitBadge = (stage2) => uiKitCrop(1, stage2);
-  var uiKitEndcap = (stage2) => uiKitCrop(2, stage2);
   var PLAYER_PORTRAIT_CROP = { sx: 1065, sy: 128, sw: 478, sh: 532 };
   var PLAYER_BODY_CROP = { sx: 18, sy: 22, sw: 356, sh: 751 };
-  var SYNC_STATE_CROPS = {
-    default: { sx: 18, sy: 0, sw: 580, sh: 557 },
-    hover: { sx: 723, sy: 0, sw: 567, sh: 557 },
-    pressed: { sx: 1409, sy: 0, sw: 582, sh: 557 }
-  };
-  var LOGO_FRAME_ALPHA = {
-    homeLogo: { x0: 0.0115, y0: 0.0253, x1: 0.9872, y1: 0.9733 },
-    homeLogoDropout: { x0: 0.0217, y0: 0.0309, x1: 0.9764, y1: 0.9677 },
-    homeLogoBurst: { x0: 0.0217, y0: 0.0309, x1: 0.977, y1: 0.9677 }
-  };
   var REVEAL_FRAME_ASSETS = [
     "revealFrameLegendary",
     "revealFrameEpic",
@@ -4053,16 +3815,6 @@
   var UTIL_ROWS = 3;
   var UTIL_CELL_W = 1536 / UTIL_COLS;
   var UTIL_CELL_H = 1024 / UTIL_ROWS;
-  var UTIL_COL = { soundOn: 0, muted: 1, settings: 2, help: 3 };
-  var UTIL_ROW = { normal: 0, hover: 1, pressed: 2 };
-  function utilityButtonCrop(key, state) {
-    return {
-      sx: UTIL_COL[key] * UTIL_CELL_W,
-      sy: UTIL_ROW[state] * UTIL_CELL_H,
-      sw: UTIL_CELL_W,
-      sh: UTIL_CELL_H
-    };
-  }
   var V2_WELLS = { icon: 0.168, name: 0.502, chip: 0.832, nameW: 0.47, cy: 0.5 };
   var LEG_WELLS = { icon: 0.118, name: 0.503, chip: 0.879, nameW: 0.5, cy: 0.5 };
   var V2_ROW_CROPS = {
@@ -4078,137 +3830,20 @@
     return { asset: "capsuleResultRows", crop: V2_ROW_CROPS[rarity], wells: V2_WELLS };
   }
 
-  // src/render/hud.ts
-  var GOLD = "#ffd23f";
-  var TOKEN_GLOW = "#9a6cff";
-  var INK = "#f6f4ff";
-  function hudPlaqueHeight(w) {
-    return Math.round(w / FRAME_ANCHORS.hudPlaque.aspect);
-  }
-  function fitNumber(g, x, y, w, h, value, color, glow) {
-    const win = FRAME_ANCHORS.hudPlaque.textWin;
-    const maxW = w * win.w * 0.94;
-    const maxH = h * win.h * 0.8;
-    const w1 = Math.max(1, measureText(value, 1));
-    let s = Math.min(maxH / GLYPH_H, maxW / w1);
-    s = Math.max(1, Math.min(3.4, s));
-    const cx = x + w * win.cx;
-    const top = y + h * win.cy - GLYPH_H * s / 2;
-    drawText(g, value, cx, top, s, color, { align: "center", glow, glowBlur: 3 });
-  }
-  function drawCoinHud(g, assets2, x, y, w, value) {
-    const h = hudPlaqueHeight(w);
-    const img = assets2.get("coinHudPlaque");
-    if (img) {
-      drawImageSmooth(g, img, x, y, w, h);
-      fitNumber(g, x, y, w, h, value, GOLD, GOLD);
-    } else {
-      rrect(g, x, y, w, h, h * 0.26);
-      g.fillStyle = "rgba(12,8,24,0.92)";
-      g.fill();
-      g.strokeStyle = GOLD;
-      g.lineWidth = 3;
-      g.stroke();
-      drawCoin(g, x + h * 0.52, y + h * 0.5, h * 0.3);
-      fitNumber(g, x, y, w, h, value, GOLD, GOLD);
-    }
-    return h;
-  }
-  function drawTokenHud(g, assets2, x, y, w, value) {
-    const h = hudPlaqueHeight(w);
-    const img = assets2.get("tokenHudPlaque");
-    if (img) {
-      drawImageSmooth(g, img, x, y, w, h);
-      fitNumber(g, x, y, w, h, value, INK, TOKEN_GLOW);
-    } else {
-      rrect(g, x, y, w, h, h * 0.26);
-      g.fillStyle = "rgba(12,8,24,0.92)";
-      g.fill();
-      g.strokeStyle = TOKEN_GLOW;
-      g.lineWidth = 3;
-      g.stroke();
-      drawSprite(g, "tokenChip", x + h * 0.28, y + h * 0.26, h * 0.055);
-      fitNumber(g, x, y, w, h, value, INK, TOKEN_GLOW);
-    }
-    return h;
-  }
-
-  // src/render/demoPlaque.ts
-  var CYAN = "#5fe6d6";
-  var GOLD2 = "#ffd23f";
-  var INK2 = "#f6f4ff";
-  function drawDemoPlaque(g, ctx2, x, y, w = 156) {
-    if (ctx2.store.state.mode !== "demo") return;
-    const h = 34;
-    const hovered = ctx2.stage.hotspot({
-      x,
-      y,
-      w,
-      h,
-      cursor: "help",
-      id: "demo-identity",
-      onClick: () => ctx2.openHelp()
-    });
-    if (hovered) {
-      g.save();
-      g.shadowColor = CYAN;
-      g.shadowBlur = 14;
-      panel(g, x, y, w, h, { radius: 6, fill: "#102337", border: CYAN, borderWidth: 2 });
-      g.restore();
-    } else {
-      panel(g, x, y, w, h, { radius: 6, fill: "#102337", border: "#2f9fa0", borderWidth: 2 });
-    }
-    for (let i = 0; i < 3; i++) {
-      g.fillStyle = i === 1 ? GOLD2 : CYAN;
-      g.fillRect(x + 9 + i * 6, y + 13, 3, 8);
-    }
-    const label = t("ui.demoArcade");
-    const maxW = w - 36;
-    const scale = Math.max(1.05, Math.min(1.55, maxW / Math.max(1, measureText(label, 1))));
-    drawText(g, label, x + 31, y + (h - GLYPH_H * scale) / 2, scale, INK2, { glow: CYAN, glowBlur: 2 });
-    if (!hovered) return;
-    const message = t("ui.demoDisclosure");
-    const lines = wrapText(message, 1.25, 250);
-    const tipW = 278;
-    const lineH = Math.max(11, GLYPH_H * 1.25);
-    const tipH = 18 + lines.length * (lineH + 4);
-    const tipX = Math.max(12, Math.min(ctx2.stage.width - tipW - 12, x + w - tipW));
-    const tipY = Math.min(ctx2.stage.height - tipH - 12, y + h + 10);
-    panel(g, tipX, tipY, tipW, tipH, { radius: 8, fill: "rgba(10,7,20,0.97)", border: CYAN, borderWidth: 2 });
-    let ty = tipY + 10;
-    for (const line of lines) {
-      drawText(g, line, tipX + 12, ty, 1.25, INK2, { shadow: "rgba(0,0,0,0.7)" });
-      ty += lineH + 4;
-    }
-    g.fillStyle = "rgba(255,210,63,0.55)";
-    rrect(g, tipX + 10, tipY + tipH - 5, tipW - 20, 2, 1);
-    g.fill();
-  }
-
-  // src/render/measured.ts
-  var DISPLAY_X = [0.2287, 0.2999, 0.3711, 0.4423, 0.5135, 0.5851, 0.6558, 0.727, 0.7982, 0.8694];
-  var DISPLAY_Y = [0.2144, 0.3554, 0.4978, 0.6401, 0.7843];
-  var DISPLAY_SLOTS = DISPLAY_Y.map(
-    (y) => DISPLAY_X.map((x) => ({ x, y }))
-  );
-  var DISPLAY_RARITY_RAILS = DISPLAY_Y.map((y) => ({ x: 0.1563, y }));
-  var PRIZE_WALL_SLOTS = [[{ "x": 0.24, "y": 0.211 }, { "x": 0.4125, "y": 0.211 }, { "x": 0.5775, "y": 0.211 }, { "x": 0.7425, "y": 0.211 }], [{ "x": 0.24, "y": 0.338 }, { "x": 0.4125, "y": 0.338 }, { "x": 0.5775, "y": 0.338 }, { "x": 0.7425, "y": 0.338 }], [{ "x": 0.24, "y": 0.455 }, { "x": 0.4125, "y": 0.455 }, { "x": 0.5775, "y": 0.455 }, { "x": 0.7425, "y": 0.455 }], [{ "x": 0.24, "y": 0.568 }, { "x": 0.4125, "y": 0.568 }, { "x": 0.5775, "y": 0.568 }, { "x": 0.7425, "y": 0.568 }], [{ "x": 0.24, "y": 0.692 }, { "x": 0.4125, "y": 0.692 }, { "x": 0.5775, "y": 0.692 }, { "x": 0.7425, "y": 0.692 }]];
-  var ROOM_CENTER_X = 0.5167;
-
   // src/screens/roomDecor.ts
-  var GOLD3 = "#ffd23f";
-  var CYAN2 = "#5fe6d6";
+  var GOLD = "#ffd23f";
+  var CYAN = "#5fe6d6";
   var MAGENTA = "#e15ad8";
   var GREEN = "#5fd66f";
-  var INK3 = "#f6f4ff";
+  var INK = "#f6f4ff";
   var DECORATION_ZONES = {
-    wall: { x: 405, y: 214, w: 198, h: 286 },
-    floor: { x: 398, y: 768, w: 214, h: 100 },
-    buddy: { x: 1080, y: 700, w: 132, h: 136 }
+    wall: { x: 1030, y: 209, w: 160, h: 125 },
+    floor: { x: 1270, y: 722, w: 210, h: 78 },
+    buddy: { x: 300, y: 715, w: 132, h: 86 }
   };
   var DECOR_INVENTORY = { x: 16, y: 878, w: 1568, h: 112 };
   var DECOR_PAGE_SIZE = 8;
-  var DECOR_ENTRY = { x: 1084, y: 838, w: 124, h: 54 };
+  var DECOR_ENTRY = { x: 304, y: 814, w: 124, h: 54 };
   var WALL_BOARD_ART = { w: 198, h: 248, rails: [65 / 248, 172 / 248] };
   var FLOOR_RISER_ART = { w: 232, h: 48, surface: 25 / 48 };
   var BUDDY_RUG_ART = { w: 148, h: 70, sit: 0.52 };
@@ -4425,14 +4060,14 @@
         if (i % 2 === 0) g.fillRect(r.x + i * cell, r.y, Math.min(cell, r.x + r.w - (r.x + i * cell)), topH);
       }
       g.save();
-      g.shadowColor = GOLD3;
+      g.shadowColor = GOLD;
       g.shadowBlur = 5;
-      g.fillStyle = GOLD3;
+      g.fillStyle = GOLD;
       g.fillRect(r.x, r.y + topH, r.w, 2);
       g.restore();
       g.fillStyle = "#171126";
       g.fillRect(r.x, r.y + topH + 2, r.w, r.h - topH - 2);
-      g.fillStyle = CYAN2;
+      g.fillStyle = CYAN;
       for (let i = 1; i <= 4; i++) {
         g.fillRect(r.x + r.w * i / 5, r.y + topH + (r.h - topH) / 2, 3, 3);
       }
@@ -4447,7 +4082,7 @@
       g.ellipse(cx, cy, r.w / 2, r.h / 2, 0, 0, Math.PI * 2);
       g.fillStyle = "#1e1633";
       g.fill();
-      g.strokeStyle = CYAN2;
+      g.strokeStyle = CYAN;
       g.lineWidth = 2.5;
       g.stroke();
       g.beginPath();
@@ -4455,7 +4090,7 @@
       g.strokeStyle = "#2f8a80";
       g.lineWidth = 1;
       g.stroke();
-      g.fillStyle = GOLD3;
+      g.fillStyle = GOLD;
       g.fillRect(cx - 1.5, cy - 6, 3, 12);
       g.fillRect(cx - 6, cy - 1.5, 12, 3);
       g.restore();
@@ -4599,7 +4234,7 @@
       let nameScale = 1.7;
       const name = tCollectibleName(c.id);
       while (nameScale > 1 && measureText(name, nameScale) > w - pad * 2) nameScale -= 0.1;
-      drawText(g, name, x + pad, y + 12, nameScale, INK3, { glow: rarity.glow, glowBlur: 3 });
+      drawText(g, name, x + pad, y + 12, nameScale, INK, { glow: rarity.glow, glowBlur: 3 });
       drawText(g, tRarity(c.rarity) + " / " + tType(c.type), x + pad, y + 33, 1.05, rarity.color);
       for (let i = 0; i < lines.length; i++) {
         drawText(g, lines[i], x + pad, y + 53 + i * 13, descScale, "#c8c2dc");
@@ -4628,25 +4263,25 @@
       if (frame) {
         if (glow > 0) {
           g.save();
-          g.shadowColor = CYAN2;
+          g.shadowColor = CYAN;
           g.shadowBlur = glow;
           drawImageSmooth(g, frame, x, y, w, h);
           g.restore();
         }
         drawImageSmooth(g, frame, x, y, w, h);
       } else {
-        panel(g, x, y, w, h, { radius: 6, fill: "rgba(10,7,20,0.9)", border: CYAN2, borderWidth: 2 });
+        panel(g, x, y, w, h, { radius: 6, fill: "rgba(10,7,20,0.9)", border: CYAN, borderWidth: 2 });
       }
-      drawPencil(g, x + 27, y + h / 2, 17, CYAN2);
-      drawText(g, t("decor.edit"), x + 48, y + 21, 1.3, hovered ? "#ffffff" : CYAN2);
+      drawPencil(g, x + 27, y + h / 2, 17, CYAN);
+      drawText(g, t("decor.edit"), x + 48, y + 21, 1.3, hovered ? "#ffffff" : CYAN);
       if (unplaced > 0) {
         const pipX = x + w - 8;
         const pipY = y + 6;
         g.save();
         g.beginPath();
         g.arc(pipX, pipY, 9, 0, Math.PI * 2);
-        g.fillStyle = GOLD3;
-        g.shadowColor = GOLD3;
+        g.fillStyle = GOLD;
+        g.shadowColor = GOLD;
         g.shadowBlur = 6;
         g.fill();
         g.restore();
@@ -4657,7 +4292,7 @@
           rrect(g, x + w / 2 - tw / 2, y - 28, tw, 22, 4);
           g.fillStyle = "rgba(7,5,14,0.94)";
           g.fill();
-          drawText(g, tip, x + w / 2, y - 22, 1.2, GOLD3, { align: "center" });
+          drawText(g, tip, x + w / 2, y - 22, 1.2, GOLD, { align: "center" });
         }
       }
     }
@@ -4748,11 +4383,11 @@
       if (this.decorNotice && now < this.decorNotice.until) {
         const border = this.decorNotice.warn ? "#ff5c6a" : MAGENTA;
         panel(g, 580, 830, 440, 38, { radius: 6, fill: "rgba(8,5,18,0.94)", border, borderWidth: 2 });
-        drawText(g, t(this.decorNotice.key), 800, 841, 1.55, INK3, { align: "center" });
+        drawText(g, t(this.decorNotice.key), 800, 841, 1.55, INK, { align: "center" });
       }
     }
     decorZoneColor(zone) {
-      return zone === "wall" ? MAGENTA : zone === "floor" ? GOLD3 : CYAN2;
+      return zone === "wall" ? MAGENTA : zone === "floor" ? GOLD : CYAN;
     }
     /** Editor headline: a physical mode plate hanging under the marquee. */
     drawDecorationTitle(g) {
@@ -4762,7 +4397,7 @@
         border: "rgba(95,230,214,0.72)",
         borderWidth: 1
       });
-      drawText(g, t("decor.title"), 800, 128, 1.8, CYAN2, { align: "center", glow: CYAN2, glowBlur: 4 });
+      drawText(g, t("decor.title"), 800, 128, 1.8, CYAN, { align: "center", glow: CYAN, glowBlur: 4 });
     }
     /** Placed prizes inside the editor: bright above the dim, hover ring +
      * grab affordance, selection brackets, and a floating × remover so a prize
@@ -4902,8 +4537,8 @@
       g.fillRect(r.x + 1020, r.y + 10, r.w - 1036, 2);
       if (benchArmed) {
         g.save();
-        g.strokeStyle = storingHover ? CYAN2 : "rgba(95,230,214,0.55)";
-        g.shadowColor = CYAN2;
+        g.strokeStyle = storingHover ? CYAN : "rgba(95,230,214,0.55)";
+        g.shadowColor = CYAN;
         g.shadowBlur = storingHover ? 18 : 8 + 4 * Math.sin(now / 220);
         g.lineWidth = storingHover ? 3 : 2;
         g.strokeRect(r.x + 1, r.y + 1, r.w - 2, r.h - 2);
@@ -4924,9 +4559,9 @@
       this.decorPage = Math.max(0, Math.min(pages - 1, this.decorPage));
       const page = filtered.slice(this.decorPage * DECOR_PAGE_SIZE, (this.decorPage + 1) * DECOR_PAGE_SIZE);
       panel(g, 30, 884, 208, 98, { radius: 6, fill: "rgba(8,7,18,0.94)", border: "rgba(255,210,63,0.72)", borderWidth: 2 });
-      drawText(g, t("decor.inventory"), 52, 895, 1.5, GOLD3);
+      drawText(g, t("decor.inventory"), 52, 895, 1.5, GOLD);
       drawText(g, t("decor.ownedCount", { n: this.ctx.store.ownedCount(), total: this.ctx.store.totalCollectibles() }), 52, 925, 1.2, "#bdb5d6");
-      drawText(g, t(benchArmed ? "decor.storeHint" : "decor.benchHint"), 52, 953, 0.95, benchArmed ? CYAN2 : "#8f88ad");
+      drawText(g, t(benchArmed ? "decor.storeHint" : "decor.benchHint"), 52, 953, 0.95, benchArmed ? CYAN : "#8f88ad");
       const frame = this.ctx.assets.get("homeIconBtn");
       let hoveredTile = null;
       for (let i = 0; i < DECOR_PAGE_SIZE; i++) {
@@ -4959,9 +4594,9 @@
         });
         if (selected || hovered) {
           g.save();
-          g.strokeStyle = selected ? GOLD3 : CYAN2;
+          g.strokeStyle = selected ? GOLD : CYAN;
           if (selected) {
-            g.shadowColor = GOLD3;
+            g.shadowColor = GOLD;
             g.shadowBlur = 8 + 4 * Math.sin(now / 240);
           }
           g.lineWidth = 3;
@@ -5007,7 +4642,7 @@
         g.strokeStyle = "rgba(95,230,214,0.5)";
         g.lineWidth = 1;
         g.stroke();
-        drawText(g, label, cx, r.y - 21, 1.15, INK3, { align: "center" });
+        drawText(g, label, cx, r.y - 21, 1.15, INK, { align: "center" });
       }
       this.drawDecorationFilters(g);
       this.drawDecorPageButton(g, 928, 958, "<", this.decorPage > 0, () => {
@@ -5019,7 +4654,7 @@
       });
       const dirty = this.decorDirty();
       this.drawDecorationAction(g, 1040, 888, t("ui.save"), GREEN, () => this.saveDecorationLayout(), dirty ? now : void 0);
-      this.drawDecorationAction(g, 1176, 888, t("decor.auto"), CYAN2, () => {
+      this.drawDecorationAction(g, 1176, 888, t("decor.auto"), CYAN, () => {
         this.decorDraft = autoArrangeRoomDecorations(this.ctx.store.state.owned).map((placement) => ({ ...placement }));
         this.decorDraftIsAutomatic = true;
         this.decorSelectedId = null;
@@ -5074,7 +4709,7 @@
         panel(g, x, y, w, h, {
           radius: 5,
           fill: active ? "rgba(225,90,216,0.32)" : "rgba(13,10,25,0.9)",
-          border: active ? MAGENTA : hovered ? CYAN2 : "#4d4568",
+          border: active ? MAGENTA : hovered ? CYAN : "#4d4568",
           borderWidth: active ? 2 : 1
         });
         drawText(g, filter.label, x + w / 2, y + 9, 1.05, active ? "#ffffff" : "#bbb3d4", { align: "center" });
@@ -5082,7 +4717,7 @@
     }
     drawDecorPageButton(g, x, y, label, enabled, onClick) {
       const hovered = this.ctx.stage.hotspot({ x, y, w: 28, h: 28, id: "decor-page-" + label, cursor: enabled ? "pointer" : "default", onClick: enabled ? onClick : void 0 });
-      drawText(g, label, x + 14, y + 6, 1.8, enabled ? hovered ? "#ffffff" : CYAN2 : "#4d4568", { align: "center" });
+      drawText(g, label, x + 14, y + 6, 1.8, enabled ? hovered ? "#ffffff" : CYAN : "#4d4568", { align: "center" });
     }
     /** One bench action card. Passing `pulseNow` makes the card breathe with a
      * glow — SAVE uses it while there are unsaved changes, CLOSE while armed. */
@@ -5219,7 +4854,7 @@
       const expected = roomDecorationZoneFor(collectible.type);
       const storing = drag.point.y >= DECOR_INVENTORY.y;
       const valid = storing || zone !== null && zone === expected;
-      const color = storing ? CYAN2 : valid ? GREEN : "#ff5c6a";
+      const color = storing ? CYAN : valid ? GREEN : "#ff5c6a";
       const size = this.decorationSize(collectible);
       if (!storing && valid && expected) {
         const others = this.decorDraft.filter((placement) => placement.collectibleId !== collectible.id);
@@ -5275,1273 +4910,656 @@
     }
   };
 
-  // src/screens/roomScreen.ts
-  var GOLD4 = "#ffd23f";
-  var CYAN3 = "#5fe6d6";
-  var MAGENTA2 = "#e15ad8";
-  var GREEN2 = "#5fd66f";
-  var INK4 = "#f6f4ff";
-  var PANEL = "#1b1230";
-  var CARD = { x: 16, y: 12, w: 360, h: 149 };
-  var SYNC = { x: 1360, y: 16, w: 224, h: 76 };
-  var HUD_W = 252;
-  var HUD_X = 1086;
-  var HUD_COIN_Y = 14;
-  var HUD_TOKEN_Y = HUD_COIN_Y + hudPlaqueHeight(HUD_W) + 8;
-  var COINS_TARGET = { x: HUD_X + HUD_W / 2, y: HUD_COIN_Y + hudPlaqueHeight(HUD_W) / 2 };
-  var CAB = { x: 16, y: 172, w: 360, h: 728 };
-  var BANK_W = 360;
-  var BANK = { x: Math.round(ROOM_CENTER_X * 1600 - BANK_W / 2), y: 200, w: BANK_W, h: 520 };
-  var WALL = { x: 1224, y: 150, w: 360, h: 750 };
-  var RAIL = { x: 16, y: 904, w: 1568, h: 82 };
-  function bar(g, x, y, w, h, frac, fill) {
-    g.fillStyle = "#05060f";
-    g.fillRect(x, y, w, h);
-    const f = Math.max(0, Math.min(1, frac));
-    g.fillStyle = fill;
-    g.fillRect(x + 1, y + 1, Math.max(0, (w - 2) * f), h - 2);
-    g.strokeStyle = "rgba(0,0,0,0.5)";
-    g.lineWidth = 1;
-    g.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
-  }
-  function clip(s, n) {
-    return s.length > n ? s.slice(0, n) : s;
-  }
-  function drawPowerMeter(g, x, y, w, cells, frac, color) {
-    const gap = 3;
-    const cw = (w - gap * (cells - 1)) / cells;
-    const lit = Math.round(Math.max(0, Math.min(1, frac)) * cells);
-    for (let i = 0; i < cells; i++) {
-      const cx = x + i * (cw + gap);
-      if (i < lit) {
-        g.save();
-        g.shadowColor = color;
-        g.shadowBlur = 5;
-        g.fillStyle = color;
-        g.fillRect(cx, y, cw, 7);
-        g.restore();
+  // src/ui/growthJournal.ts
+  var esc = (s) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+  var GrowthJournal = class {
+    constructor(ctx2) {
+      this.ctx = ctx2;
+      this.dialog = document.createElement("dialog");
+      this.tab = "growth";
+      this.notice = "";
+      this.dialog.className = "growth-journal";
+      this.dialog.setAttribute("aria-labelledby", "journal-title");
+      document.body.append(this.dialog);
+      this.dialog.addEventListener("click", (e) => {
+        const button = e.target.closest("button[data-action]");
+        if (!button) return;
+        const { action, id } = button.dataset;
+        if (action === "close") return this.close();
+        if (action === "tab") {
+          this.tab = id;
+          this.notice = "";
+        }
+        if (action === "claim" && id) {
+          const reward = this.ctx.store.claimGrowth(id);
+          if (reward) {
+            this.notice = this.say("\u5DF2\u9886\u53D6\uFF1A", "Received: ") + tCollectibleName(reward.collectible.id) + (reward.isDup ? this.say(" \xB7 \u5DF2\u62E5\u6709\uFF0C\u8F6C\u4E3A\u661F\u5C18", " \xB7 Already owned; converted to dust") : "");
+            this.ctx.sound.levelUp();
+            this.ctx.fx.burst(800, 690, "#ffda8a", 32);
+          }
+        }
+        if (action === "feature" && id) this.ctx.store.featureProject(id);
+        if (action === "inspect" && id) {
+          this.close();
+          this.ctx.router.go("cabinet", { id });
+          return;
+        }
+        if (action === "customize") {
+          this.close();
+          this.ctx.router.go("customize");
+          return;
+        }
+        if (action === "buy" && id) {
+          const item = SHOP.find((s) => s.id === id);
+          if (item?.kind === "capsule") {
+            this.close();
+            this.ctx.router.go("capsule");
+            return;
+          }
+          if (item) {
+            const result = this.ctx.store.buy(item);
+            if (result) {
+              this.notice = this.say("\u5DF2\u83B7\u5F97\uFF1A", "Unlocked: ") + tCollectibleName(result.collectible.id);
+              this.ctx.sound.confirm();
+            }
+          }
+        }
+        this.render();
+        const next = Array.from(this.dialog.querySelectorAll("button")).find((b) => b.dataset.action === action && b.dataset.id === id && !b.disabled);
+        (next ?? this.dialog.querySelector('[data-action="close"]'))?.focus();
+      });
+      this.dialog.addEventListener("click", (e) => {
+        if (e.target === this.dialog) {
+          const r = this.dialog.getBoundingClientRect();
+          if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) this.close();
+        }
+      });
+    }
+    say(zh, en) {
+      return this.ctx.store.state.settings.language === "zh-CN" ? zh : en;
+    }
+    get isOpen() {
+      return this.dialog.open;
+    }
+    open(tab = "growth") {
+      this.tab = tab;
+      this.notice = "";
+      this.render();
+      if (!this.dialog.open) this.dialog.showModal();
+    }
+    close() {
+      this.dialog.close();
+    }
+    icon(id) {
+      const img = collectibleIcon(id);
+      return img ? `<img src="${esc(img.src)}" alt="" />` : '<span class="gift-fallback">\u2726</span>';
+    }
+    render() {
+      const s = this.ctx.store.state;
+      const zh = s.settings.language === "zh-CN";
+      let body = "";
+      if (this.tab === "growth") {
+        const pet = companionGrowth(s.stats.lifetimeTokens);
+        body = `<div class="journal-intro"><span class="journal-pet">\u2726</span><div><h2>${this.say("\u548C\u5C0F\u5149\u4E00\u8D77\uFF0C\u6162\u6162\u957F\u5927", "Grow a little, together")}</h2><p>${this.say("\u6BCF\u4E00\u70B9 token \u90FD\u7559\u5728\u8FD9\u91CC\u3002\u793C\u7269\u6C38\u4E45\u6709\u6548\uFF0C\u968F\u65F6\u56DE\u6765\u9886\u53D6\u3002", "Every token stays with you. Gifts never expire. Come back whenever you like.")}</p><p>${this.say("\u5C0F\u5149", "Lumi")} \xB7 ${["\u2160", "\u2161", "\u2162", "\u2163"][pet.stage]} / \u2163 ${pet.next ? " \xB7 " + this.say("\u4E0B\u6B21\u8FDB\u5316\u8FD8\u9700 ", "Next evolution in ") + fmtCompact(pet.next - s.stats.lifetimeTokens) + " tokens" : " \xB7 " + this.say("\u5DF2\u5B8C\u5168\u8FDB\u5316", "Fully grown")}</p></div></div>`;
+        body += '<div class="chapter-list">' + growthStatus(s).map((c, i) => `<article class="chapter ${c.claimed ? "claimed" : c.ready ? "ready" : ""}"><span class="chapter-index">${c.claimed ? "\u2713" : String(i + 1).padStart(2, "0")}</span><div class="chapter-gift">${this.icon(c.reward)}</div><div class="chapter-copy"><h3>${esc(zh ? c.zh : c.en)}</h3><p>${esc(zh ? c.storyZh : c.storyEn)}</p><span>${esc(tCollectibleName(c.reward))} \xB7 ${fmtCompact(c.tokens)} tokens</span><progress value="${c.progress}" max="1" aria-label="${esc(zh ? c.zh : c.en)}"></progress></div><button data-action="claim" data-id="${c.id}" ${c.claimed || !c.ready ? "disabled" : ""}>${c.claimed ? this.say("\u5DF2\u6536\u85CF", "Collected") : c.ready ? this.say("\u9886\u53D6\u793C\u7269", "Claim gift") : this.say("\u8FD8\u5DEE ", "") + fmtCompact(c.tokens - s.stats.lifetimeTokens) + this.say("", " to go")}</button></article>`).join("") + "</div>";
+        body += `<p class="journal-note">${this.say("\u5DF2\u62E5\u6709\u7684\u793C\u7269\u4F1A\u8F6C\u4E3A\u661F\u5C18\u3002\u623F\u95F4\u4E3B\u9898\u9886\u53D6\u540E\u53EF\u5728\u300C\u5E03\u7F6E\u5C0F\u5E97\u300D\u4E2D\u4F7F\u7528\u3002", "Already owned gifts become dust. Equip room themes in Make it yours.")}</p><button data-action="customize">${this.say("\u5E03\u7F6E\u5C0F\u5E97", "Make it yours")}</button>`;
+      } else if (this.tab === "projects") {
+        body = `<div class="journal-intro"><div><h2>${this.say("\u6BCF\u4E2A\u9879\u76EE\uFF0C\u90FD\u6709\u81EA\u5DF1\u7684\u6210\u957F\u6545\u4E8B", "Every project has a story")}</h2><p>${this.say("\u9009\u4E00\u53F0\u4F5C\u4E3A\u5FC3\u7231\u673A\u53F0\u300250 \u7EA7\u30015 \u6B21\u5916\u89C2\u8FDB\u5316\uFF0C\u540E\u7EED token \u6700\u591A\u4EAB\u53D7 1.5 \u500D\u94F8\u5E01\u3002", "Choose a favorite cabinet. 50 levels, 5 visual stages, and up to 1.5\xD7 coins from future tokens.")}</p></div></div><div class="evolution-strip">${STAGES.map((stage2, i) => `<div><img src="./assets/project-detail/cabinet-stage-${i + 1}.png" alt=""/><span>Lv.${stage2.loLevel}\u2013${stage2.hiLevel}</span></div>`).join("")}</div><div class="project-journal-list">`;
+        body += s.projects.length ? s.projects.map((p) => {
+          const info = levelInfo(p.tokens);
+          return `<article class="project-entry"><div><h3>${esc(p.name)} <span>Lv.${p.level}</span></h3><p>${info.isMax ? this.say("\u5DF2\u6210\u4E3A\u4F20\u5947\u673A\u53F0", "A legendary cabinet") : this.say("\u4E0B\u4E00\u7EA7\u8FD8\u9700 ", "Next level in ") + fmtCompact(info.toNext) + " tokens"} \xB7 ${info.multiplier.toFixed(2)}\xD7</p><progress value="${info.progress}" max="1" aria-label="${esc(p.name)}"></progress></div><button data-action="feature" data-id="${esc(p.id)}" aria-pressed="${s.featuredProjectId === p.id}">${s.featuredProjectId === p.id ? this.say("\u2665 \u5FC3\u7231\u673A\u53F0", "\u2665 Favorite") : this.say("\u8BBE\u4E3A\u5FC3\u7231", "Favorite")}</button><button data-action="inspect" data-id="${esc(p.id)}">${this.say("\u8D70\u8FD1\u770B\u770B", "Inspect")}</button></article>`;
+        }).join("") : `<p>${this.say("\u540C\u6B65 token\uFF0C\u8BA9\u7B2C\u4E00\u53F0\u8857\u673A\u4EAE\u8D77\u6765\u3002", "Sync tokens to switch on your first cabinet.")}</p>`;
+        body += "</div>";
       } else {
-        g.fillStyle = "rgba(255,255,255,0.12)";
-        g.fillRect(cx, y, cw, 7);
+        body = `<div class="journal-intro"><div><h2>${this.say("\u7ED9\u5C0F\u5E97\u6311\u4E00\u4EFD\u793C\u7269", "Something lovely for your arcade")}</h2><p>${this.say("\u626D\u86CB\u5E26\u6765\u60CA\u559C\uFF0C\u4E3B\u9898\u548C\u76F8\u6846\u5E26\u6765\u786E\u5B9A\u7684\u65B0\u53D8\u5316\u3002", "Capsules bring surprises. Themes and frames bring a change you can choose.")}</p><strong>${fmtCompact(s.coins)} ${this.say("\u91D1\u5E01", "coins")}</strong></div></div><div class="journal-shop">`;
+        body += SHOP.map((item) => {
+          const representative = Object.values(byId).find((c) => c.type === item.pick);
+          const complete = this.ctx.store.isGrantComplete(item);
+          return `<article>${representative ? this.icon(representative.id) : '<span class="gift-fallback">\u25D2</span>'}<h3>${esc(this.say({ pull1: "\u60CA\u559C\u626D\u86CB", pull10: "\u5341\u8FDE\u626D\u86CB", sign: "\u9713\u8679\u62DB\u724C", frame: "\u5934\u50CF\u76F8\u6846", theme: "\u623F\u95F4\u4E3B\u9898", trophy: "\u5956\u676F" }[item.id] ?? item.label, item.label))}</h3><p>${item.cost} ${this.say("\u91D1\u5E01", "coins")}</p><button data-action="buy" data-id="${item.id}" ${s.coins < item.cost || complete ? "disabled" : ""}>${complete ? this.say("\u5DF2\u96C6\u9F50", "Complete") : s.coins < item.cost ? this.say("\u8FD8\u5DEE ", "Need ") + fmtCompact(item.cost - s.coins) : item.kind === "capsule" ? this.say("\u524D\u5F80\u626D\u86CB\u673A", "Visit machine") : this.say("\u5151\u6362\u793C\u7269", "Get gift")}</button></article>`;
+        }).join("") + "</div>";
       }
+      this.dialog.innerHTML = `<header><div><span class="journal-kicker">TOKEN ARCADE</span><h1 id="journal-title">${this.say("\u5C0F\u5E97\u6210\u957F\u624B\u518C", "Your arcade journal")}</h1></div><button data-action="close" aria-label="${this.say("\u5173\u95ED", "Close")}">\u2715</button></header><nav aria-label="${this.say("\u624B\u518C\u5206\u7C7B", "Journal sections")}">${["growth", "projects", "shop"].map((tab, i) => `<button data-action="tab" data-id="${tab}" aria-pressed="${this.tab === tab}">${this.say(["\u6210\u957F\u793C\u7269", "\u6211\u7684\u673A\u53F0", "\u5C0F\u5E97\u8865\u7ED9"][i], ["Growth gifts", "My cabinets", "Gift shop"][i])}</button>`).join("")}</nav><div class="journal-body">${this.notice ? `<p class="journal-notice" role="status">${esc(this.notice)}</p>` : ""}${body}</div>`;
     }
-  }
-  function drawStageProgress(g, x, y, w, stageIndex, frac, accent, kit) {
-    if (!kit) {
-      drawPowerMeter(g, x, y + 16, w, 9, frac, accent);
-      return;
-    }
-    const ec = uiKitEndcap(stageIndex);
-    const h = w * ec.sh / ec.sw;
-    drawImageSmooth(g, kit, x, y, w, h, ec);
-    const f = Math.max(0, Math.min(1, frac));
-    if (f > 0) {
-      g.save();
-      rrect(g, x + w * 0.03, y + h * 0.32, (w - w * 0.06) * f, h * 0.36, h * 0.18);
-      g.clip();
-      g.globalAlpha = 0.32;
-      g.fillStyle = accent;
-      g.fillRect(x, y, w, h);
-      g.restore();
-      g.globalAlpha = 1;
-    }
-  }
-  function drawLevelPlate(g, cx, cy, level, accent) {
-    const label = "LV" + level;
-    const s = 1.5;
-    const pw = measureText(label, s) + 12;
-    const ph = GLYPH_H * s + 8;
-    const px = cx - pw / 2;
-    const py = cy - ph / 2;
-    rrect(g, px, py, pw, ph, 4);
-    g.fillStyle = "rgba(6,4,12,0.82)";
-    g.fill();
-    g.strokeStyle = accent;
-    g.lineWidth = 1.5;
-    rrect(g, px, py, pw, ph, 4);
-    g.stroke();
-    drawText(g, label, cx, py + (ph - GLYPH_H * s) / 2, s, accent, {
-      align: "center",
-      glow: accent,
-      glowBlur: 3,
-      shadow: "rgba(0,0,0,0.75)"
-    });
-  }
-  function drawStageBadge(g, stageIndex, stageName, accent, x, y, size, kit) {
-    if (kit) {
-      const bc = uiKitBadge(stageIndex);
-      const bw = size;
-      const bh = size * bc.sh / bc.sw;
-      drawImageSmooth(g, kit, x, y + (size - bh) / 2, bw, bh, bc);
-      return;
-    }
-    const ch = Math.round(size * 0.72);
-    const cy = y + (size - ch) / 2;
-    rrect(g, x, cy, size, ch, 4);
-    g.save();
-    g.globalAlpha = 0.85;
-    g.fillStyle = accent;
-    g.fill();
-    g.restore();
-    drawText(g, stageName.charAt(0), x + size / 2, cy + ch / 2 - GLYPH_H * 1.5 / 2, 1.5, "#12121f", { align: "center" });
-  }
-  function drawFloorGlints(g, now) {
-    const cx = BANK.x + BANK.w / 2;
-    const spots = [
-      [cx - 120, 762],
-      [cx - 54, 786],
-      [cx + 52, 772],
-      [cx + 122, 754],
-      [cx - 8, 792]
-    ];
-    for (let i = 0; i < spots.length; i++) {
-      const [x, y] = spots[i];
-      const a = 0.12 + 0.28 * Math.max(0, Math.sin(now / 500 + i * 1.7));
-      g.save();
-      g.globalAlpha = a;
-      g.fillStyle = "#ffd23f";
-      g.fillRect(x - 1, y - 4, 2, 8);
-      g.fillRect(x - 4, y - 1, 8, 2);
-      g.restore();
-    }
-  }
-  function coinGlow(g, cx, cy, r) {
-    const grad = g.createRadialGradient(cx, cy, 0, cx, cy, r);
-    grad.addColorStop(0, "rgba(255,210,63,0.35)");
-    grad.addColorStop(1, "rgba(255,210,63,0)");
-    g.fillStyle = grad;
-    g.fillRect(cx - r, cy - r, r * 2, r * 2);
-  }
-  function drawPadlock(g, cx, cy, color) {
-    g.save();
-    g.strokeStyle = color;
-    g.lineWidth = 3;
-    g.beginPath();
-    g.arc(cx, cy - 5, 7, Math.PI, 2 * Math.PI);
-    g.stroke();
+  };
+
+  // src/screens/roomScreen.ts
+  var C = { base: "#121726", panel: "#202b3d", ink: "#f5eddb", muted: "#a5b1bc", mint: "#88ddc6", gold: "#ffda8a", pink: "#de99bd", edge: "#3c4e61" };
+  function text(g, s, x, y, size = 20, color = C.ink, align2 = "left") {
+    g.font = `${size >= 28 ? 600 : 500} ${size}px "PingFang SC", "Microsoft YaHei", system-ui, sans-serif`;
     g.fillStyle = color;
-    rrect(g, cx - 11, cy - 4, 22, 18, 3);
-    g.fill();
-    g.fillStyle = "rgba(0,0,0,0.5)";
-    g.fillRect(cx - 1.5, cy + 1, 3, 7);
-    g.restore();
+    g.textAlign = align2;
+    g.textBaseline = "middle";
+    g.fillText(s, x, y);
+    g.textAlign = "left";
   }
-  var RoomScreen = class _RoomScreen {
+  function box(g, x, y, w, h, fill = C.panel, edge = C.edge) {
+    g.fillStyle = "#090d16";
+    g.fillRect(x, y + 5, w, h);
+    g.fillStyle = fill;
+    g.fillRect(x, y, w, h);
+    g.strokeStyle = edge;
+    g.lineWidth = 2;
+    g.strokeRect(x + 1, y + 1, w - 2, h - 2);
+  }
+  function meter(g, x, y, w, p, color = C.mint) {
+    g.fillStyle = "#101622";
+    g.fillRect(x, y, w, 7);
+    g.fillStyle = color;
+    g.fillRect(x, y, w * Math.max(0, Math.min(1, p)), 7);
+  }
+  var RoomScreen = class {
     constructor(ctx2) {
       this.ctx = ctx2;
       this.name = "room";
-      /** Coin count shown in the pill; eased toward the real balance each frame. */
-      this.displayCoins = new EasedNumber();
-      /** Guards re-entrant syncs while a sync promise is in flight. */
       this.syncing = false;
-      /** Neon-logo flicker: the current frame and the wall-clock (ms) it holds until.
-       * The sign holds a bright, readable NORMAL frame for a long randomized gap
-       * (~2.2-5.5s), then does ONE short flick — a dark dropout, or rarely a bright
-       * burst — and returns straight to normal, so it reads as an arcade neon tube
-       * with occasional electricity fluctuation rather than a constant strobe or a
-       * double-blink. */
-      this.flickerUntil = -1;
-      this.flickerFrame = "homeLogo";
-      /** Scroll offset (logical px) of the cabinet wall — the column is a clipped
-       * viewport so every project is reachable by wheel even past the ~5 that fit. */
-      this.cabScrollY = 0;
-      /** Full cyan frame ignition after an equip, then a steady low glow. */
-      this.profileFramePulseUntil = 0;
-      this.lastProfileFrame = this.ctx.store.state.cosmetics.profileFrame;
-      /** Room decorations: resting displays + the decorate-mode editor. */
-      this.decor = new RoomDecorController(this.ctx);
-      this.displayCoins.set(ctx2.store.state.coins);
+      this.displayCoins = new EasedNumber();
+      this.page = 0;
+      this.actor = { x: 780, y: 765 };
+      this.destination = { x: 780, y: 765 };
+      this.keys = /* @__PURE__ */ new Set();
+      this.reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      this.message = "";
+      this.messageUntil = 0;
+      this.receipt = null;
+      this.active = false;
+      this.journal = new GrowthJournal(ctx2);
+      this.decor = new RoomDecorController(ctx2);
+      this.accessible = document.createElement("nav");
+      this.accessible.className = "room-access";
+      this.accessible.setAttribute("aria-label", "Arcade controls");
+      document.body.append(this.accessible);
+      window.addEventListener("keydown", (e) => {
+        if (!this.active || this.journal.isOpen || document.querySelector("#overlays .ta-modal") || e.target instanceof HTMLElement && /INPUT|TEXTAREA|BUTTON/.test(e.target.tagName)) return;
+        if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "w", "a", "s", "d"].includes(e.key)) {
+          e.preventDefault();
+          this.keys.add(e.key);
+        }
+        if (e.key.toLowerCase() === "j") this.journal.open();
+        if (e.key === "Escape") this.keys.clear();
+      });
+      window.addEventListener("keyup", (e) => this.keys.delete(e.key));
+      window.addEventListener("blur", () => this.keys.clear());
+    }
+    say(zh, en) {
+      return this.ctx.store.state.settings.language === "zh-CN" ? zh : en;
     }
     enter() {
+      this.active = true;
       this.displayCoins.set(this.ctx.store.state.coins);
       this.decor.reset();
+      this.accessible.hidden = false;
+      this.updateAccess();
+    }
+    leave() {
+      this.active = false;
+      this.keys.clear();
+      this.journal.close();
+      this.accessible.hidden = true;
+    }
+    updateAccess() {
+      const actions = [
+        [this.say("\u540C\u6B65\u9886\u5E01", "Sync tokens"), () => void this.doSync()],
+        [this.say("\u6210\u957F\u624B\u518C", "Growth journal"), () => this.journal.open()],
+        [this.say("\u6211\u7684\u673A\u53F0", "My cabinets"), () => this.journal.open("projects")],
+        [this.say("\u626D\u86CB\u6536\u85CF", "Capsules"), () => this.ctx.router.go("capsule")],
+        [this.say("\u5E03\u7F6E\u5C0F\u5E97", "Decorate"), () => this.decor.openDecorationEditor()],
+        [this.say("\u8BBE\u7F6E", "Settings"), () => this.ctx.openSettings()]
+      ];
+      this.accessible.replaceChildren(...actions.map(([label, action]) => {
+        const b = document.createElement("button");
+        b.textContent = label;
+        b.onclick = action;
+        return b;
+      }));
+    }
+    button(g, label, x, y, w, h, action, primary = false, id = label) {
+      const hover = this.ctx.stage.hotspot({ x, y, w, h, id, onClick: action, cursor: "pointer" });
+      box(g, x, y, w, h, primary ? hover ? "#ffdfa0" : C.gold : hover ? "#34465a" : C.panel, primary ? C.gold : C.edge);
+      text(g, label, x + w / 2, y + h / 2, 20, primary ? "#302818" : C.ink, "center");
     }
     render(g, dt, now) {
-      this.displayCoins.toward(this.ctx.store.state.coins, dt);
-      const equippedFrame = this.ctx.store.state.cosmetics.profileFrame;
-      if (equippedFrame !== this.lastProfileFrame) {
-        this.lastProfileFrame = equippedFrame;
-        this.profileFramePulseUntil = now + 720;
-        this.ctx.stage.wake(760);
-      }
-      const gapCx = Math.round((BANK.x + BANK.w + WALL.x) / 2);
-      this.ctx.fx.setToastZone(gapCx, 168, Math.min(232, WALL.x - (BANK.x + BANK.w) - 16));
-      this.drawBackground(g);
+      const state = this.ctx.store.state;
+      this.displayCoins.toward(state.coins, dt);
+      this.ctx.fx.setToastZone(800, 175, 380);
+      g.fillStyle = C.base;
+      g.fillRect(0, 0, 1600, 1e3);
+      if (!this.decor.editing) this.ctx.stage.hotspot({ x: 62, y: 675, w: 1476, h: 151, id: "walk-floor", onClick: () => {
+        this.destination = { x: Math.max(120, Math.min(1480, this.ctx.stage.mouse.x)), y: Math.max(710, Math.min(810, this.ctx.stage.mouse.y)) };
+      }, cursor: "crosshair" });
+      this.drawHeader(g);
+      this.drawRoom(g, now);
       this.drawCabinets(g);
-      this.decor.drawDisplays(g, now);
-      this.drawCenter(g, now);
-      this.drawPrizeWall(g);
-      this.drawTopBar(g, now);
+      this.drawRewardCorner(g);
+      this.decor.drawDisplays(g, this.reduced ? 0 : now);
+      this.drawActors(g, dt, now);
       if (this.decor.editing) {
         this.decor.drawEditor(g, now);
-      } else {
-        this.drawSpendRail(g);
-        this.decor.drawEntry(g, now);
-        this.decor.drawTooltip(g);
-        this.drawNoHistoryDecision(g);
-      }
-    }
-    // ---- background ---------------------------------------------------------
-    drawBackground(g) {
-      const W = this.ctx.stage.width;
-      const H = this.ctx.stage.height;
-      const theme = this.ctx.store.state.cosmetics.roomTheme;
-      const bg2 = theme === "e_sunset" ? this.ctx.assets.get("roomThemeSunset") : theme === "l_forest" ? this.ctx.assets.get("roomThemeForest") : this.ctx.assets.get("roomBg");
-      if (bg2) {
-        drawImageSmooth(g, bg2, 0, 0, W, H);
-        if (theme !== "base") return;
-        const grad = g.createLinearGradient(0, 0, 0, H);
-        grad.addColorStop(0, "rgba(6,4,12,0.55)");
-        grad.addColorStop(0.28, "rgba(6,4,12,0.12)");
-        grad.addColorStop(1, "rgba(6,4,12,0.0)");
-        g.fillStyle = grad;
-        g.fillRect(0, 0, W, H);
         return;
       }
-      vgrad(g, 0, 0, W, H, "#241338", "#07040d");
-      vgrad(g, 0, 700, W, H - 700, "#170f2c", "#0a0616");
-      g.fillStyle = "rgba(95,230,214,0.10)";
-      g.fillRect(0, 700, W, 2);
-      radial(g, 800, 120, 540, "rgba(225,90,216,0.10)");
-      radial(g, 300, 520, 380, "rgba(95,230,214,0.06)");
-      radial(g, 1320, 540, 380, "rgba(255,210,63,0.05)");
-    }
-    // ---- top bar ------------------------------------------------------------
-    drawTopBar(g, now) {
-      this.drawPlayerCard(g, now);
-      this.drawMarquee(g, now);
-      this.drawCoinPlaque(g);
-      drawDemoPlaque(g, this.ctx, 930, 15, 146);
-      this.drawSyncButton(g);
-    }
-    /** Player card: generated frame + portrait, with name/level/XP drawn on top.
-     * Clicking the card opens the achievement gallery. */
-    drawPlayerCard(g, now) {
-      const store2 = this.ctx.store;
-      const pl = store2.playerLevel();
-      const cardHover = this.ctx.stage.hotspot({
-        x: CARD.x,
-        y: CARD.y,
-        w: CARD.w,
-        h: CARD.h,
-        cursor: "pointer",
-        id: "player-card",
-        onClick: () => this.ctx.router.go("customize")
-      });
-      const frame = this.ctx.assets.get("homePlayerCard");
-      if (frame) {
-        drawImageSmooth(g, frame, CARD.x, CARD.y, CARD.w, CARD.h);
-        const fx0 = (fx2) => CARD.x + fx2 * CARD.w;
-        const fy0 = (fy) => CARD.y + fy * CARD.h;
-        this.drawPlayerPortrait(g, fx0, fy0, now);
-        const scrimX = fx0(0.395);
-        const scrimY = fy0(0.09);
-        g.save();
-        rrect(g, scrimX, scrimY, fx0(0.955) - scrimX, fy0(0.69) - scrimY, 7);
-        g.fillStyle = "rgba(6,4,14,0.42)";
-        g.fill();
-        g.restore();
-        const tx = fx0(0.41);
-        this.drawEditableName(g, tx, fy0(0.15), 2);
-        drawText(g, "LV " + pl.level, tx, fy0(0.35), 2.5, GOLD4, { glow: GOLD4, glowBlur: 3 });
-        drawText(g, pl.into + " / " + pl.need + " XP", tx, fy0(0.585), 1.3, "#b9b3d6");
-        bar(g, tx, fy0(0.73), fx0(0.93) - tx, 0.11 * CARD.h, pl.need > 0 ? pl.into / pl.need : 0, CYAN3);
-        this.drawCardAffordance(g, cardHover);
-        return;
+      this.drawGoal(g);
+      this.drawNavigation(g);
+      this.decor.drawTooltip(g);
+      if (this.messageUntil > now) {
+        box(g, 500, 688, 600, 55, "#263b42", C.mint);
+        text(g, this.message, 800, 716, 19, C.ink, "center");
       }
-      panel(g, CARD.x, CARD.y, CARD.w, CARD.h, { radius: 12, fill: PANEL, border: CYAN3, borderWidth: 3 });
-      this.drawPlayerPortrait(g, (f) => CARD.x + f * CARD.w, (f) => CARD.y + f * CARD.h, now);
-      this.drawEditableName(g, CARD.x + 96, CARD.y + 14, 2);
-      drawText(g, "LV " + pl.level, CARD.x + 96, CARD.y + 38, 3, GOLD4, { glow: GOLD4, glowBlur: 3 });
-      bar(g, CARD.x + 96, CARD.y + 78, 248, 14, pl.need > 0 ? pl.into / pl.need : 0, CYAN3);
-      drawText(g, pl.into + "/" + pl.need + " XP", CARD.x + 96, CARD.y + 62, 1.5, "#9a93bd");
-      this.drawCardAffordance(g, cardHover);
+      this.drawNoHistory(g);
     }
-    /** Home portrait plus the complete earned Cyan Profile Frame when equipped.
-     * The PNG is always drawn whole and above the portrait: its wing tips, lower
-     * gem, dark inner window and corner bolts are not recreated in canvas. */
-    drawPlayerPortrait(g, fx0, fy0, now) {
-      const equipped = this.ctx.store.state.cosmetics.profileFrame === "r_frame";
-      const portrait = this.ctx.assets.get("homePlayer");
-      const cx = fx0(0.2225);
-      const cy = fy0(0.49);
-      if (equipped) {
-        rrect(g, cx - 34, cy - 37, 68, 79, 9);
-        g.fillStyle = "#0a1020";
-        g.fill();
-        const frame = collectibleIcon("r_frame");
-        if (frame) {
-          const pulse2 = Math.max(0, (this.profileFramePulseUntil - now) / 720);
-          g.save();
-          g.shadowColor = CYAN3;
-          g.shadowBlur = 7 + 26 * pulse2;
-          g.globalAlpha = 0.88 + 0.12 * (0.5 + 0.5 * Math.sin(now / 240));
-          drawImageContain(g, frame, cx, cy, 122, 134);
-          g.restore();
-        }
-        g.save();
-        rrect(g, cx - 29, cy - 27, 58, 66, 7);
-        g.clip();
-        if (portrait) drawCropContain(g, portrait, PLAYER_PORTRAIT_CROP, cx - 29, cy - 29, 58, 68);
-        else drawSprite(g, AVATAR, cx - 18, cy - 21, 3.6);
-        g.restore();
-        return;
-      }
-      if (portrait) drawCropContain(g, portrait, PLAYER_PORTRAIT_CROP, fx0(0.085), fy0(0.14), 0.275 * CARD.w, 0.7 * CARD.h);
-      else drawSprite(g, AVATAR, fx0(0.12), fy0(0.28), 5);
+    drawHeader(g) {
+      const s = this.ctx.store.state, player = this.ctx.store.playerLevel();
+      text(g, "TOKEN ARCADE", 44, 43, 28, C.ink);
+      text(g, this.say("\u628A\u6BCF\u4E00\u70B9\u7075\u611F\uFF0C\u517B\u6210\u81EA\u5DF1\u7684\u5C0F\u4E16\u754C\u3002", "A little world, grown from your ideas."), 44, 80, 18, C.muted);
+      const name = this.ctx.store.playerName() || this.say("\u8857\u673A\u5E97\u957F", "Arcade keeper");
+      this.ctx.stage.hotspot({ x: 510, y: 22, w: 360, h: 80, id: "player-name", onClick: () => this.ctx.editPlayerName(), cursor: "pointer" });
+      text(g, `${name}  /  Lv.${player.level}`, 530, 42, 21, C.mint);
+      meter(g, 530, 65, 205, player.into / player.need);
+      text(g, this.say("\u5C0F\u5E97\u548C\u4F60\u4E00\u8D77\u957F\u5927", "A place that grows with you"), 530, 89, 15, C.muted);
+      drawCoin(g, 1128, 44, 16);
+      text(g, fmtComma(this.displayCoins.value), 1157, 44, 29, C.gold);
+      text(g, `${fmtCompact(s.stats.lifetimeTokens)} tokens`, 1110, 82, 17, C.muted);
+      this.button(g, this.syncing ? this.say("\u63A5\u901A\u7535\u529B\u4E2D\u2026", "Powering up\u2026") : this.say("\u540C\u6B65 \xB7 \u6536\u96C6\u91D1\u5E01", "Sync & collect"), 1340, 25, 216, 66, () => void this.doSync(), true, "sync");
+      g.fillStyle = C.edge;
+      g.fillRect(44, 119, 1512, 1);
+      text(g, this.say("\u6211\u7684\u8857\u673A\u5C0F\u5C4B", "My arcade hideaway"), 48, 145, 18, C.ink);
+      text(g, s.mode === "demo" ? this.say("\u6F14\u793A\u5C0F\u5C4B \xB7 \u6A21\u62DF token \xB7 \u72EC\u7ACB\u5B58\u6863", "Demo arcade \xB7 simulated tokens \xB7 separate save") : this.say("\u672C\u5730\u5C0F\u5C4B \xB7 \u8FDB\u5EA6\u81EA\u52A8\u4FDD\u5B58", "Local arcade \xB7 progress saved on this device"), 1552, 145, 15, C.muted, "right");
     }
-    /** A small backstage cue on the player card + a hover ring, so the earned
-     * profile frame has a clear, physical route to the dressing room. */
-    drawCardAffordance(g, hovered) {
-      drawText(g, "\u2726 " + t("ui.customizeArcade"), CARD.x + CARD.w - 12, CARD.y + CARD.h - 20, 1.05, hovered ? GOLD4 : "#8a86a6", {
-        align: "right"
-      });
-      if (hovered) {
-        rrect(g, CARD.x + 1, CARD.y + 1, CARD.w - 2, CARD.h - 2, 12);
-        g.strokeStyle = "rgba(255,210,63,0.7)";
-        g.lineWidth = 2;
-        g.stroke();
-      }
-    }
-    /** The player's display name (their custom name, else the localized default)
-     *  with a small pencil edit-cue. It registers its OWN click target that opens
-     *  the rename dialog; because it's registered after the whole-card hotspot,
-     *  clicking the name edits it while clicking elsewhere still opens the gallery. */
-    drawEditableName(g, x, y, scale) {
-      const name = this.ctx.store.playerName() || t("ui.arcadePlayer");
-      const w = measureText(name, scale);
-      const hx = x - 4;
-      const hy = y - 4;
-      const hw = w + 32;
-      const hh = GLYPH_H * scale + 8;
-      const hovered = this.ctx.stage.hotspot({
-        x: hx,
-        y: hy,
-        w: hw,
-        h: hh,
-        cursor: "pointer",
-        id: "player-name",
-        onClick: () => this.ctx.editPlayerName()
-      });
-      drawText(g, name, x, y, scale, hovered ? GOLD4 : INK4);
-      drawPencil(g, x + w + 14, y + GLYPH_H * scale / 2, 12, hovered ? GOLD4 : "#9a93bd");
-    }
-    /** Top-right counters: the SHARED coin + token HUD plaques (coin balance
-     * stacked over lifetime tokens) so the HUD matches the capsule + project-detail
-     * screens. Both helpers auto-fit the value into the plaque's dark window and
-     * carry their own procedural fallback; the coin plaque is the coin-rain target
-     * (its center is COINS_TARGET). */
-    drawCoinPlaque(g) {
-      const store2 = this.ctx.store;
-      const coins2 = fmtComma(Math.round(this.displayCoins.value));
-      const tokens = fmtComma(store2.state.stats.lifetimeTokens);
-      drawCoinHud(g, this.ctx.assets, HUD_X, HUD_COIN_Y, HUD_W, coins2);
-      drawTokenHud(g, this.ctx.assets, HUD_X, HUD_TOKEN_Y, HUD_W, tokens);
-    }
-    /** SYNC button — the primary action. Its compact physical label always names
-     * the action, while demo identity stays on the persistent plaque and in the
-     * post-sync feedback below the HUD. */
-    drawSyncButton(g) {
-      const syncHover = this.ctx.stage.hotspot({
-        x: SYNC.x,
-        y: SYNC.y,
-        w: SYNC.w,
-        h: SYNC.h,
-        cursor: "pointer",
-        id: "sync",
-        onClick: () => void this.doSync()
-      });
-      const label = this.syncing ? t("ui.syncing") : t("ui.sync");
-      const states = this.ctx.assets.get("homeSyncStates");
-      if (states) {
-        const crop = this.syncing ? SYNC_STATE_CROPS.pressed : syncHover ? SYNC_STATE_CROPS.hover : SYNC_STATE_CROPS.default;
-        const bh = 88;
-        const bw = Math.round(bh * (SYNC_STATE_CROPS.default.sw / SYNC_STATE_CROPS.default.sh));
-        const bx = SYNC.x + 6;
-        const by = SYNC.y - 8;
-        drawImageSmooth(g, states, bx, by, bw, bh, crop);
-        const scale = this.syncing ? 1.55 : 3;
-        drawText(g, label, bx + bw / 2, by + bh / 2 - GLYPH_H * scale * 0.5, scale, "#0b2015", {
-          align: "center",
-          shadow: "rgba(255,255,255,0.35)"
-        });
-        return;
-      }
-      const syncFill = this.syncing ? "#2f6f45" : syncHover ? "#7be88a" : GREEN2;
-      panel(g, SYNC.x, SYNC.y, SYNC.w, SYNC.h, { radius: 14, fill: syncFill, border: "#2f8f4b", borderWidth: 3 });
-      drawText(g, label, SYNC.x + SYNC.w / 2, SYNC.y + 22, this.syncing ? 2.6 : 5, "#0b2015", {
-        align: "center",
-        shadow: "rgba(255,255,255,0.35)"
-      });
-    }
-    drawMarquee(g, now) {
-      const cx = 800;
-      let frameKey = this.logoFlickerFrame(now);
-      let logo = this.ctx.assets.get(frameKey);
-      if (!logo) {
-        frameKey = "homeLogo";
-        logo = this.ctx.assets.get("homeLogo");
-      }
-      if (logo) {
-        const lh = 124;
-        const lw = lh * 2.201;
-        const x0 = cx - lw / 2;
-        const y0 = 6;
-        const N = LOGO_FRAME_ALPHA.homeLogo;
-        const A = LOGO_FRAME_ALPHA[frameKey];
-        const dw = (N.x1 - N.x0) * lw / (A.x1 - A.x0);
-        const dh = (N.y1 - N.y0) * lh / (A.y1 - A.y0);
-        const dx = x0 + N.x0 * lw - A.x0 * dw;
-        const dy = y0 + N.y0 * lh - A.y0 * dh;
-        const breath = 0.5 + 0.5 * Math.sin(now / 680);
-        g.save();
-        g.globalAlpha = 0.93 + 0.07 * breath;
-        g.shadowColor = "rgba(95,230,214,0.35)";
-        g.shadowBlur = 5 + 6 * breath;
-        drawImageSmooth(g, logo, dx, dy, dw, dh);
-        g.restore();
-        return;
-      }
-      for (let i = 0; i < 9; i++) {
-        const bx = 662 + i * 34;
-        const on = (Math.floor(now / 220) + i) % 2 === 0;
-        g.beginPath();
-        g.arc(bx, 10, 3, 0, Math.PI * 2);
-        if (on) {
-          g.save();
-          g.shadowColor = GOLD4;
-          g.shadowBlur = 8;
-          g.fillStyle = GOLD4;
-          g.fill();
-          g.restore();
-        } else {
-          g.fillStyle = "rgba(255,210,63,0.25)";
-          g.fill();
-        }
-      }
-      drawText(g, "TOKEN", cx, 18, 8, MAGENTA2, { align: "center", glow: MAGENTA2, glowBlur: 6, shadow: "rgba(0,0,0,0.5)" });
-      drawText(g, "ARCADE", cx, 74, 8, CYAN3, { align: "center", glow: CYAN3, glowBlur: 6, shadow: "rgba(0,0,0,0.5)" });
-    }
-    static {
-      // Neon-logo flicker timing (ms). The sign holds a bright NORMAL frame for a
-      // long randomized gap, then does exactly ONE short flick and returns to
-      // normal. The long normal gap (>= FLICK_GAP_MIN) is re-rolled after every
-      // flick, so two flicks can never merge into a mouse-double-click; the flick is
-      // usually a dark dropout and only rarely (~BURST_CHANCE) a bright burst.
-      this.FLICK_GAP_MIN = 2200;
-    }
-    static {
-      // min bright/normal time before a flick
-      this.FLICK_GAP_RAND = 3300;
-    }
-    static {
-      // + up to this ⇒ 2.2..5.5s gaps
-      this.DROPOUT_MIN = 40;
-    }
-    static {
-      // dropout flick length
-      this.DROPOUT_RAND = 40;
-    }
-    static {
-      // ⇒ 40..80ms
-      this.BURST_MIN = 60;
-    }
-    static {
-      // burst flick length
-      this.BURST_RAND = 30;
-    }
-    static {
-      // ⇒ 60..90ms
-      this.BURST_CHANCE = 0.2;
-    }
-    // ~1 in 5 flicks is a burst (rare over-bright pop)
-    /** Which logo frame to draw this instant. The sign is a stable, bright NORMAL
-     * frame the large majority of the time; every ~2.2-5.5s (randomized) it does a
-     * single short flick — usually a dropout dip, rarely a burst pop — then goes
-     * straight back to normal. Every gap/duration is re-randomized so no fixed loop
-     * is perceptible, and a fresh long gap after each flick guarantees no paired
-     * "double-blink". A single frame swap per event — never a sequence. */
-    logoFlickerFrame(now) {
-      if (this.flickerUntil < 0) {
-        this.flickerFrame = "homeLogo";
-        this.flickerUntil = now + _RoomScreen.FLICK_GAP_MIN + Math.random() * _RoomScreen.FLICK_GAP_RAND;
-        return this.flickerFrame;
-      }
-      if (now < this.flickerUntil) return this.flickerFrame;
-      if (this.flickerFrame === "homeLogo") {
-        if (Math.random() < _RoomScreen.BURST_CHANCE) {
-          this.flickerFrame = "homeLogoBurst";
-          this.flickerUntil = now + _RoomScreen.BURST_MIN + Math.random() * _RoomScreen.BURST_RAND;
-        } else {
-          this.flickerFrame = "homeLogoDropout";
-          this.flickerUntil = now + _RoomScreen.DROPOUT_MIN + Math.random() * _RoomScreen.DROPOUT_RAND;
-        }
-      } else {
-        this.flickerFrame = "homeLogo";
-        this.flickerUntil = now + _RoomScreen.FLICK_GAP_MIN + Math.random() * _RoomScreen.FLICK_GAP_RAND;
-      }
-      return this.flickerFrame;
-    }
-    static {
-      // ---- left column: cabinets ---------------------------------------------
-      // Cabinet wall geometry: full-size machine rows at a fixed pitch, stacked in a
-      // clipped viewport under the header. ROW_BASE is the first row's y at scroll 0;
-      // the window spans ROW_BASE..(ROW_BASE+WINDOW_H), clipped a touch wider so a
-      // row's 6px art overhang isn't shaved.
-      this.ROW_PITCH = 140;
-    }
-    static {
-      this.ROW_BASE = 200;
-    }
-    static {
-      this.WINDOW_H = 700;
-    }
-    static {
-      this.VIEW = { x: CAB.x, y: 190, w: CAB.w, h: 710 };
-    }
-    drawCabinets(g) {
-      drawText(g, t("ui.cabinets"), CAB.x + 8, CAB.y + 8, 3, CYAN3, { glow: CYAN3, glowBlur: 3 });
-      const projects = this.ctx.store.state.projects;
-      if (projects.length === 0) {
-        this.drawDormantCabinets(g);
-        return;
-      }
-      const view = _RoomScreen.VIEW;
-      const contentH = projects.length * _RoomScreen.ROW_PITCH;
-      const maxScroll = Math.max(0, contentH - _RoomScreen.WINDOW_H);
-      if (maxScroll > 0) this.ctx.stage.scrollRegion(view.x, view.y, view.w, view.h);
-      this.cabScrollY = Math.max(0, Math.min(maxScroll, this.cabScrollY + this.ctx.stage.takeScrollDelta()));
+    drawRoom(g, now) {
+      const s = this.ctx.store.state;
+      const theme = s.cosmetics.roomTheme;
+      const bg2 = this.ctx.assets.get(theme === "e_sunset" ? "roomThemeSunset" : theme === "l_forest" ? "roomThemeForest" : "roomBg");
+      box(g, 40, 170, 1520, 664, "#212736", "#485362");
       g.save();
       g.beginPath();
-      g.rect(view.x, view.y, view.w, view.h);
+      g.rect(48, 178, 1504, 648);
       g.clip();
-      for (let i = 0; i < projects.length; i++) {
-        const rowY = _RoomScreen.ROW_BASE + i * _RoomScreen.ROW_PITCH - this.cabScrollY;
-        if (rowY + 122 < view.y || rowY - 8 > view.y + view.h) continue;
-        this.drawCabinetRow(g, projects[i], rowY, view);
-      }
-      g.restore();
-      this.drawCabinetScrollHints(g, view, contentH, maxScroll);
-    }
-    /** One full-size machine row (stage cabinet art + code nameplate/stats/
-     *  progress) drawn at on-screen `rowY` inside the scrolling cabinet viewport.
-     *  Color and ornament derive from the project's LEVEL: the numeric level
-     *  (1..50) drives the "LVn" plate + power meter, while the visual STAGE (0..4)
-     *  picks the cabinet body art and its neon accent. */
-    drawCabinetRow(g, proj, rowY, view) {
-      const info = levelInfo(proj.tokens);
-      const stage2 = info.stage;
-      const accent = stageAccent(stage2.index);
-      const rowTop = rowY - 4;
-      const hy = Math.max(view.y, rowTop);
-      const hh = Math.min(rowTop + 134, view.y + view.h) - hy;
-      let hovered = false;
-      if (hh > 12) {
-        hovered = this.ctx.stage.hotspot({
-          x: CAB.x,
-          y: hy,
-          w: CAB.w,
-          h: hh,
-          cursor: "pointer",
-          id: "cab-" + proj.id,
-          onClick: () => this.ctx.router.go("cabinet", { id: proj.id })
-        });
-      }
-      if (hovered) {
-        panel(g, CAB.x, rowY - 4, CAB.w, 134, { radius: 10, fill: "rgba(95,230,214,0.08)", border: "rgba(95,230,214,0.4)", borderWidth: 2 });
-      }
-      const sheet = this.ctx.assets.get("homeLevelCabinets");
-      if (sheet) {
-        const crop = homeLevelCabinetCrop(stage2.index);
-        const ch = 128;
-        const cw = ch * (crop.sw / crop.sh);
-        const cdx = CAB.x + 4;
-        const cdy = rowY - 6;
-        g.save();
-        g.fillStyle = "rgba(0,0,0,0.35)";
-        g.beginPath();
-        g.ellipse(cdx + cw / 2, cdy + ch - 4, cw * 0.42, 7, 0, 0, Math.PI * 2);
-        g.fill();
-        g.restore();
-        const pulse2 = this.ctx.fx.pulseAmount(proj.id);
-        if (pulse2 > 0) {
-          g.save();
-          g.shadowColor = GOLD4;
-          g.shadowBlur = 26 * pulse2;
-          drawImageSmooth(g, sheet, cdx, cdy, cw, ch, crop);
-          g.restore();
-        }
-        drawImageSmooth(g, sheet, cdx, cdy, cw, ch, crop);
-        const sc = homeCabinetScreen(stage2.index);
-        drawLevelPlate(g, cdx + sc.cx * cw, cdy + sc.cy * ch, info.level, accent);
+      if (bg2) {
+        drawImageSmooth(g, bg2, 48, 178, 1504, 648);
+        g.fillStyle = "rgba(17,26,39,.35)";
+        g.fillRect(48, 178, 1504, 440);
       } else {
-        drawCabinet(g, CAB.x + 8, rowY, 84, 130, {
-          name: proj.name,
-          level: stage2.index + 1,
-          id: proj.id,
-          on: true,
-          progress: info.progress,
-          glow: 1 + this.ctx.fx.pulseAmount(proj.id),
-          skin: { neon: accent, dark: "#12121f", mid: "#20203a", name: accent }
-        });
+        g.fillStyle = "#283344";
+        g.fillRect(48, 178, 1504, 648);
       }
-      const tx = 112;
-      drawText(g, clip(proj.name, 13), tx, rowY + 10, 2, accent, { glow: accent, glowBlur: 3 });
-      drawStageBadge(g, stage2.index, stage2.name, accent, CAB.x + CAB.w - 32, rowY - 2, 28, this.ctx.assets.get("levelUiKit"));
-      drawSprite(g, "tokenChip", tx, rowY + 38, 1.5);
-      drawText(g, fmtCompact(proj.tokens) + " " + t("ui.tokens"), tx + 30, rowY + 40, 1.75, CYAN3);
-      coinGlow(g, tx + 10, rowY + 74, 20);
-      drawCoin(g, tx + 10, rowY + 74, 10);
-      drawText(g, fmtComma(proj.coins) + " " + t("ui.baseCoins"), tx + 28, rowY + 67, 2, GOLD4);
-      drawStageProgress(g, tx, rowY + 92, 128, stage2.index, info.progress, accent, this.ctx.assets.get("levelUiKit"));
-    }
-    /** Scroll affordances for the cabinet wall: a soft dark fade at whichever end
-     *  has more machines beyond it (so a half-row reads as "more below/above"), and
-     *  a slim glowing position bar in the right gutter. Nothing is drawn when the
-     *  whole list already fits. */
-    drawCabinetScrollHints(g, view, contentH, maxScroll) {
-      if (maxScroll <= 0) return;
-      const top = view.y;
-      const bottom = view.y + view.h;
-      if (this.cabScrollY > 1) {
-        const grad = g.createLinearGradient(0, top, 0, top + 26);
-        grad.addColorStop(0, "rgba(6,4,12,0.85)");
-        grad.addColorStop(1, "rgba(6,4,12,0)");
-        g.fillStyle = grad;
-        g.fillRect(view.x, top, view.w, 26);
+      const wall = g.createLinearGradient(0, 180, 0, 615);
+      wall.addColorStop(0, "rgba(26,35,48,.94)");
+      wall.addColorStop(1, "rgba(26,35,48,.32)");
+      if (theme === "base") {
+        g.fillStyle = wall;
+        g.fillRect(48, 178, 1504, 430);
       }
-      if (this.cabScrollY < maxScroll - 1) {
-        const grad = g.createLinearGradient(0, bottom - 26, 0, bottom);
-        grad.addColorStop(0, "rgba(6,4,12,0)");
-        grad.addColorStop(1, "rgba(6,4,12,0.85)");
-        g.fillStyle = grad;
-        g.fillRect(view.x, bottom - 26, view.w, 26);
-        g.save();
-        g.globalAlpha = 0.7;
-        g.strokeStyle = CYAN3;
-        g.lineWidth = 2;
-        const ccx = view.x + view.w / 2;
-        g.beginPath();
-        g.moveTo(ccx - 7, bottom - 12);
-        g.lineTo(ccx, bottom - 6);
-        g.lineTo(ccx + 7, bottom - 12);
-        g.stroke();
-        g.restore();
+      g.fillStyle = theme === "l_forest" ? "#34463e" : theme === "e_sunset" ? "#715046" : "#514044";
+      g.fillRect(48, 614, 1504, 212);
+      for (let row = 0; row < 8; row++) {
+        const y = 614 + row * 30;
+        g.fillStyle = row % 2 ? "rgba(255,211,160,.04)" : "rgba(0,0,0,.05)";
+        g.fillRect(48, y, 1504, 30);
+        g.fillStyle = "#322b35";
+        g.fillRect(48, y, 1504, 2);
+        for (let x = 48 + row % 2 * 135; x < 1552; x += 270) g.fillRect(x, y, 2, 30);
       }
-      const trackX = view.x + view.w - 4;
-      const trackW = 3;
-      g.fillStyle = "rgba(255,255,255,0.08)";
-      g.fillRect(trackX, top, trackW, view.h);
-      const thumbH = Math.max(28, view.h * (_RoomScreen.WINDOW_H / contentH));
-      const thumbY = top + (view.h - thumbH) * (this.cabScrollY / maxScroll);
-      g.save();
-      g.shadowColor = CYAN3;
-      g.shadowBlur = 5;
-      g.fillStyle = CYAN3;
-      g.fillRect(trackX, thumbY, trackW, thumbH);
-      g.restore();
-    }
-    /** First-run: three dormant, powered-off machines waiting for tokens. */
-    drawDormantCabinets(g) {
-      const skin = this.ctx.assets.get("cabinetSkins");
-      for (let i = 0; i < 3; i++) {
-        const rowY = 214 + i * 150;
-        if (skin) {
-          const crop = cabinetCropFor("dormant-" + i);
-          const ch = 128;
-          const cw = ch * (crop.sw / crop.sh);
-          const cdx = CAB.x + 4;
-          g.save();
-          g.fillStyle = "rgba(0,0,0,0.3)";
-          g.beginPath();
-          g.ellipse(cdx + cw / 2, rowY + ch - 8, cw * 0.42, 7, 0, 0, Math.PI * 2);
-          g.fill();
-          g.restore();
-          drawImageSmooth(g, skin, cdx, rowY - 6, cw, ch, crop);
-          g.save();
-          g.globalAlpha = 0.62;
-          g.fillStyle = "#07040d";
-          g.beginPath();
-          g.ellipse(cdx + cw / 2, rowY + ch / 2 - 6, cw * 0.55, ch * 0.55, 0, 0, Math.PI * 2);
-          g.fill();
-          g.restore();
-          drawText(g, "Z Z", cdx + cw / 2, rowY + ch * 0.22, 1.5, "#6a6a86", { align: "center" });
-        } else {
-          drawCabinet(g, CAB.x + 8, rowY, 84, 130, { name: "???", level: 1, on: false, id: "dormant-" + i });
-        }
+      g.fillStyle = "#222a37";
+      g.fillRect(48, 596, 1504, 18);
+      g.fillStyle = "#927563";
+      g.fillRect(48, 613, 1504, 3);
+      const lit = growthStatus(s).filter((c) => c.ready).length;
+      for (let i = 0; i < 9; i++) {
+        const x = 150 + i * 162;
+        g.fillStyle = "#51616a";
+        g.fillRect(x, 178, 2, 40 + i % 2 * 17);
+        g.fillStyle = i < lit + 2 ? C.gold : "#57606a";
+        g.fillRect(x - 5, 216 + i % 2 * 17, 12, 9);
+        if (i < lit + 2) radial(g, x, 227 + i % 2 * 17, 42, "rgba(255,218,138,.10)");
       }
-      drawText(g, t("ui.noCabinets"), 112, 250, 2, INK4);
-      drawText(g, t("ui.syncTo"), 112, 300, 3, GOLD4, { glow: GOLD4, glowBlur: 3 });
-      drawText(g, t("ui.powerUp"), 112, 336, 3, GOLD4, { glow: GOLD4, glowBlur: 3 });
-      drawText(g, t("ui.yourMachines"), 112, 380, 2, "#9a93bd");
-    }
-    // ---- center stage: coin bank + player ----------------------------------
-    drawCenter(g, now) {
-      const store2 = this.ctx.store;
-      const bankCx = BANK.x + BANK.w / 2;
-      this.drawTokenGuideSign(g);
-      const bankHover = this.ctx.stage.hotspot({
-        x: BANK.x,
-        y: BANK.y,
-        w: BANK.w,
-        h: BANK.h,
-        cursor: "pointer",
-        id: "bank",
-        onClick: () => void this.doSync()
-      });
-      const bankImg = this.ctx.assets.get("coinBank");
-      if (bankImg) {
-        drawImageSmooth(g, bankImg, BANK.x, BANK.y, BANK.w, BANK.h);
-        const pw = 224;
-        const ph = 38;
-        const px = bankCx - pw / 2;
-        const py = BANK.y + BANK.h * 0.855;
-        rrect(g, px, py, pw, ph, 8);
-        g.fillStyle = "rgba(9,6,18,0.82)";
-        g.fill();
-        g.strokeStyle = "rgba(95,230,214,0.6)";
-        g.lineWidth = 2;
-        g.stroke();
-        drawText(g, fmtComma(Math.round(this.displayCoins.value)) + " " + t("ui.coins"), bankCx, py + 11, 2.5, GOLD4, {
-          align: "center",
-          glow: GOLD4,
-          glowBlur: 3
-        });
-      } else {
-        drawCoinBank(g, BANK.x, BANK.y, BANK.w, BANK.h, {
-          fill: Math.min(1, store2.state.coinResidue / CONFIG.TOKENS_PER_COIN),
-          tokens: store2.state.stats.lifetimeTokens,
-          t: now / 1e3,
-          label: t("ui.coinBank"),
-          sublabel: fmtComma(Math.round(this.displayCoins.value)) + " " + t("ui.coins")
-        });
-      }
-      if (bankHover) {
-        panel(g, BANK.x - 6, BANK.y - 6, BANK.w + 12, BANK.h + 12, { radius: 18, border: "rgba(255,210,63,0.35)", borderWidth: 2 });
-      }
-      drawFloorGlints(g, now);
-      const character = this.ctx.assets.get("homePlayer");
-      if (character) {
-        const ph = 152;
-        const pw = ph * (PLAYER_BODY_CROP.sw / PLAYER_BODY_CROP.sh);
-        const px = bankCx + 176;
-        const floorY = 792;
-        const by = floorY - ph + Math.sin(now / 400) * 4;
-        g.save();
-        g.fillStyle = "rgba(0,0,0,0.3)";
-        g.beginPath();
-        g.ellipse(px + pw / 2, floorY - 2, pw * 0.52, 8, 0, 0, Math.PI * 2);
-        g.fill();
-        g.restore();
-        drawImageSmooth(g, character, px, by, pw, ph, PLAYER_BODY_CROP);
-      } else {
-        drawPlayer(g, bankCx + 210, 560 + Math.sin(now / 400) * 6, 7);
-      }
-      panel(g, bankCx - 160, 736, 320, 60, { radius: 8, fill: PANEL, border: MAGENTA2, borderWidth: 2 });
-      drawText(g, t("ui.syncUsage"), bankCx, 744, 2, INK4, { align: "center" });
-      drawText(g, t("ui.earnCoins"), bankCx, 768, 2, GOLD4, { align: "center", glow: GOLD4, glowBlur: 3 });
-      if (!store2.state.firstRunDone) {
-        const slotX = BANK.x + BANK.w * 0.62;
-        const slotY = BANK.y + BANK.h * 0.66;
-        const bob = (Math.sin(now / 400) + 1) / 2;
-        const coinY = slotY - 20 - bob * 10;
-        g.save();
-        g.globalAlpha = 0.9;
-        drawCoin(g, slotX, coinY, 11, Math.cos(now / 200));
-        g.strokeStyle = "rgba(255,210,63,0.6)";
-        g.lineWidth = 2;
-        g.beginPath();
-        g.moveTo(slotX, coinY + 12);
-        g.lineTo(slotX, slotY - 4);
-        g.stroke();
-        g.restore();
-        const a = 0.55 + 0.45 * Math.sin(now / 260);
-        g.globalAlpha = a;
-        drawText(g, t("ui.insertCoin"), bankCx, BANK.y + 150, 4, GOLD4, { align: "center", glow: GOLD4, glowBlur: 6, shadow: "rgba(0,0,0,0.7)" });
-        drawText(g, t("ui.tapToSync"), bankCx, BANK.y + 192, 4, GOLD4, { align: "center", glow: GOLD4, glowBlur: 6, shadow: "rgba(0,0,0,0.7)" });
-        g.globalAlpha = 1;
-      }
-    }
-    /** The Home loop is explained by a localized, authored A-frame planted on
-     * the floor. The letters are part of the pixel art, matching the original
-     * prototype's sign-painting rather than floating canvas text. */
-    drawTokenGuideSign(g) {
-      const asset = this.ctx.store.state.settings.language === "zh-CN" ? "homeTokenGuideBoardZh" : "homeTokenGuideBoardEn";
-      const sign = this.ctx.assets.get(asset);
-      if (!sign) return;
-      const x = 390;
-      const y = 512;
-      const w = 210;
-      const h = 272;
-      drawImageSmooth(g, sign, x, y, w, h);
-    }
-    // ---- right column: prize wall preview ----------------------------------
-    drawPrizeWall(g) {
-      const hovered = this.ctx.stage.hotspot({
-        x: WALL.x,
-        y: WALL.y,
-        w: WALL.w,
-        h: WALL.h,
-        cursor: "pointer",
-        id: "wall",
-        onClick: () => this.ctx.router.go("capsule")
-      });
-      const shelf = this.ctx.assets.get("prizeWall");
-      if (shelf) {
-        this.drawPrizeWallShelf(g, shelf, hovered);
-      } else {
-        this.drawPrizeWallProcedural(g, hovered);
-      }
-      this.drawCollectionMilestones(g);
-      this.drawNextCollectionGoal(g);
-    }
-    /** One unmistakable forward goal, mounted in the prize wall's lower status
-     * bay. It stays present after completion instead of leaving a dead gap. */
-    drawNextCollectionGoal(g) {
-      const store2 = this.ctx.store;
-      const next = store2.nextCollectionMilestone();
-      const owned2 = store2.ownedCount();
-      const centerX = WALL.x + WALL.w / 2;
-      const box = { x: WALL.x + 30, y: WALL.y + WALL.h - 184, w: WALL.w - 60, h: 82 };
-      panel(g, box.x, box.y, box.w, box.h, {
-        radius: 8,
-        fill: "rgba(10,7,20,0.93)",
-        border: next ? "rgba(225,90,216,0.78)" : "rgba(255,210,63,0.85)",
-        borderWidth: 2
-      });
-      if (!next) {
-        drawText(g, t("collection.crowned"), centerX, box.y + 20, 1.75, GOLD4, {
-          align: "center",
-          glow: GOLD4,
-          glowBlur: 4
-        });
-        drawText(g, owned2 + " / " + store2.totalCollectibles(), centerX, box.y + 46, 1.3, INK4, { align: "center" });
-        bar(g, centerX - 116, box.y + box.h - 13, 232, 7, 1, GOLD4);
-        return;
-      }
-      drawText(g, t("collection.nextArcadeUpgrade"), centerX, box.y + 11, 1.65, MAGENTA2, {
-        align: "center",
-        glow: MAGENTA2,
-        glowBlur: 2
-      });
-      const value = t("collection.nextProgress", {
-        n: next.remaining,
-        name: t(next.milestone.nameKey)
-      });
-      let valueScale = 1.45;
-      while (valueScale > 0.82 && measureText(value, valueScale) > box.w - 24) valueScale -= 0.05;
-      drawText(g, value, centerX, box.y + 39, valueScale, GOLD4, { align: "center" });
-      bar(g, centerX - 116, box.y + box.h - 13, 232, 7, owned2 / next.milestone.threshold, CYAN3);
-    }
-    /** Permanent P1C room upgrades. Each tier is derived from unique valid
-     * prizes, so no extra save flag or currency can drift out of sync. */
-    drawCollectionMilestones(g) {
-      const tier = this.ctx.store.collectionMilestoneTier();
-      if (tier >= 2) {
-        const lights = this.ctx.assets.get("collectionPrizeLights");
-        if (lights) drawImageContain(g, lights, WALL.x + WALL.w / 2, WALL.y + 56, 220, 56);
-      }
-      if (tier >= 4) {
-        const crown = this.ctx.assets.get("collectionCrownMarquee");
-        if (crown) drawImageContain(g, crown, WALL.x + WALL.w / 2, WALL.y + 36, WALL.w - 62, 96);
-      }
-    }
-    /** Prize wall rendered on the generated shelf asset. */
-    drawPrizeWallShelf(g, shelf, hovered) {
-      const store2 = this.ctx.store;
-      if (hovered) {
-        g.save();
-        g.shadowColor = MAGENTA2;
-        g.shadowBlur = 24;
-        drawImageSmooth(g, shelf, WALL.x, WALL.y, WALL.w, WALL.h);
-        g.restore();
-      }
-      drawImageSmooth(g, shelf, WALL.x, WALL.y, WALL.w, WALL.h);
-      drawText(g, t("ui.prizeWall"), WALL.x + WALL.w / 2, WALL.y + 88, 2.5, MAGENTA2, {
-        align: "center",
-        glow: MAGENTA2,
-        glowBlur: 4,
-        shadow: "rgba(0,0,0,0.6)"
-      });
-      const owned2 = COLLECTIBLES.filter((c) => store2.state.owned[c.id]);
-      const locked = COLLECTIBLES.filter((c) => !store2.state.owned[c.id]);
-      const display = owned2.concat(locked).slice(0, 20);
-      for (let i = 0; i < display.length; i++) {
-        const c = display[i];
-        const slot = PRIZE_WALL_SLOTS[Math.floor(i / 4)][i % 4];
-        const cx = WALL.x + slot.x * WALL.w;
-        const cy = WALL.y + slot.y * WALL.h;
-        const isOwned = !!store2.state.owned[c.id];
-        if (isOwned) {
-          radial(g, cx, cy, 34, "rgba(255,255,255,0.10)");
-          radial(g, cx, cy, 26, rarityGlow(c.rarity));
-          const icon = collectibleIcon(c.id);
-          if (icon) drawIconCentered(g, icon, cx, cy, 46);
-          else drawSpriteCentered(g, c.sprite, cx, cy, 46, c.tint);
-        } else {
-          drawPadlock(g, cx, cy, "#4a4270");
-        }
-      }
-      drawText(
-        g,
-        t("ui.collected", { n: store2.ownedCount(), total: store2.totalCollectibles() }),
-        WALL.x + WALL.w / 2,
-        WALL.y + WALL.h * 0.735,
-        2,
-        GOLD4,
-        { align: "center", glow: GOLD4, glowBlur: 3, shadow: "rgba(0,0,0,0.6)" }
-      );
-    }
-    /** Procedural fallback prize wall (asset missing / still loading). */
-    drawPrizeWallProcedural(g, hovered) {
-      const store2 = this.ctx.store;
-      panel(g, WALL.x, WALL.y, WALL.w, WALL.h, {
-        radius: 12,
-        fill: "rgba(20,15,36,0.55)",
-        border: hovered ? MAGENTA2 : "rgba(225,90,216,0.5)",
-        borderWidth: hovered ? 3 : 2
-      });
-      drawText(g, t("ui.prizeWall"), WALL.x + 12, WALL.y + 10, 3, MAGENTA2, { glow: MAGENTA2, glowBlur: 3 });
-      const cols = 4;
-      const slot = 78;
-      const stride = 86;
-      const startX = WALL.x + 12;
-      const startY = WALL.y + 52;
-      const count = Math.min(COLLECTIBLES.length, 28);
-      for (let i = 0; i < count; i++) {
-        const c = COLLECTIBLES[i];
-        const sx = startX + i % cols * stride;
-        const sy = startY + Math.floor(i / cols) * stride;
-        const owned2 = !!store2.state.owned[c.id];
-        if (owned2) {
-          panel(g, sx, sy, slot, slot, { radius: 8, fill: "#241a3f", border: RARITIES[c.rarity].color, borderWidth: 2 });
-          const icon = collectibleIcon(c.id);
-          if (icon) drawIconCentered(g, icon, sx + slot / 2, sy + slot / 2, slot - 16);
-          else drawSprite(g, c.sprite, sx + 7, sy + 7, 4, c.tint);
-        } else {
-          panel(g, sx, sy, slot, slot, { radius: 8, fill: "#0f0a1c", border: "#2a2440", borderWidth: 2 });
-          drawText(g, "?", sx + slot / 2, sy + 24, 4, "#3a3352", { align: "center" });
-        }
-      }
-      const collectedY = startY + Math.ceil(count / cols) * stride + 6;
-      drawText(
-        g,
-        t("ui.collected", { n: store2.ownedCount(), total: store2.totalCollectibles() }),
-        WALL.x + WALL.w / 2,
-        collectedY,
-        2,
-        GOLD4,
-        { align: "center" }
-      );
-    }
-    // ---- bottom rail: controls + spend --------------------------------------
-    /** The spend rail rendered as a physical arcade counter / ticket desk. */
-    drawCounter(g) {
-      const r = RAIL;
-      const topH = 12;
-      const sh = g.createLinearGradient(0, r.y + r.h, 0, r.y + r.h + 14);
-      sh.addColorStop(0, "rgba(0,0,0,0.5)");
-      sh.addColorStop(1, "rgba(0,0,0,0)");
-      g.fillStyle = sh;
-      g.fillRect(r.x - 6, r.y + r.h, r.w + 12, 14);
-      rrect(g, r.x, r.y + topH, r.w, r.h - topH, 6);
-      vgrad(g, r.x, r.y + topH, r.w, r.h - topH, "#241a38", "#0c0916");
-      g.fill();
-      g.strokeStyle = "rgba(0,0,0,0.35)";
-      g.lineWidth = 2;
-      for (let sx = r.x + 300; sx < r.x + r.w - 40; sx += 244) {
-        g.beginPath();
-        g.moveTo(sx, r.y + topH + 6);
-        g.lineTo(sx, r.y + r.h - 6);
-        g.stroke();
-      }
-      rrect(g, r.x - 4, r.y, r.w + 8, topH + 4, 6);
-      vgrad(g, r.x - 4, r.y, r.w + 8, topH + 4, "#4a3a6e", "#2a2040");
-      g.fill();
-      g.fillStyle = "rgba(255,255,255,0.18)";
-      g.fillRect(r.x - 4, r.y + 1, r.w + 8, 2);
-      g.save();
-      g.shadowColor = MAGENTA2;
-      g.shadowBlur = 8;
-      g.strokeStyle = "rgba(225,90,216,0.7)";
-      g.lineWidth = 2;
+      g.strokeStyle = "#53616c";
+      g.lineWidth = 1;
       g.beginPath();
-      g.moveTo(r.x + 6, r.y + topH + 4);
-      g.lineTo(r.x + r.w - 6, r.y + topH + 4);
+      g.moveTo(150, 218);
+      for (let i = 1; i < 9; i++) g.lineTo(150 + i * 162, 218 + i % 2 * 17);
       g.stroke();
       g.restore();
-      g.fillStyle = "#6a6a86";
-      for (const [rx, ry] of [
-        [r.x + 8, r.y + r.h - 8],
-        [r.x + r.w - 8, r.y + r.h - 8]
-      ]) {
+      box(g, 668, 208, 265, 83, "#192330", "#536071");
+      text(g, "little token club", 800, 241, 25, C.gold, "center");
+      text(g, this.say("\u6162\u6162\u6765\uFF0C\u4E5F\u4F1A\u95EA\u95EA\u53D1\u5149", "Small steps. Brighter days."), 800, 271, 14, C.muted, "center");
+      text(g, this.say("\u70B9\u51FB\u5730\u677F\u6563\u6563\u6B65 \xB7 \u65B9\u5411\u952E / WASD \u79FB\u52A8", "Click the floor to wander \xB7 Arrow keys / WASD"), 800, 810, 14, "#c7b8b0", "center");
+    }
+    drawCabinets(g) {
+      const s = this.ctx.store.state;
+      const projects = [...s.projects];
+      const favorite = projects.findIndex((p) => p.id === s.featuredProjectId);
+      if (favorite > 0) projects.unshift(...projects.splice(favorite, 1));
+      const pages = Math.max(1, Math.ceil(projects.length / 4));
+      this.page = Math.min(this.page, pages - 1);
+      text(g, this.say("\u9879\u76EE\u6E38\u4E50\u533A", "Project corner"), 111, 295, 19, C.mint);
+      this.button(g, this.say("\u5168\u90E8\u673A\u53F0", "All cabinets"), 598, 277, 143, 35, () => this.journal.open("projects"), false, "all-projects");
+      if (pages > 1) {
+        this.button(g, "\u2039", 111, 671, 42, 34, () => {
+          this.page = (this.page + pages - 1) % pages;
+        }, false, "prev-projects");
+        text(g, `${this.page + 1} / ${pages}`, 200, 688, 15, C.muted, "center");
+        this.button(g, "\u203A", 246, 671, 42, 34, () => {
+          this.page = (this.page + 1) % pages;
+        }, false, "next-projects");
+      }
+      const shown = projects.slice(this.page * 4, this.page * 4 + 4);
+      for (let i = 0; i < 4; i++) {
+        const p = shown[i], x = 103 + i * 167;
+        const info = levelInfo(p?.tokens ?? 0), accent = stageAccent(info.stage.index);
+        const hover = !!p && this.ctx.stage.hotspot({ x, y: 330, w: 157, h: 334, id: `cabinet-${p.id}`, cursor: "pointer", onClick: () => this.ctx.router.go("cabinet", { id: p.id }) });
+        g.fillStyle = "rgba(10,12,19,.45)";
         g.beginPath();
-        g.arc(rx, ry, 3, 0, Math.PI * 2);
+        g.ellipse(x + 78, 605, 70, 14, 0, 0, Math.PI * 2);
         g.fill();
+        if (p) {
+          radial(g, x + 78, 532, 108, hover ? "rgba(136,221,198,.2)" : "rgba(136,221,198,.045)");
+        }
+        const art = this.ctx.assets.get(`projCabStage${info.stage.index + 1}`);
+        g.save();
+        if (!p) g.globalAlpha = 0.24;
+        if (art) drawImageContain(g, art, x + 78, 464 - (hover ? 5 : 0), 156, 280);
+        else drawCabinet(g, x + 8, 348, 140, 255, { name: p?.name ?? "?", level: p?.level ?? 1, on: !!p, progress: info.progress });
+        g.restore();
+        box(g, x + 7, 609, 143, 51, "#1a2533", p ? accent : "#46525b");
+        const label = p ? p.name : this.say("\u7B49\u5F85\u65B0\u9879\u76EE", "A new beginning");
+        let size = 17;
+        while (size > 11) {
+          g.font = `500 ${size}px system-ui`;
+          if (g.measureText(label).width < 128) break;
+          size--;
+        }
+        g.save();
+        g.beginPath();
+        g.rect(x + 10, 610, 136, 47);
+        g.clip();
+        text(g, label, x + 78, 625, size, p ? C.ink : C.muted, "center");
+        g.restore();
+        text(g, p ? `Lv.${p.level}  ${p.id === s.featuredProjectId ? "\u2665" : info.stage.name.toLowerCase()}` : this.say("\u540C\u6B65\u540E\u4EAE\u8D77", "Sync to power up"), x + 78, 647, 12, p ? accent : C.muted, "center");
+        if (p) meter(g, x + 12, 656, 132, info.progress, accent);
       }
     }
-    drawSpendRail(g) {
-      const store2 = this.ctx.store;
-      this.drawCounter(g);
-      const icoY = RAIL.y + 17;
-      this.drawUtilityButton(g, RAIL.x + 8, icoY, "mute", store2.state.settings.muted ? "muted" : "soundOn", () => {
-        store2.toggleMute();
-        this.ctx.sound.setMuted(store2.state.settings.muted);
+    object(g, id, cx, cy, w, h, label, action) {
+      const hover = this.ctx.stage.hotspot({ x: cx - w / 2, y: cy - h / 2, w, h: h + 52, id, onClick: action, cursor: "pointer" });
+      g.fillStyle = "rgba(10,12,19,.4)";
+      g.beginPath();
+      g.ellipse(cx, cy + h / 2 - 6, w * 0.43, 15, 0, 0, Math.PI * 2);
+      g.fill();
+      if (hover) radial(g, cx, cy, Math.max(w, h) * 0.5, "rgba(255,218,138,.13)");
+      const art = this.ctx.assets.get(id);
+      if (art) drawImageContain(g, art, cx, cy - (hover ? 3 : 0), w, h);
+      else {
+        box(g, cx - w * 0.4, cy - h * 0.4, w * 0.8, h * 0.8);
+        drawSpriteCentered(g, "goldCoin", cx, cy, 70);
+      }
+      box(g, cx - w / 2, cy + h / 2 + 10, w, 36, "#1c2835", hover ? C.gold : C.edge);
+      text(g, label, cx, cy + h / 2 + 28, 17, hover ? C.gold : C.ink, "center");
+    }
+    drawRewardCorner(g) {
+      const s = this.ctx.store.state;
+      this.object(g, "coinBank", 902, 456, 214, 306, this.say("\u7075\u611F\u50A8\u84C4\u7F50", "Token bank"), () => void this.doSync());
+      text(g, this.say("\u540C\u6B65\uFF0C\u8BA9\u5C0F\u5E97\u5145\u6EE1\u7535", "A little power for your arcade"), 902, 636, 15, C.gold, "center");
+      this.object(g, "capsuleMachine", 1190, 469, 190, 278, this.say("\u60CA\u559C\u626D\u86CB \xB7 25 \u5E01", "Capsules \xB7 25 coins"), () => this.ctx.router.go("capsule"));
+      this.object(g, "prizeWall", 1410, 443, 188, 330, this.say("\u6211\u7684\u5B9D\u7269", "My treasures"), () => this.ctx.router.go("capsule"));
+      const owned2 = COLLECTIBLES.filter((c) => s.owned[c.id]?.count > 0).slice(0, 9);
+      owned2.forEach((c, i) => {
+        const icon = collectibleIcon(c.id);
+        if (icon) drawIconCentered(g, icon, 1353 + i % 3 * 56, 353 + Math.floor(i / 3) * 73, 40);
       });
-      this.drawUtilityButton(g, RAIL.x + 62, icoY, "settings", "settings", () => this.ctx.openSettings());
-      this.drawUtilityButton(g, RAIL.x + 116, icoY, "help", "help", () => this.ctx.openHelp());
-      drawText(g, t("ui.spendCoins"), RAIL.x + 180, RAIL.y + 34, 2, GOLD4, { glow: GOLD4, glowBlur: 3 });
-      const count = SHOP.length;
-      const cardH = 82;
-      const cardW = Math.round(cardH * 2.26);
-      const btnY = RAIL.y + 1;
-      const startX = 348;
-      const endX = 1578;
-      const stride = count > 1 ? (endX - startX - cardW) / (count - 1) : 0;
-      const cardFrame = this.ctx.assets.get("homeShopCard");
-      for (let i = 0; i < count; i++) {
-        const item = SHOP[i];
-        const bx = Math.round(startX + i * stride);
-        const complete = store2.isGrantComplete(item);
-        const afford = !complete && store2.state.coins >= item.cost;
-        const accent = complete ? "#6a6488" : item.kind === "capsule" ? MAGENTA2 : GOLD4;
-        const hovered = this.ctx.stage.hotspot({
-          x: bx,
-          y: btnY,
-          w: cardW,
-          h: cardH,
-          cursor: "pointer",
-          id: "shop-" + item.id,
-          onClick: () => this.onShop(item, bx + cardW / 2, btnY + cardH / 2, afford)
-        });
-        g.globalAlpha = complete ? 0.62 : afford ? 1 : 0.45;
-        if (cardFrame) {
-          if (hovered && afford) {
-            g.save();
-            g.shadowColor = accent;
-            g.shadowBlur = 14;
-            drawImageSmooth(g, cardFrame, bx, btnY, cardW, cardH);
-            g.restore();
-          }
-          drawImageSmooth(g, cardFrame, bx, btnY, cardW, cardH);
-        } else {
-          panel(g, bx, btnY, cardW, cardH, {
-            radius: 8,
-            fill: afford ? hovered ? "#2a1f4a" : "#201636" : "#150f22",
-            border: afford ? accent : "#33284d",
-            borderWidth: hovered ? 3 : 2
-          });
-        }
-        const icoCx = bx + cardW * 0.215;
-        const icoCy = btnY + cardH * 0.44;
-        const icoSize = cardH * 0.54;
-        const repId = item.kind === "grant" && item.pick ? this.repCollectibleId(item.pick) : null;
-        const repIcon = repId ? collectibleIcon(repId) : null;
-        if (item.kind === "capsule") {
-          const bundle = item.id === "pull10";
-          const capImg = this.ctx.assets.get(bundle ? "shopCapsuleBundle" : "shopCapsuleSingle");
-          if (capImg) {
-            const maxH = cardH * 0.66;
-            const maxW = cardW * (bundle ? 0.31 : 0.28);
-            drawImageContain(g, capImg, icoCx, icoCy, maxW, maxH);
-          }
-        } else if (repIcon) {
-          drawIconCentered(g, repIcon, icoCx, icoCy, icoSize);
-        } else {
-          drawSpriteCentered(g, item.sprite, icoCx, icoCy, icoSize);
-        }
-        const txtX = bx + cardW * 0.39;
-        drawText(g, complete ? t("ui.complete") : t("shop." + item.id + ".label"), txtX, btnY + cardH * 0.19, 1.5, complete ? "#b9b3d6" : INK4);
-        drawText(g, complete ? t("ui.customizeArcade") : t("shop." + item.id + ".sub"), txtX, btnY + cardH * 0.42, 1.2, "#b9b3d6");
-        const priceCx = bx + cardW * 0.68;
-        const priceCy = btnY + cardH * 0.7;
-        if (complete) {
-          drawText(g, "\u2713", priceCx, priceCy - 5, 2.3, CYAN3, { align: "center", glow: CYAN3, glowBlur: 3 });
-        } else {
-          const priceStr = fmtComma(item.cost);
-          const pw = measureText(priceStr, 2);
-          drawCoin(g, priceCx - pw / 2 - 10, priceCy + 4, 7);
-          drawText(g, priceStr, priceCx - pw / 2 + 6, priceCy - 3, 2, GOLD4);
-        }
-        g.globalAlpha = 1;
+      if (!owned2.length) text(g, this.say("\u7B49\u4E00\u4EFD\u5C0F\u60CA\u559C", "Room for little wonders"), 1410, 431, 13, C.muted, "center");
+      text(g, `${this.ctx.store.ownedCount()} / ${COLLECTIBLES.length}`, 1410, 649, 15, C.pink, "center");
+    }
+    drawActors(g, dt, now) {
+      const blocked = this.journal.isOpen || this.decor.editing || !!document.querySelector("#overlays .ta-modal");
+      let dx = 0, dy = 0;
+      if (!blocked) {
+        dx = Number(this.keys.has("ArrowRight") || this.keys.has("d")) - Number(this.keys.has("ArrowLeft") || this.keys.has("a"));
+        dy = Number(this.keys.has("ArrowDown") || this.keys.has("s")) - Number(this.keys.has("ArrowUp") || this.keys.has("w"));
+      }
+      if (dx || dy) this.destination = { x: Math.max(120, Math.min(1480, this.actor.x + dx * 240 * dt)), y: Math.max(712, Math.min(802, this.actor.y + dy * 240 * dt)) };
+      const distance = Math.hypot(this.destination.x - this.actor.x, this.destination.y - this.actor.y);
+      const movement = blocked ? 0 : Math.min(1, dt * 6);
+      this.actor.x += (this.destination.x - this.actor.x) * movement;
+      this.actor.y += (this.destination.y - this.actor.y) * movement;
+      const { x, y } = this.actor;
+      const bob = !this.reduced && distance > 2 ? Math.sin(now / 85) * 3 : 0;
+      g.fillStyle = "#372f3b";
+      g.beginPath();
+      g.ellipse(x, y, 34, 10, 0, 0, Math.PI * 2);
+      g.fill();
+      const player = this.ctx.assets.get("homePlayer");
+      if (player) drawCropContain(g, player, PLAYER_BODY_CROP, x - 41, y - 130 + bob, 82, 130, true);
+      else drawPlayer(g, x - 24, y - 90, 3);
+      const pet = companionGrowth(this.ctx.store.state.stats.lifetimeTokens);
+      const px = x + 75, py = y - 27 + (this.reduced ? 0 : Math.sin(now / 500) * 2);
+      g.save();
+      g.translate(Math.round(px), Math.round(py));
+      g.scale(3, 3);
+      g.fillStyle = "#332c38";
+      g.fillRect(-10, 9, 21, 3);
+      g.fillStyle = C.mint;
+      g.fillRect(-9, -7, 18, 15);
+      g.fillRect(-6, -11, 12, 21);
+      g.fillRect(-12, -3, 24, 8);
+      if (pet.stage > 0) {
+        g.fillRect(-8, -16, 5, 9);
+        g.fillRect(4, -16, 5, 9);
+      }
+      if (pet.stage > 1) {
+        g.fillStyle = C.pink;
+        g.fillRect(-17, -5, 7, 4);
+        g.fillRect(11, -5, 7, 4);
+      }
+      g.fillStyle = "#213949";
+      g.fillRect(-5, -3, 2, 4);
+      g.fillRect(4, -3, 2, 4);
+      g.fillRect(-1, 4, 3, 1);
+      g.fillStyle = "#e0b9b8";
+      g.fillRect(-8, 3, 3, 2);
+      g.fillRect(6, 3, 3, 2);
+      if (pet.stage > 2) {
+        g.fillStyle = C.gold;
+        g.fillRect(-5, -16, 11, 3);
+        g.fillRect(-5, -20, 2, 4);
+        g.fillRect(0, -21, 2, 5);
+        g.fillRect(4, -20, 2, 4);
+      }
+      g.restore();
+      const hover = this.ctx.stage.hotspot({ x: px - 42, y: py - 58, w: 84, h: 82, id: "lumi", cursor: "pointer", onClick: () => {
+        this.ctx.sound.confirm();
+        this.message = this.say("\u5C0F\u5149\uFF1A\u4ECA\u5929\u4E5F\u6709\u597D\u597D\u957F\u5927\u3002", "Lumi: a little brighter, together.");
+        this.messageUntil = performance.now() + 2200;
+        this.journal.open();
+      } });
+      if (hover) {
+        text(g, this.say("\u5C0F\u5149 \xB7 \u67E5\u770B\u6210\u957F", "Lumi \xB7 see growth"), px, py - 76, 16, C.mint, "center");
       }
     }
-    /** A representative collectible id for a grant shop item's type, so the card
-     * can show that collectible's generated icon. Null if none / not a grant. */
-    repCollectibleId(type) {
-      const c = COLLECTIBLES.find((x) => x.type === type);
-      return c ? c.id : null;
+    drawGoal(g) {
+      const statuses = growthStatus(this.ctx.store.state), goal = statuses.find((c) => !c.claimed), ready = statuses.filter((c) => c.ready && !c.claimed).length;
+      box(g, 40, 855, 765, 107, "#27313e", "#596477");
+      const img = goal ? collectibleIcon(goal.reward) : null;
+      if (img) drawIconCentered(g, img, 91, 907, 60);
+      else drawSpriteCentered(g, "starBadge", 91, 907, 42);
+      text(g, ready ? this.say(`${ready} \u4EFD\u6210\u957F\u793C\u7269\u7B49\u4F60\u62C6\u5F00`, `${ready} growth gifts are waiting`) : this.say("\u5C0F\u5E97\u7684\u4E0B\u4E00\u6B65", "A little something to grow toward"), 139, 880, 16, C.gold);
+      text(g, goal ? this.ctx.store.state.settings.language === "zh-CN" ? goal.zh : goal.en : this.say("\u4F60\u7684\u5C0F\u5E97\uFF0C\u5DF2\u7ECF\u957F\u6210\u4E86\u4F20\u8BF4", "Your little arcade is a legend"), 139, 909, 24, C.ink);
+      text(g, goal ? goal.ready ? this.say("\u5DF2\u7ECF\u8FBE\u6210\uFF0C\u5FEB\u6253\u5F00\u6210\u957F\u624B\u518C\u5427", "Ready! Open your journal to collect it.") : this.say("\u8FD8\u9700 ", "") + fmtCompact(goal.tokens - this.ctx.store.state.stats.lifetimeTokens) + " tokens \xB7 " + tCollectibleName(goal.reward) : this.say("\u63A5\u4E0B\u6765\uFF0C\u7EE7\u7EED\u6536\u96C6\u4F60\u7684\u5FC3\u5934\u597D", "Keep collecting the things you love"), 139, 941, 15, C.muted);
+      this.button(g, this.say("\u6210\u957F\u624B\u518C", "Journal"), 638, 878, 144, 55, () => this.journal.open(), ready > 0, "journal");
+      if (goal) meter(g, 139, 954, 465, goal.progress, C.gold);
     }
-    /** A bottom-left utility button drawn from the generated utility-button sheet
-     * (home-utility-buttons-sheet-v2.png). The hit area is a FIXED 48x48 box; the
-     * button art is drawn centered inside it at the sheet cell's own aspect
-     * (~384:341 ≈ 1.125), and only the SOURCE crop row changes between normal/hover
-     * — the destination rect is identical across states, so hovering never shifts
-     * or resizes the button and the hotspot always matches the art. Falls back to a
-     * plain neutral panel only while the sheet is still decoding. */
-    drawUtilityButton(g, x, y, id, key, onClick) {
-      const HIT = 48;
-      const hovered = this.ctx.stage.hotspot({ x, y, w: HIT, h: HIT, cursor: "pointer", id: "ico-" + id, onClick });
-      const state = hovered ? "hover" : "normal";
-      const crop = utilityButtonCrop(key, state);
-      const bw = HIT;
-      const bh = Math.round(HIT * (crop.sh / crop.sw));
-      const bx = x + (HIT - bw) / 2;
-      const by = y + (HIT - bh) / 2;
-      const sheet = this.ctx.assets.get("homeUtilityButtons");
-      if (sheet) {
-        drawImageSmooth(g, sheet, bx, by, bw, bh, crop);
-      } else {
-        panel(g, bx, by, bw, bh, { radius: 8, fill: hovered ? "#2a1f4a" : "#1b1230", border: "#4a4270", borderWidth: 2 });
-      }
-    }
-    // ---- actions ------------------------------------------------------------
-    onShop(item, cx, cy, afford) {
-      if (item.kind === "capsule") {
-        this.ctx.sound.click();
-        this.ctx.router.go("capsule");
-        return;
-      }
-      if (!afford || this.ctx.store.isGrantComplete(item)) {
-        this.ctx.sound.error();
-        return;
-      }
-      this.doBuy(item, cx, cy);
-    }
-    doBuy(item, cx, cy) {
-      const res = this.ctx.store.buy(item);
-      if (!res) {
-        this.ctx.sound.error();
-        return;
-      }
-      const r = RARITIES[res.collectible.rarity];
-      const isNewCosmetic = !res.isDup && (res.collectible.type === "theme" || res.collectible.type === "frame");
-      if (isNewCosmetic) {
-        this.ctx.fx.burst(1102, 214, r.glow, 16);
-        this.ctx.fx.cosmeticReveal(tCollectibleName(res.collectible.id), res.collectible.sprite, res.collectible.id);
-      } else {
-        this.ctx.fx.burst(cx, cy - 10, r.glow, 22);
-        this.ctx.fx.banner(res.isDup ? t("ui.dup", { n: res.count }) : t("ui.unlockedBang"), cx, cy - 44, r.color, { scale: 4, life: 1.8 });
-        this.ctx.fx.banner(tCollectibleName(res.collectible.id), cx, cy - 96, INK4, { scale: 2, life: 2.2, vy: -22 });
-      }
-      this.ctx.fx.banner(t("ui.minusCoins", { n: item.cost }), COINS_TARGET.x, COINS_TARGET.y + 34, "#ff9a3c", { scale: 3, life: 1.4 });
-      this.ctx.sound.reveal(res.collectible.rarity);
-      this.ctx.sound.coin();
-      for (const a of res.achievements) this.ctx.fx.toast(tAchName(a.id), tAchDesc(a.id), a.sprite);
-      for (const milestone of res.milestones) {
-        this.ctx.fx.toast(t(milestone.nameKey), t(milestone.descKey), "starBadge");
-      }
+    drawNavigation(g) {
+      const y = 861;
+      this.button(g, this.say("\u626D\u86CB\u4E0E\u6536\u85CF", "Capsules"), 828, y, 220, 55, () => this.ctx.router.go("capsule"), false, "capsules");
+      this.button(g, this.say("\u5E03\u7F6E\u5C0F\u5E97", "Decorate"), 1062, y, 220, 55, () => this.decor.openDecorationEditor(), false, "decorate");
+      this.button(g, this.say("\u793C\u7269\u5546\u5E97", "Gift shop"), 1296, y, 260, 55, () => this.journal.open("shop"), false, "shop");
+      const controls = [{ label: this.say("\u623F\u95F4\u4E3B\u9898", "Room themes"), fn: () => this.ctx.router.go("customize") }, { label: this.say("\u6210\u5C31", "Achievements"), fn: () => this.ctx.router.go("achievements") }, { label: this.say("\u8BBE\u7F6E", "Settings"), fn: () => this.ctx.openSettings() }, { label: this.ctx.store.state.settings.muted ? this.say("\u58F0\u97F3\uFF1A\u5173", "Sound off") : this.say("\u58F0\u97F3\uFF1A\u5F00", "Sound on"), fn: () => this.ctx.sound.setMuted(this.ctx.store.toggleMute()) }];
+      controls.forEach((c, i) => {
+        const x = 844 + i * 182;
+        const h = this.ctx.stage.hotspot({ x: x - 10, y: 926, w: 172, h: 35, id: "utility-" + i, onClick: c.fn, cursor: "pointer" });
+        text(g, c.label, x, 945, 16, h ? C.ink : C.muted);
+      });
+      text(g, this.receipt ? this.say(`\u521A\u521A\u6536\u83B7 ${fmtCompact(this.receipt.tokens)} tokens \xB7 +${this.receipt.coins} \u91D1\u5E01 \xB7 ${this.receipt.levels} \u53F0\u5347\u7EA7`, `Just collected ${fmtCompact(this.receipt.tokens)} tokens \xB7 +${this.receipt.coins} coins \xB7 ${this.receipt.levels} level-ups`) : this.say("\u540C\u6B65\u7075\u611F \u2192 \u673A\u53F0\u957F\u5927 \u2192 \u62C6\u5F00\u793C\u7269 \u2192 \u628A\u5C0F\u5E97\u5E03\u7F6E\u6210\u559C\u6B22\u7684\u6837\u5B50", "Sync ideas \u2192 grow cabinets \u2192 unwrap gifts \u2192 make this place yours"), 800, 986, 14, C.muted, "center");
     }
     async doSync() {
       if (this.syncing) return;
       this.syncing = true;
-      this.ctx.sound.click();
-      const bankCx = BANK.x + BANK.w / 2;
-      const bankCy = BANK.y + BANK.h * 0.45;
       try {
+        const before = companionGrowth(this.ctx.store.state.stats.lifetimeTokens).stage;
         const result = await this.ctx.store.sync();
-        if (result.source === "no-history") return;
-        if (result.source === "demo") {
-          this.ctx.fx.banner(t("ui.demoSync"), bankCx, BANK.y + 12, CYAN3, { scale: 1.7, life: 1.8, vy: -10 });
-        }
-        this.ctx.stage.wake(2800);
-        if (result.coinsMinted > 0) {
-          const n = Math.min(result.coinsMinted, 40);
-          this.ctx.fx.coinRain(bankCx, bankCy, n, COINS_TARGET, () => this.ctx.sound.coinTick());
-          this.ctx.fx.banner(t("ui.newTokens", { n: fmtCompact(result.newTokens) }), bankCx, BANK.y + 40, CYAN3, { scale: 1.75, life: 2.2, vy: -12 });
-          this.ctx.fx.banner(t("ui.coinsPlus", { n: fmtComma(result.coinsMinted) }), bankCx, BANK.y + 74, GOLD4, { scale: 2.75, life: 2.2, vy: -16 });
+        this.receipt = { tokens: result.newTokens, coins: result.coinsMinted, levels: result.levelUps.length };
+        if (result.newTokens > 0) {
+          if (!this.reduced) this.ctx.fx.coinRain(902, 470, Math.min(36, Math.max(6, result.coinsMinted)), { x: 1190, y: 44 });
+          this.ctx.fx.banner("+" + result.coinsMinted, 902, 355, C.gold, { scale: 4, life: 2 });
           this.ctx.sound.coin();
-        } else {
-          this.ctx.fx.banner(t("ui.allCaughtUp"), bankCx, BANK.y + 150, CYAN3, { scale: 4, life: 1.8 });
-        }
-        for (let i = 0; i < result.levelUps.length; i++) {
-          const lu = result.levelUps[i];
-          this.ctx.fx.pulse(lu.id);
-          if (i >= 2) continue;
-          this.ctx.sound.levelUp();
-          const ly = BANK.y + 232 + i * 96;
-          this.ctx.fx.banner(t("ui.poweredUp", { name: lu.name }), bankCx, ly, GOLD4, { scale: 2.25, life: 2, vy: -18 });
-          this.ctx.fx.banner(t("ui.lvArrow", { from: lu.from, to: lu.to }), bankCx, ly + 32, INK4, { scale: 2, life: 2, vy: -18 });
-          if (lu.stageTo) {
-            this.ctx.fx.banner(t("ui.becameCabinet", { name: lu.name, stage: lu.stageTo }), bankCx, ly + 60, MAGENTA2, { scale: 2, life: 2, vy: -18 });
+          this.message = this.say("\u7075\u611F\u5DF2\u5B58\u597D\uFF0C\u5C0F\u5E97\u53C8\u957F\u5927\u4E86\u4E00\u70B9\u3002", "Ideas saved. Your little arcade grew a little.");
+          if (companionGrowth(this.ctx.store.state.stats.lifetimeTokens).stage > before) {
+            this.message = this.say("\u5C0F\u5149\u8FDB\u5316\u4E86\uFF01\u6253\u5F00\u6210\u957F\u624B\u518C\u770B\u770B\u5427\u3002", "Lumi evolved! Take a look in your journal.");
+            this.ctx.sound.levelUp();
           }
-        }
-        for (const a of result.achievements) this.ctx.fx.toast(tAchName(a.id), tAchDesc(a.id), a.sprite);
+          result.levelUps.forEach((p) => this.ctx.fx.pulse(p.id));
+        } else this.message = this.say("\u5DF2\u7ECF\u540C\u6B65\u597D\u4E86\uFF0C\u65B0\u7684\u7075\u611F\u5230\u6765\u65F6\u518D\u6765\u5427\u3002", "All caught up. Come back when new ideas arrive.");
+        this.messageUntil = performance.now() + 3500;
       } catch {
-        this.ctx.fx.banner(t("ui.syncFailed"), bankCx, bankCy, "#ff9a3c", { scale: 4, life: 1.8 });
+        this.message = this.say("\u540C\u6B65\u5931\u8D25\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5\u3002", "Sync failed. Please try again.");
+        this.messageUntil = performance.now() + 3500;
         this.ctx.sound.error();
       } finally {
         this.syncing = false;
       }
     }
-    /** Start demo only after the player chooses it in the no-history panel. */
-    async playDemoArcade() {
-      if (this.syncing) return;
-      this.ctx.store.setMode("demo");
-      this.displayCoins.set(this.ctx.store.state.coins);
-      await this.doSync();
-    }
-    /** Settings' one-click escape hatch from demo back to an isolated live scan. */
     async tryLiveScanFromSettings() {
       if (this.syncing) return;
       this.ctx.store.setMode("live");
       this.displayCoins.set(this.ctx.store.state.coins);
       await this.doSync();
     }
-    /** Canvas decision panel for an empty first local scan. It intentionally
-     * gates mock projects behind a deliberate player choice. */
-    drawNoHistoryDecision(g) {
-      const state = this.ctx.store.state;
-      if (state.mode !== "live" || state.historyScan !== "no-history") return;
-      const x = 442;
-      const y = 258;
-      const w = 716;
-      const h = 476;
-      g.save();
-      g.fillStyle = "rgba(4,3,10,0.55)";
-      g.fillRect(0, 0, this.ctx.stage.width, this.ctx.stage.height);
-      g.restore();
-      panel(g, x, y, w, h, { radius: 14, fill: "rgba(18,12,34,0.98)", border: GOLD4, borderWidth: 3 });
-      g.fillStyle = "rgba(95,230,214,0.32)";
-      g.fillRect(x + 26, y + 72, w - 52, 2);
-      for (let i = 0; i < 9; i++) {
-        g.fillStyle = i % 2 ? CYAN3 : GOLD4;
-        g.fillRect(x + 30 + i * ((w - 64) / 8), y + 22, 5, 5);
-      }
-      drawText(g, t("ui.noHistoryFound"), x + w / 2, y + 35, 3.2, GOLD4, { align: "center", glow: GOLD4, glowBlur: 6 });
-      const body = wrapText(t("ui.noHistoryBody"), 2, w - 94);
-      let bodyY = y + 104;
-      for (const line of body) {
-        drawText(g, line, x + w / 2, bodyY, 2, INK4, { align: "center" });
-        bodyY += 22;
-      }
-      this.drawHistoryChoice(g, x + 42, y + 184, w - 84, 98, "demo-choice", t("ui.playDemoArcade"), t("ui.playDemoSub"), GOLD4, () => void this.playDemoArcade());
-      this.drawHistoryChoice(g, x + 42, y + 310, w - 84, 98, "scan-choice", t("ui.scanAgain"), t("ui.scanAgainSub"), CYAN3, () => void this.doSync());
-    }
-    drawHistoryChoice(g, x, y, w, h, id, title, sub, color, onClick) {
-      const hovered = this.ctx.stage.hotspot({ x, y, w, h, cursor: "pointer", id, onClick });
-      panel(g, x, y, w, h, {
-        radius: 10,
-        fill: hovered ? "#2a1f4a" : "#120d24",
-        border: hovered ? color : "rgba(126,118,168,0.7)",
-        borderWidth: hovered ? 3 : 2
-      });
-      g.fillStyle = color;
-      g.fillRect(x + 16, y + 14, 5, h - 28);
-      let titleScale = 2.35;
-      while (titleScale > 1.25 && measureText(title, titleScale) > w - 72) titleScale -= 0.15;
-      drawText(g, title, x + 40, y + 21, titleScale, hovered ? color : INK4, { glow: hovered ? color : void 0, glowBlur: 4 });
-      const subLines = wrapText(sub, 1.4, w - 72).slice(0, 2);
-      let subY = y + 55;
-      for (const line of subLines) {
-        drawText(g, line, x + 40, subY, 1.4, "#c9c6e0");
-        subY += 15;
-      }
+    drawNoHistory(g) {
+      const s = this.ctx.store.state;
+      if (s.mode !== "live" || s.historyScan !== "no-history") return;
+      this.ctx.stage.hotspot({ x: 0, y: 0, w: 1600, h: 1e3, id: "no-history-shield", onClick: () => {
+      } });
+      g.fillStyle = "rgba(9,14,24,.8)";
+      g.fillRect(0, 0, 1600, 1e3);
+      box(g, 415, 330, 770, 325, C.panel, C.mint);
+      text(g, this.say("\u4F60\u7684\u5C0F\u5E97\uFF0C\u51C6\u5907\u5F00\u5F20\u3002", "Your arcade is ready to open."), 800, 387, 32, C.ink, "center");
+      text(g, this.say("\u6682\u65F6\u6CA1\u627E\u5230\u672C\u5730 token \u8BB0\u5F55\u3002\u5148\u5230\u6F14\u793A\u5C0F\u5C4B\u73A9\u4E00\u4F1A\u513F\uFF1F", "No local token history yet. Try a separate demo arcade."), 800, 451, 20, C.muted, "center");
+      text(g, this.say("\u6F14\u793A\u4E0E\u771F\u5B9E\u8FDB\u5EA6\u5206\u522B\u4FDD\u5B58\u3002", "Demo progress is saved separately from real progress."), 800, 486, 17, C.muted, "center");
+      this.button(g, this.say("\u8FDB\u5165\u6F14\u793A\u5C0F\u5C4B", "Enter demo arcade"), 457, 545, 330, 64, () => {
+        if (this.syncing) return;
+        this.ctx.store.setMode("demo");
+        this.displayCoins.set(this.ctx.store.state.coins);
+        void this.doSync();
+      }, true, "demo-choice");
+      this.button(g, this.say("\u518D\u627E\u4E00\u6B21", "Scan again"), 811, 545, 330, 64, () => void this.doSync(), false, "scan-choice");
     }
   };
 
+  // src/render/hud.ts
+  var GOLD2 = "#ffd23f";
+  var TOKEN_GLOW = "#9a6cff";
+  var INK2 = "#f6f4ff";
+  function hudPlaqueHeight(w) {
+    return Math.round(w / FRAME_ANCHORS.hudPlaque.aspect);
+  }
+  function fitNumber(g, x, y, w, h, value, color, glow) {
+    const win = FRAME_ANCHORS.hudPlaque.textWin;
+    const maxW = w * win.w * 0.94;
+    const maxH = h * win.h * 0.8;
+    const w1 = Math.max(1, measureText(value, 1));
+    let s = Math.min(maxH / GLYPH_H, maxW / w1);
+    s = Math.max(1, Math.min(3.4, s));
+    const cx = x + w * win.cx;
+    const top = y + h * win.cy - GLYPH_H * s / 2;
+    drawText(g, value, cx, top, s, color, { align: "center", glow, glowBlur: 3 });
+  }
+  function drawCoinHud(g, assets2, x, y, w, value) {
+    const h = hudPlaqueHeight(w);
+    const img = assets2.get("coinHudPlaque");
+    if (img) {
+      drawImageSmooth(g, img, x, y, w, h);
+      fitNumber(g, x, y, w, h, value, GOLD2, GOLD2);
+    } else {
+      rrect(g, x, y, w, h, h * 0.26);
+      g.fillStyle = "rgba(12,8,24,0.92)";
+      g.fill();
+      g.strokeStyle = GOLD2;
+      g.lineWidth = 3;
+      g.stroke();
+      drawCoin(g, x + h * 0.52, y + h * 0.5, h * 0.3);
+      fitNumber(g, x, y, w, h, value, GOLD2, GOLD2);
+    }
+    return h;
+  }
+  function drawTokenHud(g, assets2, x, y, w, value) {
+    const h = hudPlaqueHeight(w);
+    const img = assets2.get("tokenHudPlaque");
+    if (img) {
+      drawImageSmooth(g, img, x, y, w, h);
+      fitNumber(g, x, y, w, h, value, INK2, TOKEN_GLOW);
+    } else {
+      rrect(g, x, y, w, h, h * 0.26);
+      g.fillStyle = "rgba(12,8,24,0.92)";
+      g.fill();
+      g.strokeStyle = TOKEN_GLOW;
+      g.lineWidth = 3;
+      g.stroke();
+      drawSprite(g, "tokenChip", x + h * 0.28, y + h * 0.26, h * 0.055);
+      fitNumber(g, x, y, w, h, value, INK2, TOKEN_GLOW);
+    }
+    return h;
+  }
+
+  // src/render/demoPlaque.ts
+  var CYAN2 = "#5fe6d6";
+  var GOLD3 = "#ffd23f";
+  var INK3 = "#f6f4ff";
+  function drawDemoPlaque(g, ctx2, x, y, w = 156) {
+    if (ctx2.store.state.mode !== "demo") return;
+    const h = 34;
+    const hovered = ctx2.stage.hotspot({
+      x,
+      y,
+      w,
+      h,
+      cursor: "help",
+      id: "demo-identity",
+      onClick: () => ctx2.openHelp()
+    });
+    if (hovered) {
+      g.save();
+      g.shadowColor = CYAN2;
+      g.shadowBlur = 14;
+      panel(g, x, y, w, h, { radius: 6, fill: "#102337", border: CYAN2, borderWidth: 2 });
+      g.restore();
+    } else {
+      panel(g, x, y, w, h, { radius: 6, fill: "#102337", border: "#2f9fa0", borderWidth: 2 });
+    }
+    for (let i = 0; i < 3; i++) {
+      g.fillStyle = i === 1 ? GOLD3 : CYAN2;
+      g.fillRect(x + 9 + i * 6, y + 13, 3, 8);
+    }
+    const label = t("ui.demoArcade");
+    const maxW = w - 36;
+    const scale = Math.max(1.05, Math.min(1.55, maxW / Math.max(1, measureText(label, 1))));
+    drawText(g, label, x + 31, y + (h - GLYPH_H * scale) / 2, scale, INK3, { glow: CYAN2, glowBlur: 2 });
+    if (!hovered) return;
+    const message = t("ui.demoDisclosure");
+    const lines = wrapText(message, 1.25, 250);
+    const tipW = 278;
+    const lineH = Math.max(11, GLYPH_H * 1.25);
+    const tipH = 18 + lines.length * (lineH + 4);
+    const tipX = Math.max(12, Math.min(ctx2.stage.width - tipW - 12, x + w - tipW));
+    const tipY = Math.min(ctx2.stage.height - tipH - 12, y + h + 10);
+    panel(g, tipX, tipY, tipW, tipH, { radius: 8, fill: "rgba(10,7,20,0.97)", border: CYAN2, borderWidth: 2 });
+    let ty = tipY + 10;
+    for (const line of lines) {
+      drawText(g, line, tipX + 12, ty, 1.25, INK3, { shadow: "rgba(0,0,0,0.7)" });
+      ty += lineH + 4;
+    }
+    g.fillStyle = "rgba(255,210,63,0.55)";
+    rrect(g, tipX + 10, tipY + tipH - 5, tipW - 20, 2, 1);
+    g.fill();
+  }
+
   // src/screens/chrome.ts
-  var CYAN4 = "#5fe6d6";
+  var CYAN3 = "#5fe6d6";
   var BACK = { x: 16, y: 16, w: 150 };
   function drawBackButton(g, ctx2, onClick) {
     const h = Math.round(BACK.w / FRAME_ANCHORS.backButton.aspect);
@@ -6550,7 +5568,7 @@
     if (img) {
       if (hovered) {
         g.save();
-        g.shadowColor = CYAN4;
+        g.shadowColor = CYAN3;
         g.shadowBlur = 12;
         drawImageSmooth(g, img, BACK.x, BACK.y, BACK.w, h);
         g.restore();
@@ -6561,25 +5579,25 @@
       const label = t("ui.back");
       const w1 = Math.max(1, measureText(label, 1));
       const s = Math.max(1, Math.min(1.9, BACK.w * win.w * 0.9 / w1));
-      drawText(g, label, BACK.x + BACK.w * win.cx, BACK.y + h * win.cy - GLYPH_H * s / 2, s, CYAN4, { align: "center" });
+      drawText(g, label, BACK.x + BACK.w * win.cx, BACK.y + h * win.cy - GLYPH_H * s / 2, s, CYAN3, { align: "center" });
     } else {
-      panel(g, BACK.x, BACK.y, 120, 52, { radius: 10, fill: hovered ? "#2a1f4a" : "#1b1230", border: CYAN4, borderWidth: 2 });
-      drawText(g, "< " + t("ui.back"), BACK.x + 60, BACK.y + 16, 2, CYAN4, { align: "center" });
+      panel(g, BACK.x, BACK.y, 120, 52, { radius: 10, fill: hovered ? "#2a1f4a" : "#1b1230", border: CYAN3, borderWidth: 2 });
+      drawText(g, "< " + t("ui.back"), BACK.x + 60, BACK.y + 16, 2, CYAN3, { align: "center" });
     }
   }
 
   // src/screens/cabinetScreen.ts
-  var GOLD5 = "#ffd23f";
-  var CYAN5 = "#5fe6d6";
-  var MAGENTA3 = "#e15ad8";
-  var GREEN3 = "#5fd66f";
-  var INK5 = "#f6f4ff";
+  var GOLD4 = "#ffd23f";
+  var CYAN4 = "#5fe6d6";
+  var MAGENTA2 = "#e15ad8";
+  var GREEN2 = "#5fd66f";
+  var INK4 = "#f6f4ff";
   var MUTE = "#9a93bd";
   var PANEL_2 = "#120b22";
-  var CAB2 = { x: 150, y: 126, w: 472, h: 660 };
+  var CAB = { x: 150, y: 126, w: 472, h: 660 };
   var STATS = { x: 766, y: 132, w: 800, h: 578 };
-  var RAIL2 = { x: 16, y: 410, w: 1568, h: 762 };
-  var WALL2 = { x: 760, y: 130, w: 800, h: 560 };
+  var RAIL = { x: 16, y: 410, w: 1568, h: 762 };
+  var WALL = { x: 760, y: 130, w: 800, h: 560 };
   var SB_ROWS = [0.194, 0.315, 0.431, 0.547, 0.663];
   var SB_ICON_ROWS = [0.208, 0.324, 0.44, 0.555, 0.672];
   var SB_ICON_X = 0.2034;
@@ -6589,7 +5607,7 @@
   var SB_LED = { x: 0.363, y: 0.792, w: 0.266, h: 0.03 };
   var RR_SLOTS_X = [0.16, 0.2546, 0.3496, 0.4444, 0.5536, 0.6484, 0.7426, 0.8371];
   var RR_SLOT_Y = 0.6945;
-  function bar2(g, x, y, w, h, frac, fill) {
+  function bar(g, x, y, w, h, frac, fill) {
     g.fillStyle = "#05060f";
     g.fillRect(x, y, w, h);
     const f = Math.max(0, Math.min(1, frac));
@@ -6608,7 +5626,7 @@
       // The cabinet sprite's fitted draw rect (aspect-preserved within CAB), shared
       // between drawBigCabinet and drawLevelFooter. Defaults to CAB for the
       // procedural fallback.
-      this.cabDraw = { x: CAB2.x, y: CAB2.y, w: CAB2.w, h: CAB2.h };
+      this.cabDraw = { x: CAB.x, y: CAB.y, w: CAB.w, h: CAB.h };
     }
     enter(params2) {
       const id = params2?.id ?? null;
@@ -6654,7 +5672,7 @@
     // ---- header -------------------------------------------------------------
     drawHeader(g, proj) {
       drawBackButton(g, this.ctx, () => this.ctx.router.back());
-      drawText(g, proj.name, 800, 24, 4, INK5, { align: "center", glow: MAGENTA3, glowBlur: 4, shadow: "rgba(0,0,0,0.5)" });
+      drawText(g, proj.name, 800, 24, 4, INK4, { align: "center", glow: MAGENTA2, glowBlur: 4, shadow: "rgba(0,0,0,0.5)" });
       drawText(g, t("ui.projectCabinet"), 800, 66, 1.5, MUTE, { align: "center" });
       const HW = 252;
       const HX = 1600 - HW - 24;
@@ -6668,7 +5686,7 @@
       const variant = stageCabinet(info.stage.index);
       const img = this.ctx.assets.get(variant.asset);
       if (!img) {
-        drawCabinet(g, CAB2.x, CAB2.y, CAB2.w, CAB2.h, {
+        drawCabinet(g, CAB.x, CAB.y, CAB.w, CAB.h, {
           name: proj.name,
           level: info.stage.index + 1,
           id: proj.id,
@@ -6676,26 +5694,26 @@
           glow: 1,
           progress: info.progress
         });
-        drawText(g, t("ui.tokenPower"), CAB2.x, CAB2.y + CAB2.h + 26, 2, CYAN5, { glow: CYAN5, glowBlur: 3 });
-        drawText(g, t("ui.coinPower", { x: info.multiplier.toFixed(2) + "x" }), CAB2.x + CAB2.w, CAB2.y + CAB2.h + 26, 1.6, GOLD5, {
+        drawText(g, t("ui.tokenPower"), CAB.x, CAB.y + CAB.h + 26, 2, CYAN4, { glow: CYAN4, glowBlur: 3 });
+        drawText(g, t("ui.coinPower", { x: info.multiplier.toFixed(2) + "x" }), CAB.x + CAB.w, CAB.y + CAB.h + 26, 1.6, GOLD4, {
           align: "right",
-          glow: GOLD5,
+          glow: GOLD4,
           glowBlur: 3
         });
-        bar2(g, CAB2.x, CAB2.y + CAB2.h + 54, CAB2.w, 24, info.progress, variant.accent);
+        bar(g, CAB.x, CAB.y + CAB.h + 54, CAB.w, 24, info.progress, variant.accent);
         return;
       }
-      const nw = img.naturalWidth || CAB2.w;
-      const nh = img.naturalHeight || CAB2.h;
+      const nw = img.naturalWidth || CAB.w;
+      const nh = img.naturalHeight || CAB.h;
       const ar = nw / nh;
-      let dw = CAB2.h * ar;
-      let dh = CAB2.h;
-      if (dw > CAB2.w) {
-        dw = CAB2.w;
-        dh = CAB2.w / ar;
+      let dw = CAB.h * ar;
+      let dh = CAB.h;
+      if (dw > CAB.w) {
+        dw = CAB.w;
+        dh = CAB.w / ar;
       }
-      const dx = CAB2.x + (CAB2.w - dw) / 2;
-      const dy = CAB2.y + (CAB2.h - dh);
+      const dx = CAB.x + (CAB.w - dw) / 2;
+      const dy = CAB.y + (CAB.h - dh);
       this.cabDraw = { x: dx, y: dy, w: dw, h: dh };
       g.save();
       g.fillStyle = "rgba(0,0,0,0.4)";
@@ -6716,7 +5734,7 @@
       while (nameScale > 1 && measureText(proj.name, nameScale) > m.w - 16) nameScale -= 0.25;
       const twinkle = 0.75 + 0.25 * ((Math.sin(now / 380) + 1) / 2);
       g.globalAlpha = twinkle;
-      drawText(g, proj.name, mCx, m.y + m.h / 2 - nameScale * 3.5, nameScale, INK5, {
+      drawText(g, proj.name, mCx, m.y + m.h / 2 - nameScale * 3.5, nameScale, INK4, {
         align: "center",
         glow: variant.accent,
         glowBlur: 5,
@@ -6733,7 +5751,7 @@
       g.fillStyle = "rgba(0,0,0,0.14)";
       for (let yy = s.y + 2; yy < s.y + s.h; yy += 6) g.fillRect(s.x, yy, s.w, 2);
       drawText(g, "LVL", sCx, s.y + s.h * 0.08, 2, variant.accent, { align: "center", glow: variant.accent, glowBlur: 3 });
-      drawText(g, String(info.level), sCx, s.y + s.h * 0.2, 6, INK5, {
+      drawText(g, String(info.level), sCx, s.y + s.h * 0.2, 6, INK4, {
         align: "center",
         glow: variant.accent,
         glowBlur: 6,
@@ -6749,16 +5767,16 @@
       const pbX = sCx - pbW / 2;
       const pbY = s.y + s.h * 0.74;
       drawText(g, t("ui.tokenPower"), sCx, pbY - 15, 1.3, MUTE, { align: "center" });
-      bar2(g, pbX, pbY, pbW, 15, info.progress, variant.accent);
+      bar(g, pbX, pbY, pbW, 15, info.progress, variant.accent);
       if (info.isMax) {
-        drawText(g, t("ui.maxLevel"), sCx, pbY + 22, 1.4, GOLD5, {
+        drawText(g, t("ui.maxLevel"), sCx, pbY + 22, 1.4, GOLD4, {
           align: "center",
-          glow: GOLD5,
+          glow: GOLD4,
           glowBlur: 4,
           shadow: "rgba(0,0,0,0.6)"
         });
       } else {
-        drawText(g, fmtCompact(proj.tokens) + " / " + fmtCompact(info.next ?? 0), sCx, pbY + 22, 1.3, INK5, {
+        drawText(g, fmtCompact(proj.tokens) + " / " + fmtCompact(info.next ?? 0), sCx, pbY + 22, 1.3, INK4, {
           align: "center",
           shadow: "rgba(0,0,0,0.6)"
         });
@@ -6771,17 +5789,17 @@
       const plateW = 250;
       const plateH = 34;
       const plateX = this.cabDraw.x + this.cabDraw.w / 2 - plateW / 2;
-      const plateY = CAB2.y + CAB2.h + 6;
-      panel(g, plateX, plateY, plateW, plateH, { radius: 17, fill: PANEL_2, border: GOLD5, borderWidth: 2 });
+      const plateY = CAB.y + CAB.h + 6;
+      panel(g, plateX, plateY, plateW, plateH, { radius: 17, fill: PANEL_2, border: GOLD4, borderWidth: 2 });
       drawCoin(g, plateX + 22, plateY + plateH / 2, 10);
-      drawText(g, t("ui.coinPower", { x: info.multiplier.toFixed(2) + "x" }), plateX + 40, plateY + plateH / 2 - 7, 1.6, GOLD5, {
-        glow: GOLD5,
+      drawText(g, t("ui.coinPower", { x: info.multiplier.toFixed(2) + "x" }), plateX + 40, plateY + plateH / 2 - 7, 1.6, GOLD4, {
+        glow: GOLD4,
         glowBlur: 3
       });
       if (!info.isMax && info.progress > 0.8) {
-        drawText(g, t("ui.levelUpSoon"), plateX + plateW + 96, plateY + plateH / 2 - 6, 1.5, GREEN3, {
+        drawText(g, t("ui.levelUpSoon"), plateX + plateW + 96, plateY + plateH / 2 - 6, 1.5, GREEN2, {
           align: "center",
-          glow: GREEN3,
+          glow: GREEN2,
           glowBlur: 4,
           shadow: "rgba(0,0,0,0.6)"
         });
@@ -6797,11 +5815,11 @@
       }
       drawImageSmooth(g, img, STATS.x, STATS.y, STATS.w, STATS.h);
       const rows = [
-        { key: "tokensSync", icon: "tokenChip", label: t("ui.tokensThisSync"), value: "+" + fmtComma(proj.lastGained ?? 0), color: GREEN3 },
-        { key: "lifetimeTokens", icon: "tokenChip", label: t("ui.lifetimeTokens"), value: fmtComma(proj.tokens), color: INK5 },
-        { key: "coinsMinted", icon: "goldCoin", label: t("ui.baseCoins"), value: fmtComma(proj.coins), color: GOLD5 },
-        { key: "cabinetLevel", icon: "miniCabinet", label: t("ui.cabinetLevel"), value: "LVL " + info.level, color: CYAN5 },
-        { key: "provider", icon: "ggSign", label: t("ui.provider"), value: proj.provider.toUpperCase(), color: INK5 }
+        { key: "tokensSync", icon: "tokenChip", label: t("ui.tokensThisSync"), value: "+" + fmtComma(proj.lastGained ?? 0), color: GREEN2 },
+        { key: "lifetimeTokens", icon: "tokenChip", label: t("ui.lifetimeTokens"), value: fmtComma(proj.tokens), color: INK4 },
+        { key: "coinsMinted", icon: "goldCoin", label: t("ui.baseCoins"), value: fmtComma(proj.coins), color: GOLD4 },
+        { key: "cabinetLevel", icon: "miniCabinet", label: t("ui.cabinetLevel"), value: "LVL " + info.level, color: CYAN4 },
+        { key: "provider", icon: "ggSign", label: t("ui.provider"), value: proj.provider.toUpperCase(), color: INK4 }
       ];
       for (let i = 0; i < rows.length; i++) {
         const r = rows[i];
@@ -6814,7 +5832,7 @@
         drawText(g, r.label, STATS.x + SB_LABEL_X * STATS.w, cy - 7, 2, "#cfc9ea");
         drawText(g, r.value, STATS.x + SB_VALUE_X * STATS.w, cy - 8, 2.25, r.color, {
           align: "right",
-          glow: r.color === INK5 ? void 0 : r.color,
+          glow: r.color === INK4 ? void 0 : r.color,
           glowBlur: 2
         });
       }
@@ -6829,57 +5847,57 @@
       g.clip();
       g.fillStyle = "rgba(3,4,10,0.5)";
       g.fillRect(led.x, led.y, led.w, led.h);
-      g.fillStyle = info.isMax ? GOLD5 : GREEN3;
+      g.fillStyle = info.isMax ? GOLD4 : GREEN2;
       g.fillRect(led.x, led.y, led.w * Math.max(0.03, Math.min(1, info.progress)), led.h);
       g.restore();
       const nextLabel = info.isMax ? t("ui.maxLevel") : fmtCompact(proj.tokens) + " / " + fmtCompact(info.next ?? 0);
-      drawText(g, t("ui.nextLevel"), led.x - 8, led.y + led.h / 2 - 5, 1.4, MAGENTA3, { align: "right" });
-      drawText(g, nextLabel, led.x + led.w + 8, led.y + led.h / 2 - 5, 1.4, INK5);
+      drawText(g, t("ui.nextLevel"), led.x - 8, led.y + led.h / 2 - 5, 1.4, MAGENTA2, { align: "right" });
+      drawText(g, nextLabel, led.x + led.w + 8, led.y + led.h / 2 - 5, 1.4, INK4);
     }
     /** Procedural fallback stats card (board asset missing / still loading). */
     drawStatsProcedural(g, proj) {
       const info = levelInfo(proj.tokens);
-      panel(g, WALL2.x, WALL2.y, WALL2.w, WALL2.h, { radius: 12, fill: "rgba(20,15,36,0.7)", border: "#4a4270", borderWidth: 2 });
-      drawText(g, t("ui.projectStats"), WALL2.x + 24, WALL2.y + 24, 3, GOLD5, { glow: GOLD5, glowBlur: 3 });
+      panel(g, WALL.x, WALL.y, WALL.w, WALL.h, { radius: 12, fill: "rgba(20,15,36,0.7)", border: "#4a4270", borderWidth: 2 });
+      drawText(g, t("ui.projectStats"), WALL.x + 24, WALL.y + 24, 3, GOLD4, { glow: GOLD4, glowBlur: 3 });
       const rows = [
-        { icon: "tokenChip", label: t("ui.tokensThisSync"), value: "+" + fmtComma(proj.lastGained ?? 0), color: GREEN3 },
-        { icon: "tokenChip", label: t("ui.lifetimeTokens"), value: fmtComma(proj.tokens), color: INK5 },
-        { icon: "goldCoin", label: t("ui.baseCoins"), value: fmtComma(proj.coins), color: GOLD5 },
-        { icon: "miniCabinet", label: t("ui.cabinetLevel"), value: "LVL " + info.level, color: CYAN5 },
-        { icon: "ggSign", label: t("ui.provider"), value: proj.provider.toUpperCase(), color: INK5 }
+        { icon: "tokenChip", label: t("ui.tokensThisSync"), value: "+" + fmtComma(proj.lastGained ?? 0), color: GREEN2 },
+        { icon: "tokenChip", label: t("ui.lifetimeTokens"), value: fmtComma(proj.tokens), color: INK4 },
+        { icon: "goldCoin", label: t("ui.baseCoins"), value: fmtComma(proj.coins), color: GOLD4 },
+        { icon: "miniCabinet", label: t("ui.cabinetLevel"), value: "LVL " + info.level, color: CYAN4 },
+        { icon: "ggSign", label: t("ui.provider"), value: proj.provider.toUpperCase(), color: INK4 }
       ];
-      let rowY = WALL2.y + 74;
+      let rowY = WALL.y + 74;
       for (const r of rows) {
-        drawSprite(g, r.icon, WALL2.x + 24, rowY, 2);
-        drawText(g, r.label, WALL2.x + 70, rowY + 8, 2, "#c9c6e0");
-        drawText(g, r.value, WALL2.x + WALL2.w - 24, rowY + 6, 2, r.color, { align: "right" });
+        drawSprite(g, r.icon, WALL.x + 24, rowY, 2);
+        drawText(g, r.label, WALL.x + 70, rowY + 8, 2, "#c9c6e0");
+        drawText(g, r.value, WALL.x + WALL.w - 24, rowY + 6, 2, r.color, { align: "right" });
         rowY += 66;
       }
-      drawText(g, t("ui.nextLevel"), WALL2.x + 24, rowY + 4, 2, MAGENTA3);
-      bar2(g, WALL2.x + 24, rowY + 34, WALL2.w - 48, 24, info.progress, GREEN3);
+      drawText(g, t("ui.nextLevel"), WALL.x + 24, rowY + 4, 2, MAGENTA2);
+      bar(g, WALL.x + 24, rowY + 34, WALL.w - 48, 24, info.progress, GREEN2);
       const nextLabel = info.isMax ? t("ui.maxLevel") : fmtCompact(proj.tokens) + " / " + fmtCompact(info.next ?? 0);
-      drawText(g, nextLabel, WALL2.x + WALL2.w / 2, rowY + 40, 2, INK5, { align: "center", shadow: "rgba(0,0,0,0.6)" });
+      drawText(g, nextLabel, WALL.x + WALL.w / 2, rowY + 40, 2, INK4, { align: "center", shadow: "rgba(0,0,0,0.6)" });
     }
     // ---- recent rewards rail ------------------------------------------------
     drawRewardsRail(g, proj) {
       const tickets = this.recentTickets(proj);
       const img = this.ctx.assets.get("projRewardsRail");
       if (img) {
-        drawImageSmooth(g, img, RAIL2.x, RAIL2.y, RAIL2.w, RAIL2.h);
-        const slotW = 0.082 * RAIL2.w;
-        const slotH = 0.14 * RAIL2.h;
+        drawImageSmooth(g, img, RAIL.x, RAIL.y, RAIL.w, RAIL.h);
+        const slotW = 0.082 * RAIL.w;
+        const slotH = 0.14 * RAIL.h;
         for (let i = 0; i < RR_SLOTS_X.length; i++) {
-          const cx = RAIL2.x + RR_SLOTS_X[i] * RAIL2.w;
-          const cy = RAIL2.y + RR_SLOT_Y * RAIL2.h;
+          const cx = RAIL.x + RR_SLOTS_X[i] * RAIL.w;
+          const cy = RAIL.y + RR_SLOT_Y * RAIL.h;
           this.drawTicket(g, cx, cy, slotW, slotH, tickets[i] ?? null, true);
         }
-        const capX = RAIL2.x + 0.03 * RAIL2.w;
-        const capY = RAIL2.y + 0.5 * RAIL2.h;
+        const capX = RAIL.x + 0.03 * RAIL.w;
+        const capY = RAIL.y + 0.5 * RAIL.h;
         const capW = measureText(t("ui.recentRewards"), 1.5) + 22;
         rrect(g, capX, capY - 5, capW, 26, 7);
         g.fillStyle = "rgba(9,6,18,0.72)";
         g.fill();
-        drawText(g, t("ui.recentRewards"), capX + 11, capY, 1.5, CYAN5, { glow: "#2f9fa0", glowBlur: 2 });
+        drawText(g, t("ui.recentRewards"), capX + 11, capY, 1.5, CYAN4, { glow: "#2f9fa0", glowBlur: 2 });
         return;
       }
       const y = 852;
@@ -6898,12 +5916,12 @@
       const info = levelInfo(proj.tokens);
       const gained = proj.lastGained ?? 0;
       if (gained > 0) {
-        out.push({ big: "+" + fmtCompact(gained), sub: t("ui.tokens"), color: CYAN5 });
+        out.push({ big: "+" + fmtCompact(gained), sub: t("ui.tokens"), color: CYAN4 });
         const coins2 = Math.floor(gained / CONFIG.TOKENS_PER_COIN);
-        if (coins2 > 0) out.push({ big: "+" + fmtCompact(coins2), sub: t("ui.coins"), color: GOLD5 });
+        if (coins2 > 0) out.push({ big: "+" + fmtCompact(coins2), sub: t("ui.coins"), color: GOLD4 });
       }
       out.push({ big: "LVL " + info.level, sub: t("ui.cabinet"), color: stageAccent(info.stage.index) });
-      out.push({ big: fmtCompact(proj.coins), sub: t("ui.baseCoins"), color: GOLD5 });
+      out.push({ big: fmtCompact(proj.coins), sub: t("ui.baseCoins"), color: GOLD4 });
       return out;
     }
     /** One reward slot. On the generated rail (`onRail`) we light up the baked
@@ -6949,7 +5967,7 @@
       const blockH = GLYPH_H * bs + gap + GLYPH_H * subScale;
       const top = cy - blockH / 2;
       drawText(g, t2.big, cx, top, bs, t2.color, { align: "center", glow: t2.color, glowBlur: 3, shadow: "rgba(0,0,0,0.6)" });
-      drawText(g, t2.sub, cx, top + GLYPH_H * bs + gap, subScale, INK5, { align: "center", shadow: "rgba(0,0,0,0.6)" });
+      drawText(g, t2.sub, cx, top + GLYPH_H * bs + gap, subScale, INK4, { align: "center", shadow: "rgba(0,0,0,0.6)" });
     }
     // ---- utils --------------------------------------------------------------
     /** '#rrggbb' + alpha -> 'rgba(...)'. */
@@ -6962,11 +5980,90 @@
     }
   };
 
+  // src/render/machines.ts
+  function dot2(ctx2, cx, cy, r, c) {
+    ctx2.fillStyle = c;
+    ctx2.beginPath();
+    ctx2.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx2.fill();
+  }
+  function drawCapsuleMachine(ctx2, x, y, w, h, opts) {
+    const o = opts || {};
+    const shake = o.shake || 0;
+    ctx2.save();
+    ctx2.translate(x + shake, y);
+    const baseY = h * 0.55;
+    rrect(ctx2, w * 0.12, baseY, w * 0.76, h * 0.42, 8);
+    vgrad(ctx2, w * 0.12, baseY, w * 0.76, h * 0.42, "#ef5d78", "#7a1f33");
+    ctx2.fill();
+    ctx2.fillStyle = "#2a2440";
+    ctx2.fillRect(w * 0.2, baseY + h * 0.18, w * 0.6, h * 0.14);
+    rrect(ctx2, w * 0.4, baseY + h * 0.2, w * 0.2, h * 0.1, 3);
+    ctx2.fillStyle = "#8a8ab0";
+    ctx2.fill();
+    ctx2.fillStyle = "#160f1f";
+    ctx2.fillRect(w * 0.46, baseY + h * 0.05, w * 0.02, h * 0.08);
+    const lblFs = Math.max(1, Math.floor(w * 0.02));
+    drawText(ctx2, o.label || "INSERT COIN", w / 2, baseY + h * 0.35, lblFs, "#ffd23f", { align: "center" });
+    const domeCx = w / 2;
+    const domeCy = h * 0.4;
+    const domeR = w * 0.36;
+    ctx2.beginPath();
+    ctx2.arc(domeCx, domeCy, domeR, Math.PI, 0);
+    ctx2.lineTo(domeCx + domeR, h * 0.55);
+    ctx2.lineTo(domeCx - domeR, h * 0.55);
+    ctx2.closePath();
+    ctx2.fillStyle = "rgba(180,230,255,0.14)";
+    ctx2.fill();
+    ctx2.save();
+    ctx2.beginPath();
+    ctx2.arc(domeCx, domeCy, domeR - 2, Math.PI, 0);
+    ctx2.lineTo(domeCx + domeR, h * 0.54);
+    ctx2.lineTo(domeCx - domeR, h * 0.54);
+    ctx2.closePath();
+    ctx2.clip();
+    const ballCols = ["#ef5d78", "#ffd23f", "#5fd66f", "#4aa3ff", "#9a6cff", "#5fe6d6", "#ff8fce", "#ff9a3c"];
+    const br = domeR * 0.2;
+    let bi = 0;
+    for (let ry = 0; ry < 4; ry++) {
+      for (let rx = -3; rx <= 3; rx++) {
+        const cx = domeCx + rx * br * 1.05 + (ry % 2 ? br * 0.5 : 0);
+        const cy = h * 0.5 - ry * br * 1.1;
+        const col = ballCols[bi++ % ballCols.length];
+        dot2(ctx2, cx, cy, br, col);
+        ctx2.fillStyle = "rgba(255,255,255,0.5)";
+        dot2(ctx2, cx - br * 0.3, cy - br * 0.3, br * 0.28, "rgba(255,255,255,0.6)");
+      }
+    }
+    ctx2.restore();
+    ctx2.strokeStyle = "rgba(200,240,255,0.5)";
+    ctx2.lineWidth = 2;
+    ctx2.beginPath();
+    ctx2.arc(domeCx, domeCy, domeR, Math.PI, 0);
+    ctx2.stroke();
+    ctx2.fillStyle = "rgba(255,255,255,0.25)";
+    ctx2.beginPath();
+    ctx2.arc(domeCx - domeR * 0.4, domeCy - domeR * 0.2, domeR * 0.18, 0, Math.PI * 2);
+    ctx2.fill();
+    rrect(ctx2, w * 0.36, h * 0.02, w * 0.28, h * 0.08, 3);
+    vgrad(ctx2, w * 0.36, h * 0.02, w * 0.28, h * 0.08, "#9a6cff", "#5a3ab0");
+    ctx2.fill();
+    ctx2.restore();
+  }
+
+  // src/render/measured.ts
+  var DISPLAY_X = [0.2287, 0.2999, 0.3711, 0.4423, 0.5135, 0.5851, 0.6558, 0.727, 0.7982, 0.8694];
+  var DISPLAY_Y = [0.2144, 0.3554, 0.4978, 0.6401, 0.7843];
+  var DISPLAY_SLOTS = DISPLAY_Y.map(
+    (y) => DISPLAY_X.map((x) => ({ x, y }))
+  );
+  var DISPLAY_RARITY_RAILS = DISPLAY_Y.map((y) => ({ x: 0.1563, y }));
+
   // src/screens/capsuleScreen.ts
-  var GOLD6 = "#ffd23f";
-  var CYAN6 = "#5fe6d6";
-  var MAGENTA4 = "#e15ad8";
-  var INK6 = "#f6f4ff";
+  var GOLD5 = "#ffd23f";
+  var CYAN5 = "#5fe6d6";
+  var MAGENTA3 = "#e15ad8";
+  var INK5 = "#f6f4ff";
   var MACHINE = { x: 184, y: 158, w: 452, h: 555 };
   var MACHINE_CX = MACHINE.x + MACHINE.w / 2;
   var MACHINE_MOUTH_Y = MACHINE.y + MACHINE.h * 0.82;
@@ -6978,7 +6075,7 @@
   var CARD_Y = 168;
   var DISPLAY = { x: 836, y: 120, w: 712, h: 696 };
   var DISPLAY_ITEMS = RARITY_ORDER.flatMap((rarity) => byRarity[rarity]);
-  var WALL3 = { x: 760, y: 120, w: 800, h: 800 };
+  var WALL2 = { x: 760, y: 120, w: 800, h: 800 };
   var FEED = { x: 638, w: 166, top: 452, rowH: 36, gap: 6, maxVisible: 4 };
   var FEED_STRIDE = FEED.rowH + FEED.gap;
   var EXCHANGE = { x: 590, y: 630, w: 220, h: 112 };
@@ -7016,7 +6113,7 @@
       // Whether the capsule "pop" flash has fired (a beat between lever and reveal).
       this.popFired = false;
       // Best-rarity glow for the mouth burst, captured at pull time.
-      this.pullBurstGlow = MAGENTA4;
+      this.pullBurstGlow = MAGENTA3;
       // Per-collectible slot flash (1 -> 0) so a shelf lights up when a prize lands.
       this.slotFlash = {};
       // Cabinet-slot tooltip: hoverTip is recomputed each frame; sticky survives a
@@ -7046,7 +6143,7 @@
       this.leverT = -1;
       this.leverShook = false;
       this.popFired = false;
-      this.pullBurstGlow = MAGENTA4;
+      this.pullBurstGlow = MAGENTA3;
       this.slotFlash = {};
       this.hoverTip = null;
       this.sticky = null;
@@ -7223,9 +6320,9 @@
       const value = fmtComma(this.ctx.store.state.shards);
       let valueScale = 1.9;
       while (valueScale > 1 && measureText(value, valueScale) > textW) valueScale -= 0.1;
-      drawText(g, value, textCx, y + 26, valueScale, CYAN6, {
+      drawText(g, value, textCx, y + 26, valueScale, CYAN5, {
         align: "center",
-        glow: CYAN6,
+        glow: CYAN5,
         glowBlur: 3
       });
     }
@@ -7241,14 +6338,14 @@
         g.fill();
         g.restore();
         drawImageSmooth(g, img, MACHINE.x + shake, MACHINE.y, MACHINE.w, MACHINE.h);
-        drawText(g, t("ui.insertCoin"), MACHINE_CX + shake, MACHINE.y + MACHINE.h * 0.6, 1.5, GOLD6, {
+        drawText(g, t("ui.insertCoin"), MACHINE_CX + shake, MACHINE.y + MACHINE.h * 0.6, 1.5, GOLD5, {
           align: "center",
-          glow: GOLD6,
+          glow: GOLD5,
           glowBlur: 3,
           shadow: "rgba(0,0,0,0.7)"
         });
       } else {
-        drawText(g, t("ui.capsule"), MACHINE_CX, 122, 2, MAGENTA4, { align: "center", glow: MAGENTA4, glowBlur: 3 });
+        drawText(g, t("ui.capsule"), MACHINE_CX, 122, 2, MAGENTA3, { align: "center", glow: MAGENTA3, glowBlur: 3 });
         drawCapsuleMachine(g, MACHINE.x, MACHINE.y, MACHINE.w, MACHINE.h, { shake, label: t("ui.insertCoin") });
       }
       this.drawLever(g, shake);
@@ -7277,7 +6374,7 @@
       g.stroke();
       if (down > 0.01) {
         g.save();
-        g.shadowColor = MAGENTA4;
+        g.shadowColor = MAGENTA3;
         g.shadowBlur = 26 * down;
         rrect(g, hx, hy, hw, hh, 14);
         g.strokeStyle = `rgba(225,90,216,${0.65 * down})`;
@@ -7325,16 +6422,16 @@
       g.fill();
       const knobR = 16;
       g.save();
-      g.shadowColor = MAGENTA4;
+      g.shadowColor = MAGENTA3;
       g.shadowBlur = 12;
-      g.fillStyle = MAGENTA4;
+      g.fillStyle = MAGENTA3;
       g.beginPath();
       g.arc(trackCx, knobY, knobR, 0, Math.PI * 2);
       g.fill();
       g.restore();
       g.beginPath();
       g.arc(trackCx, knobY, knobR, 0, Math.PI * 2);
-      g.fillStyle = MAGENTA4;
+      g.fillStyle = MAGENTA3;
       g.fill();
       g.lineWidth = 2;
       g.strokeStyle = "#8a3aa0";
@@ -7393,14 +6490,14 @@
       if (frame) {
         if (hovered && afford) {
           g.save();
-          g.shadowColor = MAGENTA4;
+          g.shadowColor = MAGENTA3;
           g.shadowBlur = 14;
           drawImageSmooth(g, frame, x, y, w, h);
           g.restore();
         }
         drawImageSmooth(g, frame, x, y, w, h);
       } else {
-        panel(g, x, y, w, h, { radius: 8, fill: "#1b1328", border: GOLD6, borderWidth: 2 });
+        panel(g, x, y, w, h, { radius: 8, fill: "#1b1328", border: GOLD5, borderWidth: 2 });
       }
       const iconCx = x + w * 0.215;
       const iconCy = y + h * 0.43;
@@ -7412,14 +6509,14 @@
       const labelMax = w * 0.46;
       let labelScale = 1.8;
       while (labelScale > 1.1 && measureText(labelText, labelScale) > labelMax) labelScale -= 0.1;
-      drawText(g, labelText, textX, y + h * 0.19, labelScale, INK6, { shadow: "rgba(0,0,0,0.6)" });
+      drawText(g, labelText, textX, y + h * 0.19, labelScale, INK5, { shadow: "rgba(0,0,0,0.6)" });
       drawText(g, t("shop." + shopKey + ".sub"), textX, y + h * 0.42, 1.05, "#b9b3d6");
       const priceCx = x + w * 0.69;
       const priceCy = y + h * 0.72;
       const price = fmtComma(cost);
       const priceW = measureText(price, 2);
       drawCoin(g, priceCx - priceW / 2 - 10, priceCy, 7);
-      drawText(g, price, priceCx - priceW / 2 + 6, priceCy - 7, 2, GOLD6);
+      drawText(g, price, priceCx - priceW / 2 + 6, priceCy - 7, 2, GOLD5);
       g.globalAlpha = 1;
     }
     // ---- trophy cabinet -----------------------------------------------------
@@ -7445,10 +6542,10 @@
         g.fillStyle = "rgba(9,6,18,0.94)";
         g.fill();
         g.save();
-        g.shadowColor = CYAN6;
+        g.shadowColor = CYAN5;
         g.shadowBlur = 6;
         rrect(g, plCx - plW / 2, plCy - plH / 2, plW, plH, 8);
-        g.strokeStyle = CYAN6;
+        g.strokeStyle = CYAN5;
         g.lineWidth = 2;
         g.stroke();
         g.restore();
@@ -7456,7 +6553,7 @@
         g.strokeStyle = "rgba(201,143,36,0.5)";
         g.lineWidth = 1;
         g.stroke();
-        drawText(g, rangeLabel, plCx, plCy - 5, plScale, GOLD6, { align: "center", glow: GOLD6, glowBlur: 3 });
+        drawText(g, rangeLabel, plCx, plCy - 5, plScale, GOLD5, { align: "center", glow: GOLD5, glowBlur: 3 });
         const items = DISPLAY_ITEMS.slice(r * 10, r * 10 + 10);
         for (let i = 0; i < items.length && i < slots.length; i++) {
           const c = items[i];
@@ -7504,7 +6601,7 @@
               g.strokeStyle = rar.color;
               g.lineWidth = 1;
               g.stroke();
-              drawText(g, "\xD7" + entry.count, cx + 8, cy + 11, 1.25, INK6);
+              drawText(g, "\xD7" + entry.count, cx + 8, cy + 11, 1.25, INK5);
             }
             const info = { locked: false, c, count: entry.count, cx, cy };
             const hov = this.ctx.stage.hotspot({
@@ -7541,28 +6638,28 @@
     /** Procedural fallback prize wall (cabinet asset missing / still loading). */
     drawPrizeWallProcedural(g) {
       const store2 = this.ctx.store;
-      panel(g, WALL3.x, WALL3.y, WALL3.w, WALL3.h, { radius: 12, fill: "rgba(20,15,36,0.6)", border: "#4a4270", borderWidth: 2 });
+      panel(g, WALL2.x, WALL2.y, WALL2.w, WALL2.h, { radius: 12, fill: "rgba(20,15,36,0.6)", border: "#4a4270", borderWidth: 2 });
       const groupH = 152;
-      let gy = WALL3.y + 30;
+      let gy = WALL2.y + 30;
       for (const rk of RARITY_ORDER) {
         const rar = RARITIES[rk];
         g.fillStyle = rar.color;
-        g.fillRect(WALL3.x + 24, gy, 18, 18);
-        drawText(g, tRarity(rar.key), WALL3.x + 50, gy + 2, 2, rar.color, { glow: rar.glow, glowBlur: 3 });
+        g.fillRect(WALL2.x + 24, gy, 18, 18);
+        drawText(g, tRarity(rar.key), WALL2.x + 50, gy + 2, 2, rar.color, { glow: rar.glow, glowBlur: 3 });
         const items = byRarity[rk];
         const slot = 74;
         const stride = 84;
         const rowY = gy + 30;
         for (let i = 0; i < items.length; i++) {
           const c = items[i];
-          const sx = WALL3.x + 24 + i * stride;
+          const sx = WALL2.x + 24 + i * stride;
           const entry = store2.state.owned[c.id];
           if (entry) {
             panel(g, sx, rowY, slot, slot, { radius: 8, fill: "#241a3f", border: rar.color, borderWidth: 2 });
             drawSprite(g, c.sprite, sx + 5, rowY + 5, 4, c.tint);
             if (entry.count > 1) {
               panel(g, sx + slot - 26, rowY + slot - 20, 24, 16, { radius: 4, fill: "#0d0a16", border: rar.color, borderWidth: 1 });
-              drawText(g, "\xD7" + entry.count, sx + slot - 22, rowY + slot - 17, 1.5, INK6);
+              drawText(g, "\xD7" + entry.count, sx + slot - 22, rowY + slot - 17, 1.5, INK5);
             }
             drawText(g, "*", sx + 4, rowY + 4, 1.5, rar.color);
           } else {
@@ -7571,9 +6668,9 @@
           }
         }
         g.fillStyle = "#5c3a26";
-        g.fillRect(WALL3.x + 24, rowY + slot + 4, WALL3.w - 48, 6);
+        g.fillRect(WALL2.x + 24, rowY + slot + 4, WALL2.w - 48, 6);
         g.fillStyle = "rgba(0,0,0,0.3)";
-        g.fillRect(WALL3.x + 24, rowY + slot + 8, WALL3.w - 48, 2);
+        g.fillRect(WALL2.x + 24, rowY + slot + 8, WALL2.w - 48, 2);
         gy += groupH;
       }
     }
@@ -7623,7 +6720,7 @@
         const icon = collectibleIcon(c.id);
         if (icon) drawIconCentered(g, icon, cxm, iw.y + iw.h * 0.08 + 45, 96);
         else drawSprite(g, c.sprite, cxm - 48, iw.y + iw.h * 0.08, 6, c.tint);
-        drawText(g, tCollectibleName(c.id), cxm, iw.y + iw.h * 0.66, 2, INK6, { align: "center", glow: rar.glow, glowBlur: 3 });
+        drawText(g, tCollectibleName(c.id), cxm, iw.y + iw.h * 0.66, 2, INK5, { align: "center", glow: rar.glow, glowBlur: 3 });
         drawText(g, tRarity(rar.key), cxm, iw.y + iw.h * 0.83, 1.75, rar.color, { align: "center", glow: rar.glow, glowBlur: 3 });
         drawText(
           g,
@@ -7631,7 +6728,7 @@
           cxm,
           iw.y + iw.h,
           1.75,
-          this.current.isDup ? "#ff9a3c" : GOLD6,
+          this.current.isDup ? "#ff9a3c" : GOLD5,
           { align: "center" }
         );
       } else {
@@ -7643,7 +6740,7 @@
         const icon = collectibleIcon(c.id);
         if (icon) drawIconCentered(g, icon, MACHINE_CX, cardY + 78, 90);
         else drawSprite(g, c.sprite, MACHINE_CX - 56, cardY + 26, 7, c.tint);
-        drawText(g, tCollectibleName(c.id), MACHINE_CX, cardY + 168, 3, INK6, { align: "center", glow: rar.glow, glowBlur: 4 });
+        drawText(g, tCollectibleName(c.id), MACHINE_CX, cardY + 168, 3, INK5, { align: "center", glow: rar.glow, glowBlur: 4 });
         drawText(g, tRarity(rar.key), MACHINE_CX, cardY + 210, 2, rar.color, { align: "center", glow: rar.glow, glowBlur: 3 });
         drawText(
           g,
@@ -7651,7 +6748,7 @@
           MACHINE_CX,
           cardY + 250,
           2,
-          this.current.isDup ? "#ff9a3c" : GOLD6,
+          this.current.isDup ? "#ff9a3c" : GOLD5,
           { align: "center" }
         );
       }
@@ -7716,7 +6813,7 @@
       if (frame) {
         if (hovered) {
           g.save();
-          g.shadowColor = GOLD6;
+          g.shadowColor = GOLD5;
           g.shadowBlur = 14;
           drawImageSmooth(g, frame, x, y, w, h);
           g.restore();
@@ -7726,26 +6823,26 @@
         rrect(g, x, y, w, h, 8);
         g.fillStyle = "rgba(18,13,30,0.96)";
         g.fill();
-        g.strokeStyle = enabled ? GOLD6 : "#4a4159";
+        g.strokeStyle = enabled ? GOLD5 : "#4a4159";
         g.lineWidth = 2;
         g.stroke();
       }
       const title = t("capsule.missingPrize");
       let titleScale = 1.4;
       while (titleScale > 0.85 && measureText(title, titleScale) > w - 40) titleScale -= 0.05;
-      drawText(g, title, x + w / 2, y + 12, titleScale, enabled ? INK6 : "#777087", {
+      drawText(g, title, x + w / 2, y + 12, titleScale, enabled ? INK5 : "#777087", {
         align: "center",
-        glow: enabled ? MAGENTA4 : void 0,
+        glow: enabled ? MAGENTA3 : void 0,
         glowBlur: enabled ? 2 : void 0
       });
       let status = t("capsule.missingPrizeSub");
       let statusColor = "#b9b3d6";
       if (this.exchangeSuccess > 0) {
         status = t("capsule.exchangeSuccess");
-        statusColor = CYAN6;
+        statusColor = CYAN5;
       } else if (complete) {
         status = t("capsule.collectionComplete");
-        statusColor = GOLD6;
+        statusColor = GOLD5;
       } else if (!affordable) {
         status = t("capsule.notEnoughDust");
         statusColor = "#ff8b9a";
@@ -7767,7 +6864,7 @@
       const capY = button.y + (hovered ? 4 : 2);
       if (hovered) {
         g.save();
-        g.shadowColor = MAGENTA4;
+        g.shadowColor = MAGENTA3;
         g.shadowBlur = 12;
         rrect(g, button.x + 3, capY, button.w - 6, button.h - 7, 6);
         g.fillStyle = "#54224f";
@@ -7779,15 +6876,15 @@
         g.fill();
       }
       rrect(g, button.x + 3, capY, button.w - 6, button.h - 7, 6);
-      g.strokeStyle = enabled ? MAGENTA4 : "#4a4159";
+      g.strokeStyle = enabled ? MAGENTA3 : "#4a4159";
       g.lineWidth = 2;
       g.stroke();
       const cost = `${fmtComma(MISSING_PRIZE_DUST_COST)} ${t("ui.dust")}`;
       let costScale = 1.25;
       while (costScale > 0.8 && measureText(cost, costScale) > button.w - 20) costScale -= 0.05;
-      drawText(g, cost, x + w / 2, capY + 9, costScale, enabled ? GOLD6 : "#746b80", {
+      drawText(g, cost, x + w / 2, capY + 9, costScale, enabled ? GOLD5 : "#746b80", {
         align: "center",
-        glow: enabled ? GOLD6 : void 0,
+        glow: enabled ? GOLD5 : void 0,
         glowBlur: enabled ? 2 : void 0
       });
     }
@@ -7805,7 +6902,7 @@
       rrect(g, x, y, w, h, 3);
       g.fillStyle = enabled ? hovered ? "#34274d" : "#1b142b" : "#100c19";
       g.fill();
-      g.strokeStyle = enabled ? hovered ? GOLD6 : "#74658e" : "#30263f";
+      g.strokeStyle = enabled ? hovered ? GOLD5 : "#74658e" : "#30263f";
       g.lineWidth = 1;
       g.stroke();
       g.beginPath();
@@ -7820,7 +6917,7 @@
         g.lineTo(cx + 4, y + 4);
       }
       g.closePath();
-      g.fillStyle = enabled ? hovered ? GOLD6 : "#d8d3eb" : "#4a4159";
+      g.fillStyle = enabled ? hovered ? GOLD5 : "#d8d3eb" : "#4a4159";
       g.fill();
     }
     /** One ticker row: rarity frame + icon (left well) + name (center well) +
@@ -7859,7 +6956,7 @@
       const name = tCollectibleName(row.c.id);
       let ns = 1.4;
       while (ns > 0.8 && measureText(name, ns) > maxNameW) ns -= 0.1;
-      drawText(g, name, nameCx, cy - GLYPH_H * ns / 2, ns, INK6, { align: "center" });
+      drawText(g, name, nameCx, cy - GLYPH_H * ns / 2, ns, INK5, { align: "center" });
       const chipCx = rx + w.chip * rw;
       if (row.isNew) {
         drawText(g, t("ui.feedNew"), chipCx, cy - GLYPH_H / 2, 1, rar.color, { align: "center", glow: rar.glow, glowBlur: 2 });
@@ -7954,12 +7051,12 @@
         ty += 2 + 8;
       }
       for (const line of descLines) {
-        drawText(g, line, lx, ty, 1.3, INK6);
+        drawText(g, line, lx, ty, 1.3, INK5);
         ty += 9 + 4;
       }
       if (ownedLine) {
         ty += 4;
-        drawText(g, ownedLine, lx, ty, 1.4, GOLD6);
+        drawText(g, ownedLine, lx, ty, 1.4, GOLD5);
       }
     }
     // ---- actions ------------------------------------------------------------
@@ -8056,9 +7153,9 @@
   };
 
   // src/screens/achievementScreen.ts
-  var GOLD7 = "#ffd23f";
-  var CYAN7 = "#5fe6d6";
-  var INK7 = "#f6f4ff";
+  var GOLD6 = "#ffd23f";
+  var CYAN6 = "#5fe6d6";
+  var INK6 = "#f6f4ff";
   var MUTE2 = "#9a93bd";
   var NAME_SCALE = 1.8;
   var NAME_STEP = 24;
@@ -8114,9 +7211,9 @@
       const img = this.ctx.assets.get("achTitlePlaque");
       if (img) {
         drawImageSmooth(g, img, x, y, w, h);
-        this.frameText(g, t("ui.achievements"), x, y, w, h, FRAME_ANCHORS.titlePlaque.textWin, 3, GOLD7, GOLD7);
+        this.frameText(g, t("ui.achievements"), x, y, w, h, FRAME_ANCHORS.titlePlaque.textWin, 3, GOLD6, GOLD6);
       } else {
-        drawText(g, t("ui.achievements"), 800, 28, 4.5, GOLD7, { align: "center", glow: GOLD7, glowBlur: 5, shadow: "rgba(0,0,0,0.5)" });
+        drawText(g, t("ui.achievements"), 800, 28, 4.5, GOLD6, { align: "center", glow: GOLD6, glowBlur: 5, shadow: "rgba(0,0,0,0.5)" });
       }
     }
     drawProgress(g, store2) {
@@ -8130,9 +7227,9 @@
       const img = this.ctx.assets.get("achProgressPlaque");
       if (img) {
         drawImageSmooth(g, img, x, y, w, h);
-        this.frameText(g, label, x, y, w, h, FRAME_ANCHORS.progressPlaque.textWin, 2.1, CYAN7, "#2f9fa0");
+        this.frameText(g, label, x, y, w, h, FRAME_ANCHORS.progressPlaque.textWin, 2.1, CYAN6, "#2f9fa0");
       } else {
-        drawText(g, label, 800, 96, 2.25, CYAN7, { align: "center", glow: "#2f9fa0", glowBlur: 3 });
+        drawText(g, label, 800, 96, 2.25, CYAN6, { align: "center", glow: "#2f9fa0", glowBlur: 3 });
       }
     }
     // ---- trophy card --------------------------------------------------------
@@ -8146,7 +7243,7 @@
       const A = unlocked ? FRAME_ANCHORS.cardUnlocked : FRAME_ANCHORS.cardLocked;
       if (hovered && unlocked) {
         g.save();
-        g.shadowColor = GOLD7;
+        g.shadowColor = GOLD6;
         g.shadowBlur = 26;
         drawImageSmooth(g, img, x, y, CARD_W2, CARD_H2);
         g.restore();
@@ -8171,16 +7268,16 @@
       const nameLines = wrapText(tAchName(id), NAME_SCALE, CARD_W2 * 0.82).slice(0, 2);
       let ny = y + CARD_H2 * A.name.cy - (nameLines.length - 1) * (NAME_STEP / 2);
       for (const line of nameLines) {
-        drawText(g, line, x + CARD_W2 * 0.5, ny, NAME_SCALE, unlocked ? INK7 : "#8f8ab0", {
+        drawText(g, line, x + CARD_W2 * 0.5, ny, NAME_SCALE, unlocked ? INK6 : "#8f8ab0", {
           align: "center",
-          glow: unlocked ? GOLD7 : void 0,
+          glow: unlocked ? GOLD6 : void 0,
           glowBlur: 2,
           shadow: "rgba(0,0,0,0.55)"
         });
         ny += NAME_STEP;
       }
       if (unlocked && iso) {
-        this.fitLine(g, t("ui.unlockedOn", { date: fmtDate(iso) }), x + CARD_W2 * 0.5, y + CARD_H2 * ("date" in A ? A.date.cy : 0.75), CARD_W2 * 0.86, META_SCALE, GOLD7, GOLD7);
+        this.fitLine(g, t("ui.unlockedOn", { date: fmtDate(iso) }), x + CARD_W2 * 0.5, y + CARD_H2 * ("date" in A ? A.date.cy : 0.75), CARD_W2 * 0.86, META_SCALE, GOLD6, GOLD6);
       } else {
         const cy = "locked" in A ? A.locked.cy : 0.72;
         this.fitLine(g, t("ui.lockedAchievement"), x + CARD_W2 * 0.5, y + CARD_H2 * cy, CARD_W2 * 0.86, META_SCALE, MUTE2);
@@ -8188,10 +7285,10 @@
     }
     /** Procedural fallback card (art still loading) — a lit/dim plaque. */
     drawCardProcedural(g, id, sprite, unlocked, iso, x, y, hovered) {
-      const accent = unlocked ? GOLD7 : "#4a4270";
+      const accent = unlocked ? GOLD6 : "#4a4270";
       g.save();
       if (unlocked) {
-        g.shadowColor = GOLD7;
+        g.shadowColor = GOLD6;
         g.shadowBlur = hovered ? 20 : 10;
       }
       rrect(g, x, y, CARD_W2, CARD_H2, 14);
@@ -8214,11 +7311,11 @@
       const nameLines = wrapText(tAchName(id), NAME_SCALE, CARD_W2 * 0.82).slice(0, 2);
       let ny = y + CARD_H2 * 0.56 - (nameLines.length - 1) * (NAME_STEP / 2);
       for (const line of nameLines) {
-        drawText(g, line, cx, ny, NAME_SCALE, unlocked ? INK7 : "#8a86a6", { align: "center", glow: unlocked ? GOLD7 : void 0, glowBlur: 2 });
+        drawText(g, line, cx, ny, NAME_SCALE, unlocked ? INK6 : "#8a86a6", { align: "center", glow: unlocked ? GOLD6 : void 0, glowBlur: 2 });
         ny += NAME_STEP;
       }
       if (unlocked && iso) {
-        this.fitLine(g, t("ui.unlockedOn", { date: fmtDate(iso) }), cx, y + CARD_H2 * 0.78, CARD_W2 * 0.86, META_SCALE, GOLD7, GOLD7);
+        this.fitLine(g, t("ui.unlockedOn", { date: fmtDate(iso) }), cx, y + CARD_H2 * 0.78, CARD_W2 * 0.86, META_SCALE, GOLD6, GOLD6);
       } else {
         this.fitLine(g, t("ui.lockedAchievement"), cx, y + CARD_H2 * 0.78, CARD_W2 * 0.86, META_SCALE, MUTE2);
       }
@@ -8251,36 +7348,36 @@
       let boxY = cardY + CARD_H2 + gap;
       if (boxY + boxH > H - edge) boxY = cardY - gap - boxH;
       boxY = Math.max(edge, Math.min(H - boxH - edge, boxY));
-      panel(g, boxX, boxY, boxW, boxH, { radius: 10, fill: "rgba(10,7,20,0.96)", border: CYAN7, borderWidth: 2 });
+      panel(g, boxX, boxY, boxW, boxH, { radius: 10, fill: "rgba(10,7,20,0.96)", border: CYAN6, borderWidth: 2 });
       let ty = boxY + padY;
       for (const line of lines) {
-        drawText(g, line, boxX + boxW / 2, ty, scale, INK7, { align: "center", shadow: "rgba(0,0,0,0.6)" });
+        drawText(g, line, boxX + boxW / 2, ty, scale, INK6, { align: "center", shadow: "rgba(0,0,0,0.6)" });
         ty += lineStep;
       }
     }
     // ---- text helpers -------------------------------------------------------
     /** Draw `text` centered in a frame's content window, auto-fit to both axes. */
-    frameText(g, text, x, y, w, h, win, maxScale, color, glow) {
+    frameText(g, text2, x, y, w, h, win, maxScale, color, glow) {
       const maxW = w * win.w * 0.94;
       const maxH = h * win.h * 0.86;
-      const w1 = Math.max(1, measureText(text, 1));
+      const w1 = Math.max(1, measureText(text2, 1));
       let s = Math.min(maxScale, maxH / GLYPH_H, maxW / w1);
       s = Math.max(1, s);
-      drawText(g, text, x + w * win.cx, y + h * win.cy - GLYPH_H * s / 2, s, color, { align: "center", glow, glowBlur: 3 });
+      drawText(g, text2, x + w * win.cx, y + h * win.cy - GLYPH_H * s / 2, s, color, { align: "center", glow, glowBlur: 3 });
     }
     /** Draw one centered line at vertical center `cy`, shrinking to fit `maxW`. */
-    fitLine(g, text, cx, cy, maxW, maxScale, color, glow) {
-      const w1 = Math.max(1, measureText(text, 1));
+    fitLine(g, text2, cx, cy, maxW, maxScale, color, glow) {
+      const w1 = Math.max(1, measureText(text2, 1));
       const s = Math.max(0.9, Math.min(maxScale, maxW / w1));
-      drawText(g, text, cx, cy - GLYPH_H * s / 2, s, color, { align: "center", glow, glowBlur: glow ? 2 : 0 });
+      drawText(g, text2, cx, cy - GLYPH_H * s / 2, s, color, { align: "center", glow, glowBlur: glow ? 2 : 0 });
     }
   };
 
   // src/screens/customizeScreen.ts
-  var GOLD8 = "#ffd23f";
-  var CYAN8 = "#5fe6d6";
-  var MAGENTA5 = "#e15ad8";
-  var INK8 = "#f6f4ff";
+  var GOLD7 = "#ffd23f";
+  var CYAN7 = "#5fe6d6";
+  var MAGENTA4 = "#e15ad8";
+  var INK7 = "#f6f4ff";
   var MUTE3 = "#a7a1c3";
   var ROOM_WELLS = {
     base: { x: 118, y: 382, w: 292, h: 182 },
@@ -8317,14 +7414,14 @@
       g.fillRect(0, 0, this.ctx.stage.width, this.ctx.stage.height);
     }
     drawHeader(g) {
-      drawText(g, t("ui.customizeArcade"), 750, 26, 3.15, GOLD8, { align: "center", glow: GOLD8, glowBlur: 5 });
+      drawText(g, t("ui.customizeArcade"), 750, 26, 3.15, GOLD7, { align: "center", glow: GOLD7, glowBlur: 5 });
     }
     /** Small fixture labels, mounted near hardware rather than turned into panels. */
     drawRackLabels(g) {
-      drawText(g, t("ui.roomThemes"), 134, 201, 1.8, MAGENTA5, { glow: MAGENTA5, glowBlur: 3, shadow: "#08050f" });
+      drawText(g, t("ui.roomThemes"), 134, 201, 1.8, MAGENTA4, { glow: MAGENTA4, glowBlur: 3, shadow: "#08050f" });
       g.fillStyle = "rgba(225,90,216,0.7)";
       g.fillRect(130, 226, 216, 2);
-      drawText(g, t("ui.profileFrames"), 1110, 152, 1.6, CYAN8, { glow: CYAN8, glowBlur: 3, shadow: "#08050f" });
+      drawText(g, t("ui.profileFrames"), 1110, 152, 1.6, CYAN7, { glow: CYAN7, glowBlur: 3, shadow: "#08050f" });
       g.fillStyle = "rgba(95,230,214,0.7)";
       g.fillRect(1108, 177, 244, 2);
     }
@@ -8334,14 +7431,14 @@
     }
     drawThemeWell(g, id, well) {
       const state = this.themeState(id);
-      if (state === "equipped") this.drawWellSelection(g, well, MAGENTA5, 7);
+      if (state === "equipped") this.drawWellSelection(g, well, MAGENTA4, 7);
       if (state === "locked") {
-        this.drawLock(g, well.x + well.w / 2, well.y + well.h / 2, MAGENTA5);
+        this.drawLock(g, well.x + well.w / 2, well.y + well.h / 2, MAGENTA4);
       } else {
         this.drawThemePreview(g, id, well);
       }
       const name = this.themeDisplayName(id);
-      this.fitCenter(g, name, well.x + well.w / 2, well.y + 202, well.w - 28, 1.6, state === "locked" ? MUTE3 : INK8, state === "equipped" ? MAGENTA5 : void 0, 1.25);
+      this.fitCenter(g, name, well.x + well.w / 2, well.y + 202, well.w - 28, 1.6, state === "locked" ? MUTE3 : INK7, state === "equipped" ? MAGENTA4 : void 0, 1.25);
       this.drawThemeActionPlaque(g, id, state, well);
     }
     /** A generated metal plaque makes the room-theme state legible at a glance.
@@ -8359,13 +7456,13 @@
       g.save();
       if (state === "locked") g.globalAlpha = 0.42;
       if (hovered || state === "equipped") {
-        g.shadowColor = state === "equipped" ? MAGENTA5 : GOLD8;
+        g.shadowColor = state === "equipped" ? MAGENTA4 : GOLD7;
         g.shadowBlur = hovered ? 16 : 11;
       }
       if (plaque) drawImageSmooth(g, plaque, x, y, w, h);
       g.restore();
       const label = state === "locked" ? t("ui.locked") : state === "equipped" ? t("ui.equipped") : t("ui.equip");
-      const color = state === "locked" ? MUTE3 : state === "equipped" ? MAGENTA5 : hovered ? GOLD8 : INK8;
+      const color = state === "locked" ? MUTE3 : state === "equipped" ? MAGENTA4 : hovered ? GOLD7 : INK7;
       this.fitCenter(g, label, x + w / 2, y + 29, w - 42, 1.8, color, hovered || state === "equipped" ? color : void 0, 1.4);
     }
     /** Theme scenes occupy the complete 16:10 projector screen edge to edge. */
@@ -8386,12 +7483,12 @@
     }
     drawFrameWell(g, id, well) {
       const state = this.frameState(id);
-      if (state === "equipped") this.drawWellSelection(g, well, CYAN8, 7);
+      if (state === "equipped") this.drawWellSelection(g, well, CYAN7, 7);
       const cx = well.x + well.w / 2;
       const cy = well.y + 103;
       this.drawFramePreview(g, id, state, cx, cy);
       const name = id === "base" ? t("ui.frameBaseDisplay") : t("ui.frameCyanDisplay");
-      this.fitCenter(g, name, well.x + well.w / 2, well.y + 8, well.w - 28, 1.45, state === "locked" ? MUTE3 : INK8, state === "equipped" ? CYAN8 : void 0, 1.2);
+      this.fitCenter(g, name, well.x + well.w / 2, well.y + 8, well.w - 28, 1.45, state === "locked" ? MUTE3 : INK7, state === "equipped" ? CYAN7 : void 0, 1.2);
       this.drawFrameActionPlaque(g, id, state, well);
     }
     /** Profile frames use the same single, physical state/action language as
@@ -8408,13 +7505,13 @@
       g.save();
       if (state === "locked") g.globalAlpha = 0.42;
       if (hovered || state === "equipped") {
-        g.shadowColor = state === "equipped" ? CYAN8 : GOLD8;
+        g.shadowColor = state === "equipped" ? CYAN7 : GOLD7;
         g.shadowBlur = hovered ? 14 : 10;
       }
       if (plaque) drawImageSmooth(g, plaque, x, y, w, h);
       g.restore();
       const label = state === "locked" ? t("ui.locked") : state === "equipped" ? t("ui.equipped") : t("ui.equip");
-      const color = state === "locked" ? MUTE3 : state === "equipped" ? CYAN8 : hovered ? GOLD8 : INK8;
+      const color = state === "locked" ? MUTE3 : state === "equipped" ? CYAN7 : hovered ? GOLD7 : INK7;
       this.fitCenter(g, label, x + w / 2, y + 23, w - 34, 1.55, color, hovered || state === "equipped" ? color : void 0, 1.2);
     }
     /** The Cyan frame stays the real item art. The avatar is restored only in its
@@ -8436,13 +7533,13 @@
           if (player) drawCropContain(g, player, PLAYER_PORTRAIT_CROP, cx - 33, cy - 37, 66, 77);
           g.restore();
         } else {
-          this.drawLock(g, cx, cy + 2, CYAN8);
+          this.drawLock(g, cx, cy + 2, CYAN7);
         }
         return;
       }
       if (player) drawCropContain(g, player, PLAYER_PORTRAIT_CROP, cx - 49, cy - 57, 98, 112);
       g.save();
-      g.strokeStyle = state === "equipped" ? CYAN8 : "#668a96";
+      g.strokeStyle = state === "equipped" ? CYAN7 : "#668a96";
       g.lineWidth = 2;
       rrect(g, cx - 55, cy - 65, 110, 132, 6);
       g.stroke();
@@ -8476,9 +7573,9 @@
       g.fillRect(cx - 2, cy + 4, 4, 13);
       g.restore();
     }
-    fitCenter(g, text, cx, y, maxW, maxScale, color, glow, minScale = 0.82) {
-      const scale = Math.max(minScale, Math.min(maxScale, maxW / Math.max(1, measureText(text, 1))));
-      drawText(g, text, cx, y, scale, color, { align: "center", glow, glowBlur: glow ? 3 : 0, shadow: "#08050f" });
+    fitCenter(g, text2, cx, y, maxW, maxScale, color, glow, minScale = 0.82) {
+      const scale = Math.max(minScale, Math.min(maxScale, maxW / Math.max(1, measureText(text2, 1))));
+      drawText(g, text2, cx, y, scale, color, { align: "center", glow, glowBlur: glow ? 3 : 0, shadow: "#08050f" });
     }
     themeDisplayName(id) {
       if (id === "e_sunset") return t("ui.themeSunsetDisplay");
@@ -8498,13 +7595,13 @@
     equipTheme(id) {
       if (!this.ctx.store.equipRoomTheme(id)) return;
       this.ctx.sound.click();
-      this.ctx.fx.banner(t("ui.equipped"), 800, 112, MAGENTA5, { scale: 2.5, life: 1.2 });
+      this.ctx.fx.banner(t("ui.equipped"), 800, 112, MAGENTA4, { scale: 2.5, life: 1.2 });
       this.ctx.stage.wake(900);
     }
     equipFrame(id) {
       if (!this.ctx.store.equipProfileFrame(id)) return;
       this.ctx.sound.click();
-      this.ctx.fx.banner(t("ui.equipped"), 1310, 112, CYAN8, { scale: 2.2, life: 1.2 });
+      this.ctx.fx.banner(t("ui.equipped"), 1310, 112, CYAN7, { scale: 2.2, life: 1.2 });
       this.ctx.stage.wake(900);
     }
   };
@@ -8526,6 +7623,12 @@
   var HOME_CRITICAL = [
     currentRoomAsset,
     "coinBank",
+    "projCabStage1",
+    "projCabStage2",
+    "projCabStage3",
+    "projCabStage4",
+    "projCabStage5",
+    "capsuleMachine",
     "prizeWall",
     "collectionNeonShelf",
     "collectionPrizeLights",

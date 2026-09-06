@@ -14,6 +14,7 @@
  */
 
 import { CONFIG, playerLevelFor } from '../domain/economy';
+import { GROWTH_CHAPTERS } from '../domain/growth';
 import { computeSync } from '../domain/sync';
 import { rollCapsule, pickGrant } from '../domain/capsule';
 import {
@@ -71,6 +72,8 @@ function freshState(mode: DataMode, settings?: GameSettings): GameState {
     mockWorld: null,
     cosmetics: { roomTheme: 'base', profileFrame: 'base' },
     roomDecorations: null,
+    growthClaims: [],
+    featuredProjectId: null,
     settings: settings ? { ...settings } : { muted: false, language: detectLocale(), fps: 'auto', playerName: '' },
   };
 }
@@ -133,6 +136,9 @@ export class GameStore {
     if (!isRoomThemeId(merged.cosmetics.roomTheme)) merged.cosmetics.roomTheme = 'base';
     if (!isProfileFrameId(merged.cosmetics.profileFrame)) merged.cosmetics.profileFrame = 'base';
     merged.roomDecorations = sanitizeRoomDecorations(merged.owned, saved.roomDecorations);
+    merged.growthClaims = Array.isArray(saved.growthClaims)
+      ? [...new Set(saved.growthClaims.filter(id => GROWTH_CHAPTERS.some(c => c.id === id)))] : [];
+    merged.featuredProjectId = merged.projects.some(p => p.id === saved.featuredProjectId) ? saved.featuredProjectId : null;
     return merged;
   }
 
@@ -272,6 +278,26 @@ export class GameStore {
 
   // ---- collectibles -----------------------------------------------------
 
+  featureProject(id: string): boolean {
+    if (!this._state.projects.some(p => p.id === id)) return false;
+    this._state.featuredProjectId = id;
+    this.save();
+    return true;
+  }
+
+  /** Claim exactly once. Existing owners receive dust, never a second coin mint. */
+  claimGrowth(id: string): { collectible: Collectible; isDup: boolean } | null {
+    const chapter = GROWTH_CHAPTERS.find(c => c.id === id);
+    if (!chapter || this._state.growthClaims.includes(id) || this._state.stats.lifetimeTokens < chapter.tokens) return null;
+    const collectible = COLLECTIBLES.find(c => c.id === chapter.reward);
+    if (!collectible) return null;
+    this._state.growthClaims.push(id);
+    const isDup = this.addOwned(collectible);
+    this.checkAchievements();
+    this.save();
+    return { collectible, isDup };
+  }
+
   private addOwned(collectible: Collectible): boolean {
     const cur = this._state.owned[collectible.id];
     if (cur) {
@@ -291,6 +317,7 @@ export class GameStore {
   // Pull the capsule machine `count` times. Assumes cost already checked by UI,
   // but re-checks here to stay authoritative.
   pull(count: number): PullResult | null {
+    if (count !== 1 && count !== 10) return null;
     const cost = count === 10 ? CONFIG.PULL10_COST : CONFIG.PULL_COST * count;
     if (this._state.coins < cost) return null;
     const ownedBefore = this.ownedCount();

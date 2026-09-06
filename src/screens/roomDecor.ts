@@ -56,9 +56,9 @@ type DecorationFilter = RoomDecorationZone | 'all';
  * furniture's rows/baseline. Floor bottom edge = riser feet at y868; buddy
  * ends above the DECOR entry card so the rug never slides under the button. */
 const DECORATION_ZONES: Readonly<Record<RoomDecorationZone, Rect>> = {
-  wall: { x: 405, y: 214, w: 198, h: 286 },
-  floor: { x: 398, y: 768, w: 214, h: 100 },
-  buddy: { x: 1080, y: 700, w: 132, h: 136 },
+  wall: { x: 1030, y: 209, w: 160, h: 125 },
+  floor: { x: 1270, y: 722, w: 210, h: 78 },
+  buddy: { x: 300, y: 715, w: 132, h: 86 },
 };
 
 const DECOR_INVENTORY = { x: 16, y: 878, w: 1568, h: 112 };
@@ -66,7 +66,7 @@ const DECOR_PAGE_SIZE = 8;
 
 /** The DECOR entry card on the Home screen; the buddy rug also keys off it so
  * the rug never slides under the button. */
-const DECOR_ENTRY = { x: 1084, y: 838, w: 124, h: 54 };
+const DECOR_ENTRY = { x: 304, y: 814, w: 124, h: 54 };
 
 // ---- furniture geometry ---------------------------------------------------
 // Prizes no longer float at arbitrary points inside a rectangle. Each zone has
@@ -637,7 +637,7 @@ export class RoomDecorController {
 
   // ---- decorate mode -------------------------------------------------------
 
-  private openDecorationEditor(): void {
+  openDecorationEditor(): void {
     const saved = this.ctx.store.state.roomDecorations;
     this.decorDraft = resolveRoomDecorations(this.ctx.store.state.owned, saved).map((placement) => ({ ...placement }));
     this.decorDraftIsAutomatic = saved == null;
