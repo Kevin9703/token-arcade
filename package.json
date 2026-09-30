@@ -93,7 +93,6 @@
     "start": "node --experimental-strip-types --no-warnings server/index.ts",
     "dev": "npm run build && npm run start",
     "test": "node scripts/run-tests.mjs",
-    "capture:readme": "node scripts/capture-readme-demo.mjs",
     "prepack": "npm run build",
     "build:preview": "esbuild src/preview.ts --bundle --format=iife --outfile=public/cozy.js --sourcemap",
     "build:legacy": "esbuild src/main.ts --bundle --format=iife --outfile=public/arcade.js --sourcemap --minify",

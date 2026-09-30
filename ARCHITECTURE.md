@@ -1,61 +1,80 @@
-# Token Town — Architecture
+# Token Town · 当前架构
 
-TypeScript + Three.js 原生 3D 场景，DOM 交互，现有 esbuild 和 Node 本地扫描服务。
+TypeScript + Three.js 构建原生 3D 城镇，DOM 提供 HUD 和建设面板，esbuild 负责构建，Node 本地服务扫描使用记录。玩法规则见 [游戏规则](docs/TOKEN_TOWN.md)，制作流程见 [3D 资产](docs/TOWN_3D_ASSETS.md)，验证证据见 [验收记录](docs/QA.md)。
 
-## 模块
+## 模块与数据流
+
+除另行注明外，下表文件均位于 `src/town/`。
 
 | 模块 | 职责 |
 |---|---|
-| `src/town/types.ts` | 存档、格子、建筑、规则求值契约 |
-| `catalog.ts` | 价格、服务距离 / 容量、章节和星级配色 |
-| `world.ts` | 旋转占地、入口、桥位、区域开放、BFS 连通 / 最短道路距离、稳定服务分配、章节目标 |
-| `puzzles.ts` | 六张固定库存规划关、基础 / 星级目标、测试用参考解法 |
-| `store.ts` | 所有交易、本地存档验证、真实 / 演示高水位、补贴结算、永久库存、导入导出和跨窗口版本保护 |
-| `models.ts` | 原创细节建筑、居民；共享材质与倒角几何；按材质合批 / 索引顶点 |
-| `pedestrians.ts` | 道路并集边界内缩 / 圆角闭环、稳定车道、前后间距、入流预留与距离步态 |
-| `resident-life.ts` | 可测试的回家 / 开门 / 睡眠 / 出门 / 归座状态机、逐户门口预约与车道重入 |
-| `world-time.ts` / `seasons.ts` | 本地游戏时钟、昼夜渐变、四季着色共用 uniform；不改变经营规则 |
-| `roads.ts` | 石板、接缝底层、暴露边缘路缘，三组实例化网格 |
-| `landscape.ts` | 连续草地、分层土壤、河岸、流水着色、背景丘陵与林地实例化 |
-| `scene.ts` | GLB 加载 / 原生备用模型、正交镜头、跟随鼠标预览、射线拾取、连续旋转、居民 / 粒子动画、画质 |
-| `ui.ts` | 安静的城镇 HUD、建设 / 搬迁 / 委托 / 关卡 / 图鉴 / 设置、目录拖放、辅助定位 |
-| `main.ts` | 启动、显式演示模式及图形错误处理 |
-| `server/index.ts` | 保留 Claude Code / Codex 扫描与 `GET /api/usage`，仅监听 localhost |
+| `main.ts` | 启动、明确选择演示模式、图形错误处理 |
+| `types.ts` / `catalog.ts` | 状态与规则契约、建筑价格、占地、距离、容量和解锁 |
+| `world.ts` | 旋转占地、入口、桥位、区域开放、BFS 连通、最短路、稳定服务分配和章节目标 |
+| `service-feedback.ts` | 从同一规则结果生成范围、受益住宅和缺服务原因 |
+| `puzzles.ts` | 六张固定库存规划关、星级条件和测试用参考解法 |
+| `store.ts` | 交易、同步账本、补贴、永久库存、存档验证、导入导出和跨窗口保护 |
+| `farming.ts` | 农事设施连接、运输路线、生产阶段、库存记账和缺原料提示 |
+| `world-time.ts` / `seasons.ts` | 活动游戏时钟、昼夜参数、四季着色与季节设置 |
+| `pedestrians.ts` | 内缩圆角步行车道、前后间距、入流预留、道路变化后的平滑重定向 |
+| `resident-life.ts` | 回家、门口排队、开门、睡眠、出门、归座与农事任务状态 |
+| `models.ts` | 原创建筑和居民、共享材质、倒角构件、网格合批及活动节点 |
+| `roads.ts` / `landscape.ts` | 石板道路、路缘、草地、土壤、河岸、流水、林地和背景丘陵 |
+| `camera-input.ts` / `keyboard-input.ts` | 手势映射、平滑参数、俯仰和缩放限制、快捷键和 WASD 平移 |
+| `scene.ts` | GLB 加载、原生模型备用、正交镜头、射线拾取、预览、居民和农事动画、画质 |
+| `music.ts` | 两个本地音频通道、首次操作激活、季节与循环交叉淡化、音量和暂停 |
+| `ui.ts` | HUD、建设、搬迁、委托、规划关、图鉴、设置和目录拖放 |
+| `asset-preview.ts` | 独立模型陈列与前后方检查 |
+| `server/index.ts` | Claude Code / Codex 扫描、静态资源、`GET /api/usage`，只监听 `127.0.0.1` |
 
-`world`、`catalog`、`puzzles` 不依赖渲染或动画；经营成果由格子与服务计算决定。居民不产生任何收入。
+使用记录 → `syncTown` → 金币和工坊状态 → 布局交易 → `evaluate` → 住宅需求与委托 → DOM 和场景反馈。`world`、`catalog`、`puzzles` 和服务反馈不依赖 WebGL，居民动画不决定住宅服务或金币。
 
-## 经济与持久化
+农事规则生成任务，居民状态机执行移动，场景把实际到达情况交回农事推进。生产记账独立于金币账本，不能由叶片旋转或动画帧数直接产生奖励。
 
-每个项目保存 `credited` 已兑换高水位；新增量是 `max(0, reported - credited)`，高水位只增加。项目显示累计量及等级同样只增加。老 ID 迁移更新工坊引用，不再次发币。
+## 经济与库存
 
-所有新增 token 与 `residue` 汇总后兑换金币。`tokenCoins` 是累计 token 铸币，`subsidyPaid` 是累计已付补贴；补贴上限为 `floor(tokenCoins / 5)`。已完成章节的补贴权益从永久星级推导，重领或提高星级不会新增权益。
+每个项目保存单调增加的 `credited` 高水位；新增量为 `max(0, reported - credited)`。项目累计展示量同样只增加。项目 ID 迁移更新已有工坊引用，不重新发币。
 
-`town` 保存所有永久建筑实例（包括收纳状态）和布局。购买只在通过占地校验后扣款；搬迁修改原 ID，收纳只切换 `placed`。关卡有独立 `puzzleBoards`，只能使用规定实例，奖励永久星级和蓝图。
+新增 token 与 `residue` 汇总，每 10,000 token 兑换一枚金币。`tokenCoins` 记录累计 token 金币，`subsidyPaid` 记录累计实际补贴；支付上限为 `floor(tokenCoins / 5)`。补贴权益由永久章节星级推导，提高星级或重复领取不会新增权益。
 
-新存档独立于旧街机版本。导入校验版本、模式、数字、重复 ID、占地、陆地 / 桥位、道路、项目工坊对应和关卡库存，失败保留原进度。保存失败提示导出备份。多窗口保存前检查 `revision`，发现更新时采用最新进度并通知重新操作。
+`town` 保存永久建筑实例，包括收纳状态和布局。购买通过占地校验后才扣费；搬迁修改原 ID，收纳只切换 `placed`。`puzzleBoards` 使用独立的规定实例，不参与主城交易。
 
-## 扫描口径
+项目等级复用 `src/domain/levels.ts` 的 50 级曲线；城镇不使用其中兼容代码的金币倍率。五阶段门槛和工坊规则统一见 [项目工坊](docs/TOKEN_TOWN.md#项目工坊)。
 
-沿用现有扫描器：Claude 统计 input + output + cache creation；Codex 统计 input − cached input + output + reasoning。排除重读缓存 token。扫描按文件 mtime / size 增量缓存，项目通过完整 cwd 路径稳定区分，不读取质量信号，也不把完整对话交给前端。
+## 存档与跨窗口保护
 
-## 渲染与资产
+真实和演示使用独立的 `tokenTown.slot.live.v1` / `tokenTown.slot.demo.v1`。保存金币、项目高水位、永久建筑、布局、解锁、星级、规划关、时钟、农事库存和设置。新增可选字段补默认值，不重置用户资产。
 
-构建生成 121 个原创 GLB：常规建筑四款外观，工坊五阶段。运行时加载实际 GLB；相同原创几何的本地 prefab 是完整加载备用。可放置资产全部使用原创 GLB，背景树木 / 岩石等加载 Kenney CC0 派生 GLB；来源 / 许可保存在 `art/vendor/kenney-fantasy-town`，许可随发布保留。住宅保持完整原创模型；面包店、咖啡馆、果蔬铺、花店使用各自结构，书屋 / 温室 / 粮仓 / 船屋有独立形体；失败的模块拼房输出已移除。正常构建不下载网络素材，也不依赖 Blender。几何按材质合并并建立索引，森林和道路使用实例化，居民的肢体分组各自合批而保留旋转枢轴；movingPart 节点以局部变换独立合批，门轴保留到 GLB，临时覆盖层 / 预览 / 烟尘及时释放。
+导入校验版本、模式、数字、重复 ID、占地、桥位、道路、项目工坊对应和关卡库存。校验失败保留原进度；保存失败提示导出备份。已有历史存档保留，不迁入新城镇。
 
-没有景深模糊或屏幕像素滤镜。中等画质支持原生 Retina 像素密度（上限 2），低密度屏有 1.25 倍采样；精细上限 2.5。低画质关闭阴影、降至 30 帧目标；中等和精细目标 60 帧。实际硬件指标记录于设计验收，不能以单台机器成绩承诺所有笔记本。
+跨窗口以 `revision` 检查更新，再用进度指纹区分建设或经济事务与仅时间、农事、偏好变化。真正的玩法冲突需要采用最新进度并重新操作；仅检查点更新可合并，不取消待放建筑。农事用单调的 `activeSeconds` 选择较新的进度，避免重复累计收获。
 
-## 构建
+时钟和农事约每 20 秒及离开页面时保存；隐藏或关闭页面不计算离线进度。规划关期间暂停主城农事。
 
-`npm run build`：生成模型 → 新版 `public/app.js` → 原版 `public/arcade.js` → 历史 preview → `dist/server.mjs`。原版 `src/main.ts` 与街机模块保留，不参与新版经济或主体验。
+## 本地扫描口径
 
-测试用 Node 内建 runner，经 esbuild 编译 TS；测试不依赖 WebGL。GLB 美术、鼠标拖放、触控布局与镜头通过实际浏览器验收。
+Claude Code 统计 input + output + cache creation，排除 cache read。Codex 统计 input − cached input + output + reasoning；会话累计计数取高水位，不把重复记录再次相加。文件按 mtime / size 增量缓存，项目由完整 cwd 路径区分。
 
-## 时光与居民
+接口只返回聚合项目与 token 数据；不把完整对话交给前端，也不读取提交、测试或工作质量作为奖励信号。
 
-360 秒为一天，从 09:00 开始，每三天换一季。日光和天色连续变化，季节由共享 shader uniform 渐变草地、树冠、屋面；冬季增加低密度雪粒。世界时间按活动帧推进，隐藏或关闭页面不产生离线进度。每 20 秒及离开页面保存时钟；旧 v1 存档自动补齐时钟设置。时钟检查点与经济事务分开处理，跨窗口仅时间 / 偏好更新不会撤回正在放置的建筑。
+## 渲染、居民与农事
 
-居民只在接通的道路上巡游。20:00–06:00 返家，沿当前车道到本户出口；一户同时只开放给一个居民，其余继续散步。开门后走过门槛并隐藏到室内，门随后关闭。清晨先预约车道空位再开门、走出、并入人流；公园居民站起返家、次日回座。住宅 / 道路搬迁会重建视觉居民系统；夜间刷新直接恢复室内休息状态。没有连通住宅时镇公所提供视觉落脚处。
+构建生成 129 个原创 GLB：31 类建筑 / 装饰各四种外观，工坊五阶段。运行时按需加载，加载失败使用同源完整模型。原创房屋和商店采用独立结构；Kenney CC0 派生素材用于景观，保留来源与许可。
 
-The farm extension is isolated in `src/town/farming.ts`: road-based chains, production stages, stock accounting and destination-specific material messages. `ResidentLife` gives existing walkers work orders and reserves a safe pavement slot when work ends; `PedestrianTraffic.retarget` keeps their identities and world positions through road edits. `TownScene` drives visual crop/cargo/mill animation, pauses the main farm in puzzles or at night, and waits for the worker's arrival before advancing a phase. Production and token rewards remain separate.
+几何按材质合批并索引化，森林和道路实例化。门轴 `door-hinge`、作物 `crop-patch`、风车叶片 `mill-fan` 保持独立节点。预览、覆盖层和临时粒子使用后释放。
 
-Farm runs, stock and a monotonic active-work clock live in the independent town slots. Older saves gain empty farm state and music defaults. Farm/time-only checkpoints are excluded from the gameplay conflict fingerprint; pending construction can merge the latest farm checkpoint without accumulating duplicate harvests. `music.ts` manages two local HTML audio channels with user-gesture activation, three-second season/loop crossfades and persisted controls. Source licensing and attribution ship with the audio assets.
+居民根据实际位移迈步，在稳定车道保持间距，门口与道路重入使用预约。20:00–06:00 回家睡觉，清晨预约安全车道后出门。道路编辑保留居民实例、位置、累计步行、坐姿和作息状态，只重新计算路线；不能每铺一格就重建整个居民系统。
+
+最多三位现有居民务农，设施通过实际道路连接。村民到达工作位置后才推进生产；夜间、断路和无工人时暂停，恢复后接续同一批次。每批 2 小麦 → 2 面粉 → 4 面包，农事库存不兑换金币。
+
+中等画质支持像素密度上限 2，精细上限 2.5；轻量关闭阴影并采用 30 帧目标。中等与精细目标 60 帧。实际性能应记录测试硬件和布局，单台机器结果不代表所有笔记本。
+
+## 构建与检查
+
+- `npm run build:assets`：从 TypeScript 导出原创 GLB。
+- `npm run build:client` / `npm run watch`：构建或监听城镇前端。
+- `npm run build:server` / `npm run start`：构建或启动本地服务。
+- `npm run build`：完整资源和客户端、服务构建。仓库中的兼容入口仍随构建生成，不参与城镇规则。
+- `npm run typecheck` / `npm test`：TypeScript 与 Node 测试；测试经 esbuild 编译，不依赖 WebGL。
+
+浏览器用于验证模型、放置、镜头、音频和居民动作，必须使用独立地址或测试存档，保留用户进度。具体结果与尚未覆盖的范围统一记录在 [QA](docs/QA.md)。

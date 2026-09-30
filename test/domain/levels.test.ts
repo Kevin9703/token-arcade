@@ -12,7 +12,7 @@ import {
 } from '../../src/domain/levels';
 
 // 50 numeric levels + 5 visual stages, derived purely from lifetime tokens.
-// Stage token boundaries (docs/PROJECT_LEVEL_SYSTEM.md):
+// Stage token boundaries from src/domain/levels.ts:
 //   Starter   L1-4    0 .. 99,999
 //   Powered   L5-9    100,000 .. 999,999
 //   Deluxe    L10-19  1,000,000 .. 9,999,999

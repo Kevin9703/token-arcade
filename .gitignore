@@ -11,3 +11,6 @@ public/arcade.js.map
 art/*.blend1
 
 __pycache__/
+
+# Player feedback stays local; public implementation plans belong in docs/ROADMAP.md.
+/docs/feedback.md

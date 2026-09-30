@@ -188,7 +188,7 @@ function publicUrl(path: string): string {
 }
 
 // ---- lazy per-id collectible + currency icons -----------------------------
-// One transparent PNG per collectible id (docs/COLLECTIBLE_GENERATED_ASSETS.md).
+// Compatibility assets use one transparent PNG per collectible id.
 // Loaded on first request so we don't balloon the boot SRC map; returns null
 // until decoded so callers keep their code-sprite fallback. Never recolored.
 const iconCache = new Map<string, HTMLImageElement>();

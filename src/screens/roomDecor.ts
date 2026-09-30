@@ -75,8 +75,7 @@ const DECOR_ENTRY = { x: 304, y: 814, w: 124, h: 54 };
 //   wall  -> a pegboard display with two hook rails; prizes hang from a rail
 //   floor -> a low display riser; prizes stand on its top surface
 //   buddy -> a cozy rug; buddies sit on it
-// Fractions are MEASURED off the production sprites (see docs/
-// ROOM_DISPLAY_INFRASTRUCTURE_ASSETS.md): the pegboard's magenta rails sit at
+// Fractions are MEASURED off the compatibility sprites: the magenta rails sit at
 // y=65/172 of 248, the riser's gold lip at y=25 of 48, the rug fills its box.
 const WALL_BOARD_ART = { w: 198, h: 248, rails: [65 / 248, 172 / 248] as const };
 const FLOOR_RISER_ART = { w: 232, h: 48, surface: 25 / 48 };

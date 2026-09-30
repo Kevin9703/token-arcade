@@ -1,10 +1,9 @@
 /*
- * levels.ts — cabinet level math. A project's cabinet level (1..50) and its
- * visual stage (1..5) are derived purely from lifetime tokens.
+ * levels.ts — project level math. Numeric levels (1..50) and visual stages
+ * (1..5) are derived purely from lifetime tokens.
  *
- * 50 numeric levels give frequent progression; 5 visual stages drive cabinet
- * color/ornament. Higher levels also grant a small coin multiplier on FUTURE
- * token gains (1.00x at Lv1 -> 1.50x at Lv50). See docs/PROJECT_LEVEL_SYSTEM.md.
+ * Token Town uses this curve for workshop appearance, with no coin multiplier.
+ * See docs/TOKEN_TOWN.md. The multiplier helper remains for compatibility.
  */
 
 export const MAX_LEVEL = 50;

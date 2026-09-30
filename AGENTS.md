@@ -2,7 +2,9 @@
 
 This project is a cozy **3D river valley town game**, built with TypeScript and Three.js. The former pixel arcade has been retired from the main experience. Do not implement new arcade rooms, capsule machines, prize walls, or pixel UI. Historical files and saves may remain for compatibility, but must not guide new work.
 
-Read `docs/TOKEN_TOWN.md` and `docs/TOWN_3D_ASSETS.md` before changing the game. During active development, read `docs/feedback.md` at the start of work, after finishing the current batch, and before committing. Preserve the user's feedback text; record implementation decisions separately.
+Start with `docs/README.md`; read `docs/TOKEN_TOWN.md` and `docs/TOWN_3D_ASSETS.md` before changing the game. `ARCHITECTURE.md` describes the current implementation, `docs/QA.md` records verification, and `docs/ROADMAP.md` contains unimplemented plans. Keep those statuses distinct and remove superseded documents instead of maintaining conflicting specifications.
+
+During active development, read local `docs/feedback.md` when present at the start of work, after finishing the current batch, and before committing. Preserve the user's wording, mark implemented and verified items complete, and annotate partial or planned items honestly. Record implementation decisions in `docs/ROADMAP.md`; update verification in `docs/QA.md`. The feedback file is intentionally Git-ignored: never stage, force-add or commit it.
 
 ## Product and economy
 

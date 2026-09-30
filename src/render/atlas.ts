@@ -109,7 +109,7 @@ const CAB_WINDOWS: Record<CabinetVariant['key'], { marquee: CabWindow; screen: C
   },
 };
 
-// One cabinet variant per VISUAL STAGE (0..4), per docs/PROJECT_LEVEL_SYSTEM.md:
+// Compatibility cabinets use one variant per VISUAL STAGE (0..4):
 //   1 Starter, 2 Powered, 3 Deluxe, 4 Neon, 5 Legendary. Each is Codex's final
 //   pre-cropped transparent single PNG (cabinet-stage-N.png) — drawn whole, NOT
 //   sliced from a sheet, and NOT composited with separate topper/badge art (the

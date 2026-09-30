@@ -101,8 +101,12 @@ npm run build
 
 ## 资料与授权
 
+- [文档导航](docs/README.md)
 - [游戏规则、章节与规划关](docs/TOKEN_TOWN.md)
+- [当前架构](ARCHITECTURE.md)
 - [3D 资产与 Blender 工作流](docs/TOWN_3D_ASSETS.md)
+- [验收记录](docs/QA.md)
+- [开发路线图（尚未实现）](docs/ROADMAP.md)
 - [游戏开发约定](AGENTS.md)
 - [音乐曲目、来源与授权](public/assets/town/audio/CREDITS.md)
 
