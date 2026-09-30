@@ -1,0 +1,26 @@
+README.md
+  s_84a8c4b5748940::t_e963e298ef13ab 3-5,16-39,41,43,45,47-67,71-78,80,82,84,88,98,100,102,104-107,109
+  s_84a8c4b5748940::t_b92c40bec11967 86
+  s_84a8c4b5748940::t_6cfc93b4221639 87
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.1",
+  "base_commit_sha": "001f20c33aeb975b721cb7e876538570e48d2772",
+  "prompts": {},
+  "humans": {
+    "h_858d8e7c2e7145": {
+      "author": "kevin.zhang <547607118@qq.com>"
+    }
+  },
+  "sessions": {
+    "s_84a8c4b5748940": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0f0c6-c968-7eb2-9a16-f64685d798dc",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "kevin.zhang <547607118@qq.com>"
+    }
+  }
+}
