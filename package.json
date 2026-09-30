@@ -1,7 +1,7 @@
 {
   "name": "token-arcade",
   "version": "0.1.3",
-  "description": "Turn AI coding token usage into a cozy pixel arcade.",
+  "description": "Turn AI coding tokens into a cozy 3D river valley town.",
   "license": "MIT",
   "type": "module",
   "bin": {
@@ -57,7 +57,11 @@
     "public/cozy.html",
     "public/cozy.js",
     "public/assets/cozy-preview",
-    "public/assets/fonts"
+    "public/assets/fonts",
+    "public/town.css",
+    "public/assets/town",
+    "public/arcade.html",
+    "public/arcade.js"
   ],
   "engines": {
     "node": ">=22"
@@ -74,29 +78,37 @@
     "claude-code",
     "codex",
     "token-tracking",
-    "pixel-art",
-    "arcade-game",
     "local-first",
-    "gamification"
+    "gamification",
+    "threejs",
+    "town-builder",
+    "cozy-game"
   ],
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "build": "npm run build:client && npm run build:preview && npm run build:server",
-    "build:client": "esbuild src/main.ts --bundle --format=iife --outfile=public/app.js --sourcemap --loader:.ts=ts",
+    "build": "npm run build:assets && npm run build:client && npm run build:legacy && npm run build:preview && npm run build:server",
+    "build:client": "esbuild src/town/main.ts --bundle --format=iife --outfile=public/app.js --sourcemap --minify",
     "build:server": "esbuild server/index.ts --bundle --platform=node --format=esm --target=node22 --outfile=dist/server.mjs",
-    "watch": "esbuild src/main.ts --bundle --format=iife --outfile=public/app.js --sourcemap --loader:.ts=ts --watch",
+    "watch": "esbuild src/town/main.ts --bundle --format=iife --outfile=public/app.js --sourcemap --watch",
     "start": "node --experimental-strip-types --no-warnings server/index.ts",
     "dev": "npm run build && npm run start",
     "test": "node scripts/run-tests.mjs",
     "capture:readme": "node scripts/capture-readme-demo.mjs",
     "prepack": "npm run build",
-    "build:preview": "esbuild src/preview.ts --bundle --format=iife --outfile=public/cozy.js --sourcemap"
+    "build:preview": "esbuild src/preview.ts --bundle --format=iife --outfile=public/cozy.js --sourcemap",
+    "build:legacy": "esbuild src/main.ts --bundle --format=iife --outfile=public/arcade.js --sourcemap --minify",
+    "build:assets": "node scripts/build-town-assets.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.20.0",
+    "@types/three": "^0.186.0",
     "esbuild": "^0.24.0",
     "playwright-core": "1.48",
     "sharp": "^0.35.3",
     "typescript": "^5.6.0"
+  },
+  "dependencies": {
+    "lucide": "^1.49.0",
+    "three": "^0.186.1"
   }
 }

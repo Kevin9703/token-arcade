@@ -1,0 +1,46 @@
+import type { BuildingDefinition, BuildingKind, Chapter } from './types';
+
+export const CATALOG: Record<BuildingKind, BuildingDefinition> = {
+  hall: { kind: 'hall', name: '镇公所', description: '小镇的心脏。所有道路从这里连接起来。', cost: 0, w: 3, d: 3, category: 'landmarks', chapter: 1 },
+  house: { kind: 'house', name: '河谷木屋', description: '住进十位邻居。为他们安排好道路、食物和绿地。', cost: 8, w: 2, d: 2, category: 'homes', chapter: 1 },
+  bakery: { kind: 'bakery', name: '晨光面包店', description: '八格步行距离内，为六栋住宅供应新鲜面包。', cost: 20, w: 2, d: 2, category: 'services', chapter: 1, service: 'food', capacity: 6, range: 8 },
+  cafe: { kind: 'cafe', name: '转角咖啡馆', description: '十格步行距离内，为四栋住宅提供休闲服务。', cost: 30, w: 2, d: 2, category: 'services', chapter: 3, service: 'leisure', capacity: 4, range: 10 },
+  market: { kind: 'market', name: '河谷集市', description: '十二格步行距离内，为十二栋住宅提供食物服务。', cost: 50, w: 3, d: 3, category: 'services', chapter: 4, service: 'food', capacity: 12, range: 12 },
+  park: { kind: 'park', name: '绿荫小公园', description: '三格范围内的住宅都能享受绿地。公园也需要接通道路。', cost: 12, w: 2, d: 2, category: 'services', chapter: 1 },
+  bridge: { kind: 'bridge', name: '河谷石桥', description: '放在河道标记的位置，连通两岸的道路。', cost: 40, w: 1, d: 2, category: 'landmarks', chapter: 4 },
+  clock: { kind: 'clock', name: '河谷钟楼', description: '为繁荣的小镇留下一座共同的地标。', cost: 100, w: 3, d: 3, category: 'landmarks', chapter: 6 },
+  workshop: { kind: 'workshop', name: '项目工坊', description: '属于你的 AI 项目，随 token 用量成长。', cost: 0, w: 2, d: 2, category: 'landmarks', chapter: 1 },
+  tree: { kind: 'tree', name: '榆树', description: '为街角添一片柔软的绿荫。纯装饰。', cost: 2, w: 1, d: 1, category: 'decor', chapter: 2 },
+  bench: { kind: 'bench', name: '木制长椅', description: '让邻居们停下来坐一会儿。纯装饰。', cost: 2, w: 1, d: 1, category: 'decor', chapter: 2 },
+  lamp: { kind: 'lamp', name: '暖光路灯', description: '傍晚的街道也有温暖的光。纯装饰。', cost: 3, w: 1, d: 1, category: 'decor', chapter: 2 },
+  fountain: { kind:'fountain',name:'石砌小喷泉',description:'把一处空地布置成街坊相聚的小广场。纯装饰。',cost:14,w:2,d:2,category:'decor',chapter:2 },
+  cart: { kind:'cart',name:'木制手推车',description:'为店铺和庭院添一点生活气息。纯装饰。',cost:5,w:1,d:1,category:'decor',chapter:2 },
+  hedge: { kind:'hedge',name:'修剪绿篱',description:'为街边和花园勾勒柔软的边界。纯装饰。',cost:3,w:1,d:1,category:'decor',chapter:2 },
+  barrel: { kind:'barrel',name:'橡木桶',description:'摆在工坊边的木桶与柴火。纯装饰。',cost:2,w:1,d:1,category:'decor',chapter:2 },
+  planter: { kind:'planter',name:'陶盆花簇',description:'在石板路旁种下明亮的小花。纯装饰。',cost:4,w:1,d:1,category:'decor',chapter:2 },
+  gazebo: { kind:'gazebo',name:'河岸凉亭',description:'一处有木柱、长椅和坡屋顶的休憩角落。纯装饰。',cost:18,w:2,d:2,category:'decor',chapter:2 },
+  grocer: { kind: 'grocer', name: '果蔬小铺', description: '九格步行范围内，为六户供应新鲜食物。', cost: 24, w: 2, d: 2, category: 'services', chapter: 2, service: 'food', capacity: 6, range: 9 },
+  florist: { kind: 'florist', name: '花艺小铺', description: '九格步行范围内，为四户提供赏花与休闲。', cost: 26, w: 2, d: 2, category: 'services', chapter: 3, service: 'leisure', capacity: 4, range: 9 },
+  library: { kind: 'library', name: '河谷书屋', description: '十格步行范围内，为六户提供阅读休闲。', cost: 42, w: 3, d: 2, category: 'services', chapter: 3, service: 'leisure', capacity: 6, range: 10 },
+  greenhouse: { kind: 'greenhouse', name: '玻璃温室', description: '带种植台、玻璃屋顶和爬藤的小花房。纯装饰。', cost: 18, w: 3, d: 2, category: 'decor', chapter: 2 },
+  granary: { kind: 'granary', name: '丰收粮仓', description: '圆形粮塔、储藏木屋和一排小麦袋。纯装饰。', cost: 16, w: 2, d: 2, category: 'decor', chapter: 2 },
+  boathouse: { kind: 'boathouse', name: '河岸船屋', description: '木板平台上停着一艘小船。放在河岸陆地上布置庭院，纯装饰。', cost: 22, w: 3, d: 2, category: 'decor', chapter: 2 },
+  flower: { kind: 'flower', name: '窗边花箱', description: '少走弯路 · 初次通关蓝图。', cost: 8, w: 1, d: 1, category: 'decor', chapter: 1 },
+  picnic: { kind: 'picnic', name: '野餐桌', description: '弯路的尽头 · 初次通关蓝图。', cost: 10, w: 1, d: 1, category: 'decor', chapter: 1 },
+  birdhouse: { kind: 'birdhouse', name: '小鸟之家', description: '一店多用 · 初次通关蓝图。', cost: 12, w: 1, d: 1, category: 'decor', chapter: 1 },
+  windmill: { kind: 'windmill', name: '花园风车', description: '恰到好处 · 初次通关蓝图。', cost: 18, w: 1, d: 1, category: 'decor', chapter: 1 },
+  statue: { kind: 'statue', name: '河谷纪念像', description: '一桥两岸 · 初次通关蓝图。', cost: 20, w: 1, d: 1, category: 'decor', chapter: 1 },
+  gardenlamp: { kind: 'gardenlamp', name: '萤火花园灯', description: '桥边的生活 · 初次通关蓝图。', cost: 15, w: 1, d: 1, category: 'decor', chapter: 1 },
+};
+export const CHAPTERS: Chapter[] = [
+  { id: 1, title: '在这里落脚', story: '给镇公所接上最后一段路。四户邻居，等着第一炉面包。', reward: '基础装饰与新的街坊目标', subsidy: 5 },
+  { id: 2, title: '绿荫街坊', story: '再邀请两户邻居。让街坊们出门就能遇见一片绿。', reward: '同岸扩地、转角咖啡馆', subsidy: 10 },
+  { id: 3, title: '热闹市集', story: '除了面包，生活也需要一杯咖啡和朋友。', reward: '集市、石桥与对岸先遣建设区', subsidy: 15 },
+  { id: 4, title: '河的另一边', story: '一座桥，把河两岸变成同一个家。', reward: '完整对岸建设区、跨河纪念配色', subsidy: 20 },
+  { id: 5, title: '紧凑而舒适', story: '十二户邻居，四十格道路。少绕一点路，多留一点绿。', reward: '河谷钟楼蓝图', subsidy: 25 },
+  { id: 6, title: '我们的河谷', story: '在钟声响起时，为这座小镇留下你自己的样子。', reward: '全图开放、自由发展', subsidy: 30 },
+];
+export const STAGE_COLORS = ['#a8b6ae', '#6eabc0', '#c9978b', '#a296bf', '#d9b362'];
+// Two extra stars unlock real appearance choices, derived from permanent stars.
+export const CHAPTER_COSMETICS: BuildingKind[] = ['tree', 'bench', 'lamp', 'park', 'bridge', 'clock'];
+export const STAGE_NAMES = ['木屋', '工坊', '工作室', '创作馆', '河谷地标'];

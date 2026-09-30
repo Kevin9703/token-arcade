@@ -5,3 +5,9 @@ _reference/
 *.log
 .DS_Store
 .test-build/
+
+public/arcade.js
+public/arcade.js.map
+art/*.blend1
+
+__pycache__/

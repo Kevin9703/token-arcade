@@ -41,6 +41,9 @@ const MIME: Record<string, string> = {
   '.svg': 'image/svg+xml',
   '.ico': 'image/x-icon',
   '.woff2': 'font/woff2',
+  '.glb': 'model/gltf-binary',
+  '.gltf': 'model/gltf+json',
+  '.webp': 'image/webp',
 };
 
 interface ProjectAgg {
@@ -363,5 +366,5 @@ const server = http.createServer((req, res) => {
 });
 
 server.listen(PORT, HOST, () => {
-  console.log(`\n  🕹  Token Arcade running at  http://${HOST}:${PORT}\n`);
+  console.log(`\n  Token Town running at  http://${HOST}:${PORT}\n`);
 });

@@ -20,7 +20,10 @@ var MIME = {
   ".png": "image/png",
   ".svg": "image/svg+xml",
   ".ico": "image/x-icon",
-  ".woff2": "font/woff2"
+  ".woff2": "font/woff2",
+  ".glb": "model/gltf-binary",
+  ".gltf": "model/gltf+json",
+  ".webp": "image/webp"
 };
 function hashId(basis) {
   let h = 2166136261;
@@ -254,6 +257,6 @@ var server = http.createServer((req, res) => {
 });
 server.listen(PORT, HOST, () => {
   console.log(`
-  \u{1F579}  Token Arcade running at  http://${HOST}:${PORT}
+  Token Town running at  http://${HOST}:${PORT}
 `);
 });

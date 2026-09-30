@@ -1,0 +1,21 @@
+{
+  "date": "2026-09-30T07:31:41.786Z",
+  "url": "http://127.0.0.1:4173/?demo=1",
+  "canvas": {
+    "cameraAngle": "37.9",
+    "cameraElevation": "40",
+    "cameraTarget": "6.000,17.000",
+    "cameraZoom": "1.4500",
+    "cssHeight": 853,
+    "cssWidth": 655,
+    "drawCalls": "537",
+    "engine": "three.js r186",
+    "fps": "59",
+    "height": 1706,
+    "pixelRatio": "2",
+    "triangles": "719312",
+    "width": 1310
+  },
+  "coins": "397",
+  "console": []
+}

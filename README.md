@@ -1,169 +1,68 @@
-# Token Arcade
+# Token Town · 河谷小镇
 
-> Turn AI coding tokens into a tiny pixel arcade.
+把 AI coding token 变成建设资金，在一片 3D 河谷里经营自己的小镇。每次玩 5–10 分钟，接通街道、安排面包和咖啡、给邻居留出绿地。
 
-[![Version](https://img.shields.io/badge/version-v0.1.3-f04acb?style=flat-square)](https://github.com/Kevin9703/token-arcade/releases/tag/v0.1.3)
-[![Node.js](https://img.shields.io/badge/node.js-22%2B-56d364?style=flat-square)](#run-locally)
-[![Local-first](https://img.shields.io/badge/data-local--first-53e0d5?style=flat-square)](#privacy)
-[![License: MIT](https://img.shields.io/badge/license-MIT-ffc928?style=flat-square)](LICENSE)
+## 本地运行
 
-**[PLAY THE FICTIONAL DEMO](https://kevin9703.github.io/token-arcade/?demo=1)**
-&nbsp; | &nbsp;
-**[DOWNLOAD V0.1.3](https://github.com/Kevin9703/token-arcade/releases/tag/v0.1.3)**
+需要 Node.js 22+。
 
 ```bash
-npx --yes github:Kevin9703/token-arcade
-```
-
-Token Arcade is a local-first game for Claude Code and Codex usage. It groups
-your model token history by project, turns newly discovered tokens into arcade
-coins, and lets you spend those coins on capsule pulls, collectibles, cabinets,
-and achievements. It is a game, not another token dashboard.
-
-![Token Arcade fictional demo: sync tokens, mint coins, and pull capsules](docs/readme-assets/token-arcade-demo.gif)
-
-The recording and hosted demo use an isolated fictional save. No real project
-names or local usage history are included.
-
-This is deliberately **not** a productivity dashboard. It does not score your
-commits, tests, documentation, or output quality. Tokens are the only gameplay
-input: use a model, sync your history, watch the arcade grow.
-
-## Why Token Arcade
-
-- **One honest input.** Token usage drives the entire game; there are no
-  arbitrary productivity scores or judgments about how you work.
-- **Every project becomes a cabinet.** More tokens unlock richer machine stages,
-  brighter lights, and a visible history of the project growing.
-- **Progress changes the room.** Coins fund 50 collectible prizes, and the
-  latest signs, buddies, decor, trophies, and badges appear in your arcade.
-  Keep the tidy automatic layout or arrange them yourself in Decorate Mode,
-  while permanent display upgrades mark bigger milestones.
-- **Your history stays yours.** Scanning, aggregation, saves, and demo data all
-  remain on your machine with no account, telemetry, or cloud backend.
-
-## Status
-
-**V0.1.3.** The first complete arcade loop is ready to play: sync real local
-usage or enter an isolated demo, earn coins, level project cabinets, collect
-all 50 prizes, unlock permanent collection upgrades, equip room themes and
-profile frames, and recycle duplicate prizes into a guaranteed missing
-collectible. The hosted build is demo-only; real history scanning remains
-strictly local.
-
-## Demo
-
-All screenshots below use isolated, fictional demo data. No personal projects
-or local usage history are included.
-
-### A Project Becomes A Cabinet
-
-Each project has a physical machine, token total, cabinet level, base coin
-value, provider, and recent reward rail.
-
-![Fictional project cabinet detail screen](docs/readme-assets/demo-project-cabinet.png)
-
-### Spend Coins, Fill The Wall
-
-Capsule pulls add collectibles to the display and award achievements without
-turning duplicate drops into a slow, blocking card queue.
-
-![Fictional capsule pull result and prize display](docs/readme-assets/demo-capsule-pull.png)
-
-### Achievements Have A Place To Live
-
-The collection is a trophy gallery, not a list of browser cards.
-
-![Fictional achievement gallery](docs/readme-assets/demo-achievements.png)
-
-## The Loop
-
-```text
-Use Claude Code or Codex
-        ↓
-Sync local token history
-        ↓
-Mint arcade coins
-        ↓
-Level up project cabinets
-        ↓
-Pull capsules and fill the prize wall
-```
-
-## What Is Here
-
-- Local token-history scans for Claude Code and Codex, grouped by project.
-- A single token-to-coin economy: `10,000 tokens = 1 coin`.
-- Fifty cabinet levels across five visual stages.
-- Fifty collectible prizes with four permanent prize-wall upgrades at 10, 25,
-  40, and 50 unique discoveries.
-- Capsule pulls, a reviewable x10 result ticker, duplicate dust, and a
-  guaranteed missing-prize exchange inside a physical 50-slot prize cabinet.
-- Automatic or player-arranged in-room collectible displays plus an
-  always-visible next arcade upgrade goal, so every useful unlock has an
-  immediate destination.
-- Unlockable room themes and profile frames with persistent equipped states.
-- Achievement gallery and Simplified Chinese / English interface switching.
-- An explicit no-history choice plus separate demo and live save slots, so
-  fictional progress never leaks into real usage.
-- Pixel-art canvas UI, bitmap font, sound feedback, and no account or cloud service.
-
-## Run Locally
-
-Requirements: Node.js 22+ and npm.
-
-Run the latest GitHub release in one command:
-
-```bash
-npx --yes github:Kevin9703/token-arcade
-```
-
-Token Arcade opens at [http://localhost:4173](http://localhost:4173). Press
-`Ctrl+C` in the terminal to stop it.
-
-To work from source:
-
-```bash
-git clone https://github.com/Kevin9703/token-arcade.git
-cd token-arcade
 npm install
 npm run dev
 ```
 
-Use `SYNC` to scan local usage. If no readable history is available, the app
-can be explored in demo mode. Progress stays in browser `localStorage` on your
-machine.
+打开 [河谷小镇](http://127.0.0.1:4173)。真实模式通过本地服务扫描 Claude Code / Codex 使用记录；没有记录也可以接通起步街道、游玩免费规划关，或明确选择演示城镇。
 
-Useful commands:
+[独立演示模式](http://127.0.0.1:4173/?demo=1) 包含四个虚构项目。首次收集得到 400 金币，后续每次模拟新增 80 金币，与真实资金隔离。
+
+## 怎么玩
+
+1. 同步 token，10,000 新 token 兑换 1 金币，零头继续累计。
+2. 点击建设目录中的建筑，模型会跟随鼠标；也可以直接拖出目录。左键落地、R 旋转、右键 / Esc 取消。
+3. 为门口接上道路，住宅通过镇公所道路网络获得服务。铺路、搬迁、旋转和收纳免费。
+4. 完成六章委托，开放土地、集市、石桥、钟楼及纪念配色。
+5. 六张独立规划关使用固定库存，首次通关解锁装饰蓝图，三星解锁配色。主城金币不参与关卡。
+
+**触控板：两指上下滑改变俯仰，左右滑旋转；捏合缩放，Shift + 两指滑动平移**。单指按下拖动也可平移；设置中可切换鼠标模式（滚轮缩放）。**按住 Q / E 或镜头按钮持续旋转，放开停止**。点击建筑查看入口、服务范围与需求。精确格子输入是可选辅助功能。
+
+## 当前内容
+
+- Three.js 正交镜头、可编辑 GLB 建筑、柔和阴影、石板街道、浅滩 / 芦苇 / 水鸭、混合林地、连续丘陵和流水。
+- 24×24 地图；固定起步镇公所、四栋住宅、面包店、公园；没有赠送金币。
+- 六章主城、六张具有验证解法的规划关、六款挑战装饰和配色。
+- 果蔬铺、花艺店、书屋、玻璃温室、粮仓、船屋；商店使用各自的建筑结构。喷泉、手推车、绿篱、木桶、花盆和凉亭等装饰。
+- 项目工坊 50 级 / 5 阶段，免费摆放或收纳；没有额外铸币倍率。
+- 居民迈步 / 摆臂、圆角街道巡游、门口逐人通行、贴合座面的弯膝坐姿、烟囱、落成动画、到账及阶段庆祝。
+- 本地自动存档、备份导入导出、跨窗口进度保护、真实 / 演示隔离。
+- 六分钟昼夜渐变、每三天春夏秋冬轮换、冬季飘雪、暖色门灯；居民夜晚开门回家睡觉，清晨出门。设置支持固定时段 / 季节，离开时暂停时间。
+- 精细 / 中等 / 轻量画质、静音和减少动态效果。
+
+## 金币与隐私
+
+首次同步可兑换历史总量；之后按每个项目的已兑换高水位发放，删减历史再恢复不会重复兑换。委托补贴一次性计入权益，累计实际支付不超过 token 金币的 20%，额度不足部分保留并在后续同步补发。
+
+服务仅监听 `127.0.0.1`。只聚合项目名称、来源和 token 数量，不展示完整对话，不上传历史，不使用提交、测试、PR 或质量评分。浏览器进度随本地 origin 保存，换浏览器前可以导出备份。
+
+新版使用 `tokenTown.slot.live.v1` / `tokenTown.slot.demo.v1`。原街机存档不迁入，也不清除；[原街机入口](http://127.0.0.1:4173/arcade.html) 保留。
+
+## 开发与验证
 
 ```bash
-npm run build
 npm run typecheck
 npm test
-# with npm run dev running in another terminal:
-node scripts/verify.mjs
+npm run build
 ```
 
-## Privacy
+`build` 导出原生 3D 资产并构建新版前端、原街机兼容入口和本地服务。新增测试覆盖十二分钟交通不抖动 / 重叠、昼夜 / 季节迁移、两轮睡眠 / 出门、门轴保留、坐姿接触和金币高水位；规则测试覆盖金币高水位、零头、补贴、服务容量 / 距离、占地 / 旋转、库存、存档与所有章节、关卡的三星可达性；镜头测试覆盖手势映射、俯仰 / 缩放边界、帧率无关平滑与旧存档设置迁移。
 
-The app binds its server to `127.0.0.1`. It reads local Claude Code/Codex
-history only to aggregate token totals by project; it does not upload history,
-send telemetry, require an account, or expose the scanner to your network.
+旧的 `scripts/verify.mjs` 和录制脚本属于像素街机版本，使用时应指定 `/arcade.html`；不作为新版验收入口。新版实际浏览器验收记录见 [design-qa.md](design-qa.md)。
 
-For token accounting details and the project identity rules, read
-[ARCHITECTURE.md](ARCHITECTURE.md#token-counting).
+## 资料
 
-## Project Docs
+- [游戏规则与关卡](docs/TOKEN_TOWN.md)
+- [建筑资产 / Blender 工作流](docs/TOWN_3D_ASSETS.md)
+- [架构](ARCHITECTURE.md)
 
-- [Product brief](docs/PRODUCT_BRIEF.md)
-- [MVP specification](docs/MVP_SPEC.md)
-- [Game economy](docs/GAME_ECONOMY.md)
-- [Project level system](docs/PROJECT_LEVEL_SYSTEM.md)
-- [P1 trust and cosmetic progression](docs/P1_PRODUCT_SPEC.md)
-- [P1 collection asset map](docs/P1C_COLLECTION_ASSETS.md)
-- [Architecture](ARCHITECTURE.md)
-- [PM release readiness review](docs/PM_RELEASE_READINESS_2026-07-10.md)
+原 `docs/` 街机设计文档是历史资料，新版以 Token Town 文档为准。
 
-## License
-
-[MIT](LICENSE)
+代码与原创模型使用 MIT；导入的 Kenney 植物 / 道具使用 CC0，原许可和来源记录随资产保留。房屋与店铺继续原创建模；失败的外部模块拼房方案已撤回。技术包名沿用 `token-arcade`；这次修改尚未发布新的 npm / GitHub release。

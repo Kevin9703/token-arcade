@@ -1,0 +1,13 @@
+import * as T from 'three';
+import { buildingModel, buildingSeats, packModel, residentModel } from './models';
+import { CATALOG } from './catalog';
+import type { BuildingKind } from './types';
+const renderer = new T.WebGLRenderer({antialias:true});renderer.setSize(1200,760);renderer.setPixelRatio(2);renderer.shadowMap.enabled=true;renderer.outputColorSpace=T.SRGBColorSpace;renderer.toneMapping=T.ACESFilmicToneMapping;renderer.toneMappingExposure=1.06;document.querySelector('#preview')!.append(renderer.domElement);
+const scene = new T.Scene();scene.background=new T.Color('#dbe1d0');scene.add(new T.HemisphereLight('#fff3dc','#8e9479',2));const light=new T.DirectionalLight('#fff0d1',3);light.position.set(-6,15,9);light.castShadow=true;light.shadow.mapSize.set(2048,2048);Object.assign(light.shadow.camera,{left:-14,right:14,top:14,bottom:-14});scene.add(light);
+const camera=new T.OrthographicCamera(-7.8,7.8,4.94,-4.94,.1,100);camera.position.set(11,13,17);camera.lookAt(0,.5,0);
+const params=new URL(location.href).searchParams,seated=params.has('seats');if(params.get('view')==='back'){camera.position.set(-11,13,-17);camera.lookAt(0,.5,0);}const kinds:BuildingKind[]=seated?(params.has('detail')?['bench']:['bench','park','gazebo']):params.has('shops')?['house','bakery','cafe','grocer','florist','library']:['grocer','florist','library','greenhouse','granary','boathouse'];
+if(params.has('detail')){camera.position.set(7.8,13,17);camera.lookAt(-3.2,.25,0);camera.zoom=4;camera.updateProjectionMatrix();}
+const labels:T.Vector3[]=[];
+kinds.forEach((kind,i)=>{const model=packModel(buildingModel(kind,i%4));const x=seated?(i-1)*3.2:(i%3-1)*4.0,z=seated?0:(Math.floor(i/3)-.5)*3.7;model.position.set(x,0,z);scene.add(model);labels.push(new T.Vector3(x,0,z+1.45));for(const anchor of buildingSeats(kind)){const actor=packModel(residentModel('#a28273',1,true));actor.position.set(x+anchor.position[0],anchor.position[1],z+anchor.position[2]);scene.add(actor);}});
+const floor=new T.Mesh(new T.PlaneGeometry(200,200),new T.MeshStandardMaterial({color:'#d0d7be',roughness:1}));floor.rotation.x=-Math.PI/2;floor.position.y=-.015;floor.receiveShadow=true;scene.add(floor);renderer.render(scene,camera);
+labels.forEach((p,i)=>{p.project(camera);const el=document.createElement('span');el.className='label';el.textContent=CATALOG[kinds[i]].name;el.style.left=`${(p.x+1)*600}px`;el.style.top=`${(1-p.y)*380}px`;document.querySelector('#preview')!.append(el);});
