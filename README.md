@@ -2,6 +2,17 @@
 
 把 AI coding token 变成建设资金，在一片 3D 河谷里经营自己的小镇。每次玩 5–10 分钟，规划街道和社区，看村民种麦、磨面、烤面包，让小镇随着昼夜和四季慢慢生长。
 
+![河谷小镇实机预览：建设、农事、昼夜与四季](docs/media/token-town-preview.gif)
+
+<details>
+<summary>▶ 播放 71 秒完整实机演示（含音乐）</summary>
+
+从房屋搭建到种麦、磨面、烤面包，再看昼夜与四季更替。建设和农事经过剪辑，时光片段采用快进展示。
+
+https://github.com/user-attachments/assets/a5018820-21eb-449f-9b86-f09a19549827
+
+</details>
+
 **同步 token → 获得金币 → 建设与布置 → 改善居民服务 → 完成委托 → 解锁土地、建筑和装饰。**
 
 ## 本地运行
@@ -109,5 +120,8 @@ npm run build
 - [开发路线图（尚未实现）](docs/ROADMAP.md)
 - [游戏开发约定](AGENTS.md)
 - [音乐曲目、来源与授权](public/assets/town/audio/CREDITS.md)
+- [宣传片录制与剪辑](docs/PROMO.md)
 
 代码与原创模型使用 MIT 许可。导入的 Kenney 植物和道具使用 CC0，来源与原许可随资产保留。四季音乐由 Kevin MacLeod 创作，使用 CC BY 4.0；录音本地随游戏提供，曲目、署名及改动记录见音乐说明。
+
+旧版街机厅保留在 [`codex/legacy-arcade`](https://github.com/Kevin9703/token-arcade/tree/codex/legacy-arcade) 分支；`main` 继续开发河谷小镇。

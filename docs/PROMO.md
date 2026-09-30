@@ -2,6 +2,8 @@
 
 使用真实 `TownScene`、原创 GLB、农事与居民动画，制作本地宣传视频。录制页面只使用内存中的虚构演示项目，没有扫描接口，也不读取或写入玩家存档。
 
+71 秒转发版已上传为 GitHub 仓库视频附件，嵌入 [README](../README.md) 首屏。附件采用 H.264 / AAC，保留完整音乐署名；原始录制和高清文件继续留在本地，不加入 Git 或 npm 包。
+
 ```bash
 node scripts/promo-server.mjs
 ```
@@ -19,3 +21,5 @@ node scripts/edit-promo.mjs
 音乐使用本地 “Heartwarming” — Kevin MacLeod（incompetech.com），CC BY 4.0，经过截取、音量调整与淡入淡出。署名保留在视频片尾和同目录文本，转发时应保留片尾；完整来源见 [音乐授权](../public/assets/town/audio/CREDITS.md)。
 
 录制服务只绑定本机 `127.0.0.1:4174`，仅接收同源录制结果；不是线上上传功能。`/play/?demo=1` 可用于独立交互验收，不连接个人 usage 扫描器。
+
+README 首屏使用 `docs/media/token-town-preview.gif` 自动循环展示精选镜头，完整 71 秒视频放在可展开的原生播放器中。动图由同一份实机 MP4 剪辑生成；预览不包含音乐，完整视频保留音轨与片尾署名。
