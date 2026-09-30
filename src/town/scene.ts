@@ -4,7 +4,8 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { buildingModel, buildingSeats, packModel, material, residentModel, box, boxGeometry, sharedMaterial } from './models';
 import { CATALOG } from './catalog';
 import { landscape } from './landscape';
-import { key, fromKey, dimensions, entrance, pathDistances, edgeDistance, makeBuilding } from './world';
+import { dimensions, entrance, makeBuilding } from './world';
+import { buildingCoverage } from './service-feedback';
 import { levelFor, stageForLevel } from '../domain/levels';
 import { wheelGesture, smoothFraction, clampElevation, clampZoom, DEFAULT_ELEVATION, MIN_ELEVATION, MAX_ELEVATION } from './camera-input';
 import { PedestrianTraffic, walkingPose } from './pedestrians';
@@ -186,26 +187,27 @@ export class TownScene {
   private drawSelection(): void {
     this.clearTransient(this.overlay); if (!this.board || !this.evaluation) return;
     const b = this.board.buildings.find(b => b.id === this.selection && b.placed); if (!b) return;
-    const { w, d } = dimensions(b); this.outline(this.overlay, b.x, b.z, w, d, '#447457', .12);
+    const { w, d } = dimensions(b); this.outline(this.overlay, b.x, b.z, w, d, '#376844', .22, -.035);
     const p = entrance(b); this.outline(this.overlay, p.x, p.z, 1, 1, this.evaluation.buildings[b.id]?.connected ? '#5e9070' : '#bf805c', .13);
     const definition = CATALOG[b.kind];
-    if (definition.service) {
-      const distances = pathDistances(this.evaluation.connectedRoads, key(p.x, p.z));
-      const count = Array.from(distances).filter(([, d]) => d <= definition.range!).length;
-      const squares = new T.InstancedMesh(new T.PlaneGeometry(.88, .88), new T.MeshBasicMaterial({ color: definition.service === 'food' ? '#edce87' : '#81bcb3', transparent: true, opacity: .3, depthWrite: false }), count); let i = 0;
-      for (const [k, distance] of distances) if (distance <= definition.range!) { const c = fromKey(k); tempObject.position.set(c.x + .5, .092, c.z + .5); tempObject.rotation.x = -Math.PI / 2; tempObject.updateMatrix(); squares.setMatrixAt(i++, tempObject.matrix); }
-      tempObject.rotation.set(0, 0, 0); this.overlay.add(squares);
+    if (definition.service || b.kind === 'park') {
+      const coverage = buildingCoverage(this.board, this.evaluation, b);
+      if (coverage.cells.length) {
+        const color = b.kind === 'park' ? '#82b659' : definition.service === 'food' ? '#edce87' : '#81bcb3';
+        const squares = new T.InstancedMesh(new T.PlaneGeometry(.88, .88), new T.MeshBasicMaterial({ color, transparent: true, opacity: .38, depthWrite: false }), coverage.cells.length);
+        coverage.cells.forEach((c, i) => { tempObject.position.set(c.x + .5, .14, c.z + .5); tempObject.rotation.set(-Math.PI / 2, 0, 0); tempObject.updateMatrix(); squares.setMatrixAt(i, tempObject.matrix); });
+        tempObject.rotation.set(0, 0, 0); this.overlay.add(squares);
+      }
+      const served = new Set(coverage.homes.filter(h => h.served).map(h => h.home.id));
       for (const home of this.board.buildings.filter(h => h.placed && h.kind === 'house')) {
         const status = this.evaluation.buildings[home.id], dims = dimensions(home);
-        if (status?.[definition.service] === b.id || !status?.[definition.service]) this.outline(this.overlay, home.x, home.z, dims.w, dims.d, status?.[definition.service] === b.id ? '#6d9465' : '#bc795c', .14);
+        const met = b.kind === 'park' ? status?.green : status?.[definition.service!];
+        if (served.has(home.id) || !met) this.outline(this.overlay, home.x, home.z, dims.w, dims.d, served.has(home.id) ? '#376844' : '#c47c42', .23, -.035);
       }
     }
-    if (b.kind === 'park') {
-      for (const home of this.board.buildings.filter(h => h.placed && h.kind === 'house')) if (edgeDistance(home, b) <= 3) { const dims = dimensions(home); this.outline(this.overlay, home.x, home.z, dims.w, dims.d, '#72a26c', .13); }
-    }
   }
-  private outline(parent: T.Group, x: number, z: number, w: number, d: number, color: string, y = .08): void {
-    const points = [new T.Vector3(x + .05, y, z + .05), new T.Vector3(x + w - .05, y, z + .05), new T.Vector3(x + w - .05, y, z + d - .05), new T.Vector3(x + .05, y, z + d - .05)];
+  private outline(parent: T.Group, x: number, z: number, w: number, d: number, color: string, y = .08, inset = .05): void {
+    const points = [new T.Vector3(x + inset, y, z + inset), new T.Vector3(x + w - inset, y, z + inset), new T.Vector3(x + w - inset, y, z + d - inset), new T.Vector3(x + inset, y, z + d - inset)];
     parent.add(new T.LineLoop(new T.BufferGeometry().setFromPoints(points), new T.LineBasicMaterial({ color })));
   }
   private point(e: Pick<PointerEvent, 'clientX' | 'clientY'>): Cell | null {

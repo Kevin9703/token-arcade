@@ -2,6 +2,13 @@
 
 final result: passed
 
+## Service progress follow-up — 2026-09-30
+
+- Progress counts unique residential beneficiaries, not purchased facilities. Added placed / connected / food / green totals, contextual goal hints, per-home missing-service diagnosis and clickable provider / home locations. Workshop buildings are explicitly excluded from residential counts.
+- Corrected park feedback: an unconnected park no longer paints nearby homes green. Both park and home must have connected entrances; a shared helper uses the exact road / edge distances and allocations from `evaluate`. Park area cells and served / unmet home frames now appear above and outside building foundations.
+- `service-progress-audit.png` verifies the native demo snapshot: 397 coins, chapter 2, five placed homes, four connected / fed homes, one green home. Its fifth home at horizontal 6 / vertical 23 reports an unconnected entrance. `park-service-coverage.png` verifies the park area in the town. This snapshot was read through the UI without purchases, layout edits, rewards or save resets; the automatic world clock continued normally.
+- `npm run typecheck`, `npm test` (192 passed / 0 failed), and `npm run build` pass. New regression cases cover the eight / nine road-step boundary, six-home shop capacity and duplicate coverage, three / four park-edge distance, rotated disconnected entries, stored parks and insufficient housing feedback. Native browser logs contain no warnings / errors.
+
 ## Findings and comparison history
 
 - **P1, fixed — shops shared the same cottage structure.** Earlier `art/qa/community-model-gallery.png` reused a cottage for grocer / florist. The user explicitly rejected this. `models.ts` now builds a squat brick-oven bakery, two-storey terrace cafe, low open hipped-roof grocer, masonry / glass florist, and broad reading shop. Distinct roof profiles, height, massing, openings and entrances are visible in `distinct-shops-front.png`; rear / side windows and structure are visible in `distinct-shops-back.png`. `shops-before-vs-after.png` opens the before and after together, with equal tiles and preserved aspect ratios. Sharing timber / window materials is intentional; sharing whole cottage structure is no longer used for these shops.
