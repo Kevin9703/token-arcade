@@ -1,0 +1,21 @@
+.github/workflows/pages.yml
+  s_84a8c4b5748940::t_b69041c34d1049 1,21-22,36-40,44-60,62,66,72
+docs/QA.md
+  s_84a8c4b5748940::t_da0ec198495c04 80-83
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.1",
+  "base_commit_sha": "3867b4bbcd0db6b808b418ff999b8c92e96a3561",
+  "prompts": {},
+  "sessions": {
+    "s_84a8c4b5748940": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0f0c6-c968-7eb2-9a16-f64685d798dc",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "kevin.zhang <547607118@qq.com>"
+    }
+  }
+}
