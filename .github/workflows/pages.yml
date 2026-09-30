@@ -1,4 +1,4 @@
-name: Deploy hosted demo
+name: Verify game and deploy configured demo
 
 on:
   push:
@@ -18,6 +18,8 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    outputs:
+      pages_enabled: ${{ steps.pages.outputs.enabled }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -31,18 +33,43 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Check types and game rules
+        run: |
+          npm run typecheck
+          npm test
+
       - name: Build game
         run: npm run build
 
+      - name: Check existing Pages configuration
+        id: pages
+        uses: actions/github-script@v7
+        with:
+          script: |
+            try {
+              const { data } = await github.rest.repos.getPages({
+                owner: context.repo.owner,
+                repo: context.repo.repo
+              });
+              core.setOutput('enabled', data.build_type === 'workflow');
+            } catch (error) {
+              if (error.status !== 404) throw error;
+              core.setOutput('enabled', false);
+              core.notice('GitHub Pages is not configured; deployment skipped.');
+            }
+
       - name: Configure Pages
+        if: steps.pages.outputs.enabled == 'true'
         uses: actions/configure-pages@v5
 
       - name: Upload hosted demo
+        if: steps.pages.outputs.enabled == 'true'
         uses: actions/upload-pages-artifact@v3
         with:
           path: public
 
   deploy:
+    if: needs.build.outputs.pages_enabled == 'true'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
