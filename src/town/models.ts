@@ -1,7 +1,9 @@
 import * as T from 'three';
+import {villageModel} from './village-models';
 import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import type { BuildingKind } from './types';
+import { BRIDGE_STONES } from './walk-surface';
 
 // Original modular 3D prefabs. Shared geometry and materials also back the
 // exported GLB library; these are real meshes, never a flattened room image.
@@ -18,7 +20,7 @@ function seasonalMaterial(color:string,role:'roof'|'foliage'|'ground'):T.MeshSta
 export function box(g: T.Object3D, x: number, y: number, z: number, w: number, h: number, d: number, color: string, glow = false): T.Mesh {
   const m = new T.Mesh(boxGeometry, material(color, glow)); m.position.set(x, y, z); m.scale.set(w, h, d); m.castShadow = true; m.receiveShadow = true; g.add(m); return m;
 }
-function cylinder(g: T.Object3D, x: number, y: number, z: number, r: number, h: number, color: string, top = r): T.Mesh {
+export function cylinder(g: T.Object3D, x: number, y: number, z: number, r: number, h: number, color: string, top = r): T.Mesh {
   const m = new T.Mesh(new T.CylinderGeometry(top, r, h, 8), material(color)); m.position.set(x, y, z); m.castShadow = true; m.receiveShadow = true; g.add(m); return m;
 }
 const palette = { wood: '#69543e', beam: '#544536', stone: '#ada58d', cream: '#ead6b0', window: '#f6d590', roof: '#9f533b', green: '#526b51', iron: '#535e55' };
@@ -32,7 +34,7 @@ export function buildingSeats(kind: BuildingKind): SeatAnchor[] {
   if (kind === 'gazebo') return [{ position: [0, height(.16), -.55], yaw: 0 }];
   return [];
 }
-function windowFrame(g: T.Object3D, x: number, y: number, z: number, side = false): void {
+export function windowFrame(g: T.Object3D, x: number, y: number, z: number, side = false): void {
   // Rotate the assembled window so the glass remains outside its frame on side walls.
   const window = new T.Group(); window.position.set(x, y, z);
   if (side) window.rotation.y = Math.PI / 2;
@@ -43,7 +45,7 @@ function windowFrame(g: T.Object3D, x: number, y: number, z: number, side = fals
   box(window, 0, 0, .085, .38, .035, .025, palette.cream);
   box(window, 0, -.31, 0, .6, .075, .16, palette.wood);
 }
-function roof(g: T.Object3D, width: number, depth: number, height: number, color: string): void {
+export function roof(g: T.Object3D, width: number, depth: number, height: number, color: string): void {
   const angle = .58, slope = width * .62;
   const shape = new T.Shape(); shape.moveTo(-width * .43, -.12); shape.lineTo(width * .43, -.12); shape.lineTo(0, width * .31); shape.closePath();
   const gable = new T.Mesh(new T.ExtrudeGeometry(shape, { depth: depth * .86, bevelEnabled: false }), material('#dfcba7')); gable.position.set(0, height, -depth * .43); gable.castShadow = true; gable.receiveShadow = true; g.add(gable);
@@ -52,7 +54,7 @@ function roof(g: T.Object3D, width: number, depth: number, height: number, color
     // Raised seams and rows give the roof the miniature crafted feel.
     for (let i = 0; i < 5; i++) {
       const xx = side * (i + .5) * width / 10;
-      const yy = height + width * .3 - Math.abs(xx) * Math.tan(angle);
+      const yy = height + width * (.155 + .25 * Math.tan(angle)) - Math.abs(xx) * Math.tan(angle);
       for (let j = 0; j < 5; j++) {
         const tileColor=i % 2 ? color : new T.Color(color).multiplyScalar(1.07).getStyle(); const tile = box(g, xx, yy + .085, (j - 2) * (depth + .28) / 5, width / 10 + .025, .045, (depth + .28) / 5 - .018, tileColor); tile.material=seasonalMaterial(tileColor,'roof'); tile.rotation.z = -side * angle;
       }
@@ -275,7 +277,8 @@ function farmBuilding(g:T.Group,kind:'wheatfield'|'mill',variant:number):void {
 }
 export function buildingModel(kind: BuildingKind, variant = 0, stage = 0): T.Group {
   const g = new T.Group(); g.name = `${kind}-${variant}-${stage}`;
-  if(kind==='wheatfield'||kind==='mill')farmBuilding(g,kind,variant);
+  if(['vegetablefield','cowshed','pigpen','fishinghut','restaurant','apronstand','harvesttable','wheatbanner'].includes(kind))villageModel(g,kind,variant);
+  else if(kind==='wheatfield'||kind==='mill')farmBuilding(g,kind,variant);
   else if (['bakery','cafe','grocer','florist'].includes(kind)) retailBuilding(g,kind as 'bakery'|'cafe'|'grocer'|'florist',variant);
   else if (['library', 'greenhouse', 'granary', 'boathouse'].includes(kind)) communityBuilding(g, kind, variant);
   else if (kind === 'house') cottage(g, variant, kind);
@@ -311,11 +314,11 @@ export function buildingModel(kind: BuildingKind, variant = 0, stage = 0): T.Gro
     for (let i = 0; i < 5; i++) box(g, -.6 + i * .27, .19, -.79, .13, .12, .13, i % 2 ? '#d9b674' : '#b4797c');
   } else if (kind === 'bridge') {
     box(g, 0, .08, 0, .97, .18, 2.28, '#b6ab91');
-    for (let i = 0; i < 9; i++) box(g, 0, .19 + .075 * Math.sin(i / 8 * Math.PI), -.96 + i * .24, .9, .07, .23, i % 2 ? '#c8bfa5' : '#beb499');
+    for (const [i, stone] of BRIDGE_STONES.entries()) box(g, 0, stone.y, stone.z, .9, stone.height, stone.depth, i % 2 ? '#c8bfa5' : '#beb499');
     for (const x of [-.43, .43]) { box(g, x, .38, 0, .13, .29, 2.25, '#ada18a'); for (const z of [-.94, 0, .94]) box(g, x, .48, z, .2, .47, .19, '#b9ad94'); }
     if (variant) for (const x of [-.43, .43]) for (const z of [-.94, .94]) box(g, x, .74, z, .2, .045, .19, ['#b9ad94', '#718879', '#83989e', '#bb9c6c'][variant % 4]);
   } else if (kind === 'workshop') {
-    cottage(g, stage % 4, 'house');
+    cottage(g, variant % 4, 'house');
     const accents = ['#a8b6ae', '#6eabc0', '#c9978b', '#a296bf', '#d9b362'];
     box(g, 0, 1.17, .84, .7, .16, .07, accents[stage], true);
     if (stage > 0) { box(g, 0, 2.05, 0, 1.06, .75, 1.05, '#e6d5b8'); roof(g, 1.3, 1.3, 2.48, accents[stage]); windowFrame(g, 0, 2.08, .56); }
@@ -343,6 +346,10 @@ export function buildingModel(kind: BuildingKind, variant = 0, stage = 0): T.Gro
   else if(kind==='cart'){box(g,0,.32,0,.6,.15,.7,'#a6885c');for(const x of [-.36,.36])cylinder(g,x,.18,0,.18,.065,'#6d5d46').rotation.z=Math.PI/2;for(const z of [-.32,.32])box(g,0,.49,z,.64,.24,.06,'#b59b74');}
   else if(kind==='fountain'){cylinder(g,0,.12,0,.87,.22,'#b1b4a5');cylinder(g,0,.24,0,.7,.026,'#7aabb0');cylinder(g,0,.43,0,.15,.5,'#c6c6b2');cylinder(g,0,.67,0,.4,.09,'#c6c6b2');}
   else if(kind==='gazebo'){box(g,0,.08,0,1.86,.16,1.86,'#b8b5a5');for(const x of [-.7,.7])for(const z of [-.7,.7])box(g,x,.75,z,.08,1.5,.08,'#967a56');roof(g,1.77,1.77,1.5,'#798c77');const b=new T.Group();b.position.set(0,.16,-.55);bench(b);g.add(b);}
+  if(kind==='greenhouse'){
+    const crops=new T.Group();crops.name='vegetable-crops';crops.userData.movingPart=true;crops.position.y=.70;g.add(crops);
+    for(const x of [-.85,.85])for(const z of [-.45,-.15,.15,.45]){box(crops,x,.12,z,.05,.24,.05,'#7f9e61');box(crops,x+.06,.24,z,.16,.07,.11,'#8ead72');}
+  }
   return g;
 }
 export function residentModel(color: string, variant = 0, seated = false): T.Group {

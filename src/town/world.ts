@@ -1,8 +1,11 @@
 import { CATALOG, CHAPTERS } from './catalog';
 import type { Board, Building, BuildingKind, Cell, Evaluation, Goal, TownState } from './types';
 
+export const visualVariant = (b: Building,s:TownState):number => (b.variant+(b.kind==='workshop'?Math.max(0,s.projects.findIndex(p=>p.id===b.projectId)):0))%4;
 export const key = (x: number, z: number): string => `${x},${z}`;
 export const STARTER_WIDTH = 18;
+export const parkRange = (board: Board): number => board.terrain === 'valley' ? 6 : 3;
+export const serviceDefinition = (board: Board, kind: BuildingKind) => kind === 'cafe' && board.terrain !== 'valley' ? {...CATALOG[kind],range:10,capacity:4} : CATALOG[kind];
 export const fromKey = (s: string): Cell => { const [x, z] = s.split(',').map(Number); return { x, z }; };
 export const activeChapter = (s: TownState): number => Math.min(6, s.chapterStars.findIndex(n => n === 0) < 0 ? 7 : s.chapterStars.findIndex(n => n === 0) + 1);
 export function dimensions(b: Pick<Building, 'kind' | 'rotation'>): { w: number; d: number } {
@@ -29,6 +32,10 @@ export function unlocked(s: TownState, board: Board, x: number, z: number): bool
   if (z >= 11) return s.chapterStars[2] > 0;
   return s.chapterStars[5] > 0 || (x < 12 && (s.chapterStars[3] > 0 || s.chapterStars[2] > 0 && z >= 3));
 }
+export function fishingShore(board:Board,b:Building):boolean {
+  const door=entrance(b);
+  return b.rotation%2===0&&!water(board,door.x,door.z)&&cells(b).some(p=>[[1,0],[-1,0],[0,1],[0,-1]].some(([dx,dz])=>water(board,p.x+dx,p.z+dz)));
+}
 export function canPlace(s: TownState, board: Board, b: Building): string | null {
   if (!Number.isInteger(b.x) || !Number.isInteger(b.z) || !Number.isInteger(b.rotation) || b.rotation < 0 || b.rotation > 3) return '请使用地图内的完整格子和四个朝向';
   const occupied = new Set(board.buildings.filter(v => v.placed && v.id !== b.id).flatMap(v => cells(v).map(p => key(p.x, p.z))));
@@ -36,6 +43,7 @@ export function canPlace(s: TownState, board: Board, b: Building): string | null
     const row = board.terrain === 'valley' ? 11 : 5;
     if (board.terrain === 'meadow' || b.rotation !== 0 || b.z !== row || !bridgeSlots(board).includes(b.x)) return '石桥需要放在河道标记的桥位上';
   }
+  if(b.kind==='fishinghut'&&!fishingShore(board,b))return '需要靠河的陆地，门朝陆地、码头朝河面';
   for (const p of cells(b)) {
     if (!unlocked(s, board, p.x, p.z)) return '这片土地还没有开放，先完成当前委托';
     if (water(board, p.x, p.z) !== (b.kind === 'bridge')) return '建筑要放在陆地上，跨河请使用石桥';
@@ -81,18 +89,18 @@ export function evaluate(board: Board): Evaluation {
       const p = entrance(shop); const distances = pathDistances(connected, key(p.x, p.z));
       for (const home of homes) {
         const h = entrance(home); const distance = distances.get(key(h.x, h.z));
-        if (distance !== undefined && distance <= CATALOG[shop.kind].range!) candidates.push({ home, shop, distance });
+        if (distance !== undefined && distance <= serviceDefinition(board,shop.kind).range!) candidates.push({ home, shop, distance });
       }
     }
     candidates.sort((a, b) => a.distance - b.distance || a.shop.id.localeCompare(b.shop.id, 'en') || a.home.id.localeCompare(b.home.id, 'en'));
     for (const { home, shop, distance } of candidates) {
-      if (e.buildings[home.id][type] || (e.serviceUsed[shop.id] || 0) >= CATALOG[shop.kind].capacity!) continue;
+      if (e.buildings[home.id][type] || (e.serviceUsed[shop.id] || 0) >= serviceDefinition(board,shop.kind).capacity!) continue;
       e.buildings[home.id][type] = shop.id; e.buildings[home.id][`${type}Distance`] = distance; e.serviceUsed[shop.id] = (e.serviceUsed[shop.id] || 0) + 1;
     }
   }
   const parks = placed.filter(b => b.kind === 'park' && e.buildings[b.id].connected);
   for (const h of homes) {
-    const status = e.buildings[h.id]; status.green = parks.some(p => edgeDistance(h, p) <= 3);
+    const status = e.buildings[h.id]; status.green = parks.some(p => edgeDistance(h, p) <= parkRange(board));
     e.houses++; e.population += 10;
     if (status.food) { e.food++; h.z < board.size / 2 ? e.northFood++ : e.southFood++; }
     if (status.leisure) e.leisure++;
@@ -110,7 +118,7 @@ export function chapterGoals(chapter: number, e: Evaluation): { base: Goal[]; bo
     case 2: return { base: [goal('六栋住宅获得食物服务', e.food, 6), goal('四栋住宅邻近公园', e.green, 4)], bonus: [goal('六栋住宅都邻近公园', e.green, 6), goal('道路不超过 24 格', e.roadCount <= 24 ? 1 : 0, 1)] };
     case 3: return { base: [goal('八栋住宅获得食物服务', e.food, 8), goal('六栋住宅获得休闲服务', e.leisure, 6)], bonus: [goal('八栋住宅获得休闲服务', e.leisure, 8), goal('六栋住宅满足全部需求', e.satisfied, 6)] };
     case 4: return { base: [goal('一座石桥连通两岸', e.bridge ? 1 : 0, 1), goal('对岸两栋住宅获得食物服务', e.northFood, 2), goal('原岸四栋住宅获得食物服务', e.southFood, 4)], bonus: [goal('对岸四栋住宅获得食物服务', e.northFood, 4), goal('两岸各有住宅满足全部需求', e.northSatisfied > 0 && e.southSatisfied > 0 ? 1 : 0, 1)] };
-    case 5: return { base: [goal('十二栋住宅满足全部需求', e.satisfied, 12), goal('道路不超过 40 格', e.roadCount <= 40 ? 1 : 0, 1)], bonus: [goal('道路不超过 36 格', e.roadCount <= 36 ? 1 : 0, 1), goal('十四栋住宅满足全部需求', e.satisfied, 14)] };
+    case 5: return { base: [goal('十二栋住宅满足全部需求', e.satisfied, 12)], bonus: [goal('十四栋住宅满足全部需求', e.satisfied, 14), goal('两岸各有四栋满意住宅', Math.min(e.northSatisfied,e.southSatisfied), 4)] };
     default: return { base: [goal('十六栋住宅满足全部需求', e.satisfied, 16), goal('两岸各有至少四栋满意住宅', Math.min(e.northSatisfied, e.southSatisfied), 4), goal('河谷钟楼接通道路', e.clock ? 1 : 0, 1)], bonus: [goal('二十栋住宅满足全部需求', e.satisfied, 20), goal('道路不超过 64 格', e.roadCount <= 64 ? 1 : 0, 1)] };
   }
 }

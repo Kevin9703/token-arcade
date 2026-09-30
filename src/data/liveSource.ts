@@ -2,7 +2,7 @@
  * liveSource.ts — real token totals from the local server.
  *
  * GET /api/usage returns a list of projects with their *lifetime* token totals
- * (the server scans ~/.claude and ~/.codex history). Any failure resolves to an
+ * (the server scans Claude Code, Codex, Kimi Code and DeepSeek Harness). Any failure resolves to an
  * empty result; the store presents its explicit no-history decision instead of
  * treating it as permission to enter demo mode.
  */
@@ -22,6 +22,7 @@ interface RawProject {
 /** Loose shape of the /api/usage response body. */
 interface UsageResponse {
   source: string;
+  warnings?: string[];
   projects?: RawProject[];
   totals?: { projects: number; tokens: number };
 }
@@ -31,6 +32,7 @@ export async function fetchLive(): Promise<{
   projects: ProjectUsage[];
   totals?: { projects: number; tokens: number };
   error?: string;
+  warnings?: string[];
 }> {
   try {
     const res = await fetch('/api/usage', { cache: 'no-store' });
@@ -42,7 +44,8 @@ export async function fetchLive(): Promise<{
       tokens: Math.max(0, Math.floor(p.tokens || 0)),
       ...(p.legacyId ? { legacyId: p.legacyId } : {}),
     }));
-    return { source: data.source, projects, totals: data.totals };
+    return { source: data.source, projects, totals: data.totals,
+      warnings: Array.isArray(data.warnings) ? data.warnings.filter(v => typeof v === 'string') : [] };
   } catch (e) {
     return { source: 'error', projects: [], error: String(e) };
   }

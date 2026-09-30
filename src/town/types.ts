@@ -1,6 +1,6 @@
 import type { DataMode, ProjectUsage } from '../core/types';
 
-export type BuildingKind = 'hall' | 'house' | 'bakery' | 'cafe' | 'market' | 'park' | 'bridge' | 'clock' | 'workshop' | 'tree' | 'bench' | 'lamp' | 'flower' | 'picnic' | 'birdhouse' | 'windmill' | 'statue' | 'gardenlamp' | 'fountain' | 'cart' | 'hedge' | 'barrel' | 'planter' | 'gazebo' | 'grocer' | 'florist' | 'library' | 'greenhouse' | 'granary' | 'boathouse' | 'wheatfield' | 'mill';
+export type BuildingKind = 'hall' | 'house' | 'bakery' | 'cafe' | 'market' | 'park' | 'bridge' | 'clock' | 'workshop' | 'tree' | 'bench' | 'lamp' | 'flower' | 'picnic' | 'birdhouse' | 'windmill' | 'statue' | 'gardenlamp' | 'fountain' | 'cart' | 'hedge' | 'barrel' | 'planter' | 'gazebo' | 'grocer' | 'florist' | 'library' | 'greenhouse' | 'granary' | 'boathouse' | 'wheatfield' | 'mill' | 'vegetablefield' | 'cowshed' | 'pigpen' | 'fishinghut' | 'restaurant' | 'apronstand' | 'harvesttable' | 'wheatbanner';
 export type FarmPhase = 'sowing' | 'growing' | 'harvesting' | 'to-mill' | 'milling' | 'to-bakery' | 'baking' | 'returning';
 export interface FarmRun { phase: FarmPhase; elapsed: number; millId: string; bakeryId: string; batches: number }
 export interface FarmState { runs: Record<string, FarmRun>; wheat: number; flour: number; bread: number; batches: number; activeSeconds:number }
@@ -16,6 +16,7 @@ export interface TownState {
   tutorialDone: boolean; history: 'unscanned' | 'empty' | 'ready';
   worldSeconds: number;
   farm: FarmState;
+  village: import('./village').VillageState;
   settings: { music: boolean; musicVolume: number; muted: boolean; lighting: 'day' | 'sunset' | 'night'; clockMode: 'cycle' | 'fixed'; season: 'cycle' | 'spring' | 'summer' | 'autumn' | 'winter'; quality: 'high' | 'medium' | 'low'; reducedMotion: boolean; cameraInput: 'trackpad' | 'mouse' };
 }
 export interface BuildingDefinition {

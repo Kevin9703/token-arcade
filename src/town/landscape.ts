@@ -41,7 +41,7 @@ export function landscape(board: Board, state: TownState, assets = new Map<strin
   };
   if (river >= 0) {
     box(stonework, n / 2, -.43, river + 1, n + .17, .12, 2.05, '#457b7c');
-    const waterMaterial = new T.MeshStandardMaterial({ color: '#499a9e', roughness: .23, metalness: .06, transparent: true, opacity: .94 });
+    const waterMaterial = new T.MeshStandardMaterial({ color: '#499a9e', roughness: .23, metalness: .06, transparent: false, opacity: 1 });
     waterMaterial.onBeforeCompile = shader => {
       shader.uniforms.townTime = waterTime;
       shader.vertexShader = 'uniform float townTime; varying vec3 townPosition;\n' + shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\ntransformed.z += sin(position.x * 2.1 - townTime * .65) * .006 + sin(position.x * .72 + position.y * 8.3 - townTime * .38) * .003;').replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\ntownPosition = (modelMatrix * vec4(transformed, 1.0)).xyz;');

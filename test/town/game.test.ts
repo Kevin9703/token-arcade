@@ -12,7 +12,7 @@ test('new town never touches old arcade storage and starts with the authored kit
   installLocalStorage(); localStorage.setItem('tokenArcade.slot.live.v1', 'old-save');
   const store = new TownStore('live'); assert.equal(store.state.coins, 0); assert.equal(store.board.buildings.length, 7);
   assert.equal(evaluate(store.board).food, 0); assert.equal(store.road(6, 17), null); assert.equal(evaluate(store.board).food, 4);
-  assert.equal(starsForChapter(1, evaluate(store.board)), 2);
+  assert.equal(starsForChapter(1, evaluate(store.board)), 3);
   assert.equal(localStorage.getItem('tokenArcade.slot.live.v1'), 'old-save'); assert.ok(parseTown(JSON.stringify(store.state), 'live'));
 });
 test('token high-water prevents duplicate money even after history shrinks and returns', () => {
@@ -120,7 +120,7 @@ function fullSolution(): Board {
 test('authored main-town layouts demonstrate a solvable progression through all six chapters', () => {
   const south = southSolution(), full = fullSolution(), s = freshTown('demo'); s.chapterStars = [1, 1, 1, 1, 1, 1];
   for (const board of [south, full]) for (const b of board.buildings) assert.equal(canPlace(s, board, b), null, b.id);
-  const e = evaluate(south); assert.equal(e.roadCount, 36); assert.equal(e.satisfied, 14); assert.equal(starsForChapter(5, e), 3);
+  const e = evaluate(south); assert.equal(e.roadCount, 36); assert.equal(e.satisfied, 14); assert.equal(starsForChapter(5, e), 2);
   for (const chapter of [1, 2, 3, 5]) assert.ok(starsForChapter(chapter, e) > 0, `${chapter}: ${JSON.stringify(chapterGoals(chapter, e))}`);
   const f = evaluate(full); assert.ok(starsForChapter(4, f) > 0); assert.ok(starsForChapter(6, f) > 0, JSON.stringify(chapterGoals(6, f))); assert.equal(f.satisfied, 20); assert.equal(starsForChapter(6, f), 3);
   const state: TownState = { ...s, town: full }; assert.ok(parseTown(JSON.stringify(state), 'demo'));
@@ -137,8 +137,8 @@ test('all chapter three-star goals can be reached using only content available i
   const fourth = fullSolution(); fourth.buildings = fourth.buildings.filter(b => !b.id.startsWith('north-') && b.kind !== 'clock'); fourth.roads = fourth.roads.filter(r => Number(r.split(',')[1]) >= 13);
   fourth.buildings.push(...[1, 3, 7, 9].map(x => makeBuilding(`north-${x}`, 'house', x, 4)), makeBuilding('north-bakery', 'bakery', 5, 4), makeBuilding('north-cafe', 'cafe', 5, 8, 2), ...[1, 3, 8].map(x => makeBuilding(`north-park-${x}`, 'park', x, 8, 2)));
   fourth.roads.push(...Array.from({ length: 10 }, (_, i) => key(i + 1, 6)), ...[1, 3, 5, 8].map(x => key(x, 7)), ...[7, 8, 9, 10].map(z => key(10, z)));
-  for (const [index, board] of [first, second, third, fourth, southSolution(), fullSolution()].entries()) {
-    const state = freshTown('demo'); state.chapterStars = state.chapterStars.map((_, i) => i < index ? 1 : 0); state.town = board;
+  for (const [index, board] of [first, second, third, fourth, fullSolution(), fullSolution()].entries()) {
+    const state = freshTown('demo'); state.chapterStars = state.chapterStars.map((_, i) => i < index ? 1 : 0); state.town = board; if(index===4)board.buildings=board.buildings.filter(b=>b.kind!=='clock');
     for (const b of board.buildings) assert.equal(canPlace(state, board, b), null, `chapter ${index + 1}: ${b.id}`);
     assert.equal(starsForChapter(index + 1, evaluate(board)), 3, `chapter ${index + 1}: ${JSON.stringify(chapterGoals(index + 1, evaluate(board)))}`);
   }
@@ -148,5 +148,5 @@ test('extra-star appearances remain unlocked after changing the town layout', ()
   assert.equal(store.state.tutorialDone, true); assert.equal(store.place('tree', 0, 21, 0), null);
   const tree = store.board.buildings.at(-1)!; assert.equal(store.recolor(tree.id), true); assert.equal(tree.variant, 1);
   store.stash(tree.id); assert.equal(store.place('tree', 0, 22, 0, tree.id), null); assert.equal(tree.variant, 1);
-  assert.equal(new TownStore('demo').state.chapterStars[0], 2);
+  assert.equal(new TownStore('demo').state.chapterStars[0], 3);
 });

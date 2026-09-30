@@ -7,11 +7,11 @@ export const FARM_PHASES: FarmPhase[] = ['sowing', 'growing', 'harvesting', 'to-
 export const FARM_LABELS: Record<FarmPhase, string> = { sowing: '播种', growing: '麦苗生长', harvesting: '收割小麦', 'to-mill': '把麦子送往磨坊', milling: '风车磨面', 'to-bakery': '把面粉送往面包店', baking: '烘焙面包', returning: '回麦田准备下一季' };
 export const freshFarm = (): FarmState => ({ runs: {}, wheat: 0, flour: 0, bread: 0, batches: 0, activeSeconds:0 });
 export interface FarmChain { field: Building; mill?: Building; bakery?: Building; toMill: WalkPoint[]; toBakery: WalkPoint[]; returning: WalkPoint[]; problem: string }
-export interface FarmJob { fieldId: string; phase: FarmPhase; target: WalkPoint; entrance: WalkPoint; carrying: 'wheat' | 'flour' | null; harvesting: boolean }
+export interface FarmJob {cycles?:number; fieldId: string; phase: FarmPhase; target: WalkPoint; entrance: WalkPoint; carrying: 'wheat' | import('./village').Good | null; harvesting: boolean }
 export function bakeryMaterialLabel(id:string,chains:FarmChain[],farm:FarmState,sleep:boolean):string {
   if(sleep)return '夜间休息中';
   const runs=chains.filter(c=>c.bakery?.id===id&&!c.problem).map(c=>farm.runs[c.field.id]).filter(Boolean);
-  if(runs.some(r=>r.phase==='baking'))return '烘焙中';
+  if(runs.some(r=>r.phase==='baking'))return `烘焙中 · ${Math.max(0,Math.min(100,Math.round(runs.find(r=>r.phase==='baking')!.elapsed/3*100)))}% · 烘焙还需 ${Math.max(0,Math.ceil(3-runs.find(r=>r.phase==='baking')!.elapsed))} 秒`;
   if(runs.some(r=>r.phase==='to-bakery'))return '面粉正在送来';
   return '缺少原材料：面粉';
 }
@@ -61,7 +61,7 @@ export function sampleRoute(path: WalkPoint[], fraction: number): WalkPoint {
 }
 export function farmDuration(chain: FarmChain, phase: FarmPhase, season: Season): number {
   if (phase === 'to-mill' || phase === 'to-bakery' || phase === 'returning') return Math.max(2, routeLength(phase === 'to-mill' ? chain.toMill : phase === 'to-bakery' ? chain.toBakery : chain.returning) / .5);
-  return { sowing: 6, growing: 24 / { spring: 1, summer: 1.15, autumn: .85, winter: .45 }[season], harvesting: 5, milling: 8, baking: 8 }[phase];
+  return { sowing: 6, growing: 24 / { spring: 1, summer: 1.15, autumn: .85, winter: .45 }[season], harvesting: 5, milling: 5, baking: 3 }[phase];
 }
 export function tickFarm(chains: FarmChain[], farm: FarmState, dt: number, sleep: boolean, season: Season, ready?: Set<string>): FarmJob[] {
   if (sleep || !Number.isFinite(dt) || dt < 0) return [];
@@ -76,7 +76,7 @@ export function tickFarm(chains: FarmChain[], farm: FarmState, dt: number, sleep
       run.elapsed += step; remaining -= step;
       if (run.elapsed < duration) break;
       if (run.phase === 'harvesting') farm.wheat += 2;
-      if (run.phase === 'milling') { farm.wheat = Math.max(0, farm.wheat - 2); farm.flour += 2; }
+      if (run.phase === 'milling') { farm.wheat = Math.max(0, farm.wheat - 2); farm.flour += 3; }
       if (run.phase === 'baking') { farm.flour = Math.max(0, farm.flour - 2); farm.bread += 4; farm.batches++; run.batches++; }
       run.phase = FARM_PHASES[(FARM_PHASES.indexOf(run.phase) + 1) % FARM_PHASES.length]; run.elapsed = 0;
     }
@@ -84,12 +84,12 @@ export function tickFarm(chains: FarmChain[], farm: FarmState, dt: number, sleep
     const target = path.length ? sampleRoute(path, run.elapsed / farmDuration(chain, run.phase, season)) : ['milling'].includes(run.phase) ? entry(chain.mill) : run.phase === 'baking' ? entry(chain.bakery) : workSpot(chain.field);
     // Distinct loading spots prevent multiple farmers standing in the same doorway.
     if(run.phase==='milling'||run.phase==='baking'){
-      const station=run.phase==='milling'?chain.mill:chain.bakery,center=workSpot(station),length=Math.hypot(center.x-target.x,center.z-target.z),dx=(center.x-target.x)/length,dz=(center.z-target.z)/length,slot=[-.38,0,.38][chains.indexOf(chain)%3];
-      target.x+=dx*.48-dz*slot;target.z+=dz*.48+dx*slot;
+      const station=run.phase==='milling'?chain.mill:chain.bakery,yaw=-station.rotation*Math.PI/2,dx=-Math.sin(yaw),dz=-Math.cos(yaw),slot=[-.38,0,.38][chains.indexOf(chain)%3];
+      target.x+=dx*.52-dz*slot;target.z+=dz*.52+dx*slot;
     }
     const fieldSpot=workSpot(chain.field);
     const approach=run.phase==='milling'?entry(chain.mill):run.phase==='baking'?entry(chain.bakery):path.length?[...path].filter(p=>Math.hypot(p.x-fieldSpot.x,p.z-fieldSpot.z)>.001).sort((a,b)=>Math.hypot(a.x-target.x,a.z-target.z)-Math.hypot(b.x-target.x,b.z-target.z))[0]||entry(chain.field):entry(chain.field);
-    jobs.push({ fieldId: chain.field.id, phase: run.phase, target, entrance: approach, carrying: run.phase === 'to-mill' ? 'wheat' : run.phase === 'to-bakery' ? 'flour' : null, harvesting: run.phase === 'harvesting' || run.phase === 'sowing' });
+    jobs.push({ cycles:run.batches, fieldId: chain.field.id, phase: run.phase, target, entrance: approach, carrying: run.phase === 'to-mill' ? 'wheat' : run.phase === 'to-bakery' ? 'flour' : null, harvesting: run.phase === 'harvesting' || run.phase === 'sowing' });
   }
   if(jobs.some(job=>!ready||ready.has(job.fieldId)))farm.activeSeconds+=Math.min(dt,1);
   return jobs;

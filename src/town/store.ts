@@ -1,7 +1,9 @@
+import {freshVillage,validVillage,ORDERS,completeOrder} from './village';
+import {worldTime} from './world-time';
 import { levelFor } from '../domain/levels';
 import type { DataMode, ProjectUsage } from '../core/types';
 import { CATALOG, CHAPTER_COSMETICS } from './catalog';
-import { activeChapter, canPlace, canRoad, evaluate, makeBuilding, starsForChapter, starterBoard, subsidyEntitlement, key, cells, water, fromKey, bridgeSlots } from './world';
+import { activeChapter, canPlace, canRoad, evaluate, makeBuilding, starsForChapter, starterBoard, subsidyEntitlement, key, cells, water, fromKey, bridgeSlots, fishingShore } from './world';
 import { PUZZLES, freshPuzzle, puzzleStars } from './puzzles';
 import { atHour } from './world-time';
 import { freshFarm, FARM_PHASES } from './farming';
@@ -9,9 +11,9 @@ import type { Board, Building, BuildingKind, TownState } from './types';
 
 export const TOWN_KEYS = { live: 'tokenTown.slot.live.v1', demo: 'tokenTown.slot.demo.v1' };
 const META = 'tokenTown.mode.v1';
-const progressFingerprint=(s:TownState):string=>{const {revision,worldSeconds,settings,farm,...progress}=s;return JSON.stringify(progress);};
+const progressFingerprint=(s:TownState):string=>{const {revision,worldSeconds,settings,farm,village,...progress}=s;return JSON.stringify({...progress,villageProgress:{completed:village.completed,activeOrder:village.activeOrder,choices:village.choices}});};
 export function freshTown(mode: DataMode): TownState {
-  return { version: 1, mode, revision: 0, coins: 0, tokenCoins: 0, residue: 0, subsidyPaid: 0, chapterStars: [0, 0, 0, 0, 0, 0], puzzleStars: {}, projects: [], town: starterBoard(), puzzleBoards: {}, demoStep: 0, nextId: 20, tutorialDone: false, history: 'unscanned', worldSeconds: 0, farm: freshFarm(), settings: { music: true, musicVolume: .28, clockMode: 'cycle', season: 'cycle', muted: false, lighting: 'day', quality: 'medium', reducedMotion: false, cameraInput: 'trackpad' } };
+  return { version: 1, mode, revision: 0, coins: 0, tokenCoins: 0, residue: 0, subsidyPaid: 0, chapterStars: [0, 0, 0, 0, 0, 0], puzzleStars: {}, projects: [], town: starterBoard(), puzzleBoards: {}, demoStep: 0, nextId: 20, tutorialDone: false, history: 'unscanned', worldSeconds: 0, farm: freshFarm(), village:freshVillage(), settings: { music: true, musicVolume: .28, clockMode: 'cycle', season: 'cycle', muted: false, lighting: 'day', quality: 'medium', reducedMotion: false, cameraInput: 'trackpad' } };
 }
 function validBoard(board: Board): boolean {
   if (!board || !Number.isInteger(board.size) || board.size < 8 || board.size > 24 || !['valley', 'meadow', 'river'].includes(board.terrain) || !Array.isArray(board.buildings) || !Array.isArray(board.roads)) return false;
@@ -20,6 +22,7 @@ function validBoard(board: Board): boolean {
     if (!b || typeof b.id !== 'string' || ids.has(b.id) || !CATALOG[b.kind] || !Number.isInteger(b.rotation) || b.rotation < 0 || b.rotation > 3 || !Number.isInteger(b.x) || !Number.isInteger(b.z) || typeof b.placed !== 'boolean' || !Number.isInteger(b.variant) || b.variant < 0 || b.variant > 4) return false;
     ids.add(b.id);
     if (b.placed && b.kind === 'bridge' && (board.terrain === 'meadow' || b.rotation !== 0 || b.z !== (board.terrain === 'valley' ? 11 : 5) || !bridgeSlots(board).includes(b.x))) return false;
+    if (b.placed&&b.kind==='fishinghut'&&!fishingShore(board,b))return false;
     if (b.placed) for (const p of cells(b)) { const k = key(p.x, p.z); if (p.x < 0 || p.z < 0 || p.x >= board.size || p.z >= board.size || occupied.has(k) || water(board, p.x, p.z) !== (b.kind === 'bridge')) return false; occupied.add(k); }
   }
   if (board.buildings.filter(b => b.kind === 'hall' && b.placed).length !== 1) return false;
@@ -50,6 +53,7 @@ export function parseTown(raw: string | null, mode: DataMode): TownState | null 
     if (!s.farm || !s.farm.runs || Array.isArray(s.farm.runs) || typeof s.farm.runs !== 'object' || [s.farm.wheat,s.farm.flour,s.farm.bread,s.farm.batches].some(n=>!Number.isSafeInteger(n)||n<0)) return null;
     if(!Number.isFinite(s.farm.activeSeconds)||s.farm.activeSeconds<0)return null;
     if (Object.values(s.farm.runs).some(r=>!r||!FARM_PHASES.includes(r.phase)||!Number.isFinite(r.elapsed)||r.elapsed<0||typeof r.millId!=='string'||typeof r.bakeryId!=='string'||!Number.isSafeInteger(r.batches)||r.batches<0)) return null;
+    s.village ??= freshVillage();if(!validVillage(s.village))return null;
     return s;
   } catch { return null; }
 }
@@ -94,7 +98,7 @@ export class TownStore {
     this.persistedProgress=progressFingerprint(this.state);
     if (typeof window !== 'undefined') window.addEventListener('storage', e => {
       if (e.key === TOWN_KEYS[this.state.mode] && e.newValue) { const s = parseTown(e.newValue, this.state.mode); if (s&&s.revision>this.state.revision) {
-        if(progressFingerprint(s)===this.persistedProgress){const preferences=JSON.stringify(this.state.settings)!==JSON.stringify(s.settings);this.state.revision=s.revision;this.state.worldSeconds=s.worldSeconds;if(s.farm.activeSeconds>this.state.farm.activeSeconds)this.state.farm=s.farm;this.state.settings=s.settings;if(preferences)this.emit();}
+        if(progressFingerprint(s)===this.persistedProgress){const preferences=JSON.stringify(this.state.settings)!==JSON.stringify(s.settings);this.state.revision=s.revision;this.state.worldSeconds=s.worldSeconds;if(s.farm.activeSeconds>this.state.farm.activeSeconds)this.state.farm=s.farm;if(s.village.activeSeconds>this.state.village.activeSeconds)this.state.village=s.village;this.state.settings=s.settings;if(preferences)this.emit();}
         else{this.state=s;this.persistedProgress=progressFingerprint(s);this.conflict=true;this.emit();}
       } }
     });
@@ -102,24 +106,25 @@ export class TownStore {
   private read(mode: DataMode): TownState { try { return parseTown(localStorage.getItem(TOWN_KEYS[mode]), mode) || freshTown(mode); } catch { return freshTown(mode); } }
   subscribe(f: () => void): () => void { this.listeners.add(f); return () => this.listeners.delete(f); }
   private emit(): void { for (const f of this.listeners) f(); }
-  commit(notify=true): void {
+  commit(notify=true): boolean {
     // Read the latest revision before writing; another tab never silently loses progress.
     try {
       const disk = parseTown(localStorage.getItem(TOWN_KEYS[this.state.mode]), this.state.mode);
       if (disk && disk.revision > this.state.revision) {
-        if(progressFingerprint(disk)===this.persistedProgress){this.state.revision=disk.revision;if(disk.farm.activeSeconds>this.state.farm.activeSeconds)this.state.farm=disk.farm;}
-        else{this.state=disk;this.persistedProgress=progressFingerprint(disk);this.conflict=true;this.emit();return;}
+        if(progressFingerprint(disk)===this.persistedProgress){this.state.revision=disk.revision;if(disk.farm.activeSeconds>this.state.farm.activeSeconds)this.state.farm=disk.farm;if(disk.village.activeSeconds>this.state.village.activeSeconds)this.state.village=disk.village;}
+        else{this.state=disk;this.persistedProgress=progressFingerprint(disk);this.conflict=true;this.emit();return false;}
       }
       this.state.revision++; localStorage.setItem(TOWN_KEYS[this.state.mode], JSON.stringify(this.state)); localStorage.setItem(META, this.state.mode); this.persistenceError = '';
       this.persistedProgress=progressFingerprint(this.state);
     } catch { this.persistenceError = '浏览器未能保存进度，请在设置中导出存档'; }
-    if(notify)this.emit();
+    if(notify)this.emit();return !this.persistenceError;
   }
   setMode(mode: DataMode): void { if (mode === this.state.mode) return; this.state = this.read(mode);this.persistedProgress=progressFingerprint(this.state); this.activePuzzle = null; this.conflict = false; this.commit(); }
   get board(): Board { return this.activePuzzle ? this.state.puzzleBoards[this.activePuzzle] : this.state.town; }
   get puzzle() { return PUZZLES.find(p => p.id === this.activePuzzle); }
   unlockedKind(kind: BuildingKind): boolean {
     if (this.activePuzzle) return this.board.buildings.some(b => b.kind === kind);
+    const order=ORDERS.find(o=>o.reward===kind);if(order)return (this.state.village.completed[order.id]||0)>0;
     const p = PUZZLES.find(p => p.reward === kind); return p ? (this.state.puzzleStars[p.id] || 0) > 0 : CATALOG[kind].chapter <= activeChapter(this.state);
   }
   sync(totals: ProjectUsage[]): TownSync { const result = syncTown(this.state, totals); this.commit(); return result; }
@@ -170,6 +175,9 @@ export class TownStore {
     const p = this.puzzle; if (!p) return null; const stars = puzzleStars(p, evaluate(this.board)); const previous = this.state.puzzleStars[p.id] || 0;
     if (stars <= previous) return null; this.state.puzzleStars[p.id] = stars; this.commit(); return { stars, first: previous === 0 };
   }
+  chooseProduction(id:string,choice:string):void {const run=this.state.village.runs[id];if(!run||!['milk','cheese','carrot','potato','soup','fish'].includes(choice))return;this.state.village.choices[id]=choice;if(run.phase==='work'&&run.elapsed===0&&!Object.keys(run.cargo).length)run.choice=choice;else run.nextChoice=choice;this.commit();}
+  selectOrder(id:string|null):void {if(this.activePuzzle)return;if(id===null||ORDERS.some(o=>o.id===id)){this.state.village.activeOrder=id;this.commit();}}
+  fulfillOrder(id:string):string {if(this.activePuzzle)return '请回到主城完成订单';if(!this.commit(false))return '城镇记录已更新，请再试一次';const problem=completeOrder(this.state,evaluate(this.state.town),id,worldTime(this.state.worldSeconds,this.state.settings).season);if(!problem){this.state.village.activeSeconds+=.001;this.commit();}return problem;}
   updateSettings(update: Partial<TownState['settings']>): void { Object.assign(this.state.settings, update); this.commit(); }
   clock(seconds:number,save=false):void { this.state.worldSeconds=seconds; if(save)this.commit(false); }
   visitHour(hour:number):void { this.state.worldSeconds=atHour(this.state.worldSeconds,hour); this.state.settings.clockMode='cycle'; this.commit(); }

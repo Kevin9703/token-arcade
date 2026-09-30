@@ -1,14 +1,22 @@
 import type { BuildingDefinition, BuildingKind, Chapter } from './types';
 
 export const CATALOG: Record<BuildingKind, BuildingDefinition> = {
+  vegetablefield:{kind:'vegetablefield',name:'街坊菜地',description:'种胡萝卜或土豆，收成送往饭馆。春季胡萝卜、夏季土豆长得更快；冬季露地保留进度休耕。',cost:6,w:3,d:2,category:'production',chapter:2},
+  cowshed:{kind:'cowshed',name:'牧场牛棚',description:'照料奶牛产鲜奶，也能用一瓶鲜奶制作奶酪。送往饭馆或完成邻里订单。',cost:24,w:3,d:2,category:'production',chapter:2},
+  pigpen:{kind:'pigpen',name:'松露猪圈',description:'小猪在围栏里拱土寻找松露，供秋日丰收会使用。不宰杀动物。',cost:18,w:3,d:2,category:'production',chapter:2},
+  fishinghut:{kind:'fishinghut',name:'河边钓鱼小屋',description:'只建在河岸陆地，门朝陆地接路。村民在独立码头抛竿收鱼，再送往饭馆。',cost:28,w:2,d:2,category:'production',chapter:2},
+  restaurant:{kind:'restaurant',name:'河谷小饭馆',description:'用送达的原料烹饪土豆浓汤、奶酪拼盘或炖鱼，供应邻里订单；也提供食物服务。',cost:45,w:3,d:3,category:'services',chapter:2,service:'food',capacity:10,range:14},
+  apronstand:{kind:'apronstand',name:'邻里围裙架',description:'首次完成「送一篮面包」解锁。展示邻居们的彩色围裙。',cost:4,w:1,d:1,category:'decor',chapter:1},
+  harvesttable:{kind:'harvesttable',name:'河畔野餐长桌',description:'首次完成「准备河畔野餐」解锁，摆着果篮和餐布的木桌。',cost:8,w:2,d:1,category:'decor',chapter:1},
+  wheatbanner:{kind:'wheatbanner',name:'丰收麦穗旗',description:'首次完成「秋日丰收会」解锁，为街坊挂起麦穗和彩旗。',cost:5,w:1,d:1,category:'decor',chapter:1},
   wheatfield: { kind: 'wheatfield', name: '河岸麦田', description: '村民播种、收割，再沿道路把麦子送到风车磨坊。需要住宅、磨坊和面包店连路，最多三位村民务农。', cost: 6, w: 3, d: 2, category: 'production', chapter: 1 },
   mill: { kind: 'mill', name: '风车磨坊', description: '接收麦田送来的小麦，磨成面粉，再送往面包店。连接三处入口，粮食就会沿街流动。', cost: 32, w: 3, d: 3, category: 'production', chapter: 1 },
   hall: { kind: 'hall', name: '镇公所', description: '小镇的心脏。所有道路从这里连接起来。', cost: 0, w: 3, d: 3, category: 'landmarks', chapter: 1 },
   house: { kind: 'house', name: '河谷木屋', description: '住进十位邻居。为他们安排好道路、食物和绿地。', cost: 8, w: 2, d: 2, category: 'homes', chapter: 1 },
   bakery: { kind: 'bakery', name: '晨光面包店', description: '八格步行距离内，为六栋住宅供应新鲜面包。', cost: 20, w: 2, d: 2, category: 'services', chapter: 1, service: 'food', capacity: 6, range: 8 },
-  cafe: { kind: 'cafe', name: '转角咖啡馆', description: '十格步行距离内，为四栋住宅提供休闲服务。', cost: 30, w: 2, d: 2, category: 'services', chapter: 3, service: 'leisure', capacity: 4, range: 10 },
+  cafe: { kind: 'cafe', name: '转角咖啡馆', description: '十八格步行距离内，为八栋住宅提供休闲服务。', cost: 30, w: 2, d: 2, category: 'services', chapter: 3, service: 'leisure', capacity: 8, range: 18 },
   market: { kind: 'market', name: '河谷集市', description: '十二格步行距离内，为十二栋住宅提供食物服务。', cost: 50, w: 3, d: 3, category: 'services', chapter: 4, service: 'food', capacity: 12, range: 12 },
-  park: { kind: 'park', name: '绿荫小公园', description: '三格范围内的住宅都能享受绿地。公园也需要接通道路。', cost: 12, w: 2, d: 2, category: 'services', chapter: 1 },
+  park: { kind: 'park', name: '绿荫小公园', description: '六格范围内的住宅都能享受绿地。公园也需要接通道路。', cost: 12, w: 2, d: 2, category: 'services', chapter: 1, range: 6 },
   bridge: { kind: 'bridge', name: '河谷石桥', description: '放在河道标记的位置，连通两岸的道路。', cost: 40, w: 1, d: 2, category: 'landmarks', chapter: 4 },
   clock: { kind: 'clock', name: '河谷钟楼', description: '为繁荣的小镇留下一座共同的地标。', cost: 100, w: 3, d: 3, category: 'landmarks', chapter: 6 },
   workshop: { kind: 'workshop', name: '项目工坊', description: '属于你的 AI 项目，随 token 用量成长。', cost: 0, w: 2, d: 2, category: 'landmarks', chapter: 1 },
@@ -24,7 +32,7 @@ export const CATALOG: Record<BuildingKind, BuildingDefinition> = {
   grocer: { kind: 'grocer', name: '果蔬小铺', description: '九格步行范围内，为六户供应新鲜食物。', cost: 24, w: 2, d: 2, category: 'services', chapter: 2, service: 'food', capacity: 6, range: 9 },
   florist: { kind: 'florist', name: '花艺小铺', description: '九格步行范围内，为四户提供赏花与休闲。', cost: 26, w: 2, d: 2, category: 'services', chapter: 3, service: 'leisure', capacity: 4, range: 9 },
   library: { kind: 'library', name: '河谷书屋', description: '十格步行范围内，为六户提供阅读休闲。', cost: 42, w: 3, d: 2, category: 'services', chapter: 3, service: 'leisure', capacity: 6, range: 10 },
-  greenhouse: { kind: 'greenhouse', name: '玻璃温室', description: '带种植台、玻璃屋顶和爬藤的小花房。纯装饰。', cost: 18, w: 3, d: 2, category: 'decor', chapter: 2 },
+  greenhouse: { kind: 'greenhouse', name: '玻璃温室', description: '四季都能种胡萝卜和土豆，冬天继续为饭馆与邻里订单供应蔬菜。', cost: 18, w: 3, d: 2, category: 'production', chapter: 2 },
   granary: { kind: 'granary', name: '丰收粮仓', description: '圆形粮塔、储藏木屋和一排小麦袋。纯装饰。', cost: 16, w: 2, d: 2, category: 'decor', chapter: 2 },
   boathouse: { kind: 'boathouse', name: '河岸船屋', description: '木板平台上停着一艘小船。放在河岸陆地上布置庭院，纯装饰。', cost: 22, w: 3, d: 2, category: 'decor', chapter: 2 },
   flower: { kind: 'flower', name: '窗边花箱', description: '少走弯路 · 初次通关蓝图。', cost: 8, w: 1, d: 1, category: 'decor', chapter: 1 },
@@ -39,7 +47,7 @@ export const CHAPTERS: Chapter[] = [
   { id: 2, title: '绿荫街坊', story: '再邀请两户邻居。让街坊们出门就能遇见一片绿。', reward: '同岸扩地、转角咖啡馆', subsidy: 10 },
   { id: 3, title: '热闹市集', story: '除了面包，生活也需要一杯咖啡和朋友。', reward: '集市、石桥与对岸先遣建设区', subsidy: 15 },
   { id: 4, title: '河的另一边', story: '一座桥，把河两岸变成同一个家。', reward: '完整对岸建设区、跨河纪念配色', subsidy: 20 },
-  { id: 5, title: '紧凑而舒适', story: '十二户邻居，四十格道路。少绕一点路，多留一点绿。', reward: '河谷钟楼蓝图', subsidy: 25 },
+  { id: 5, title: '街坊的好日子', story: '让十二户邻居过上舒适的生活。道路自由延伸，绿荫与朋友就在家门外。', reward: '河谷钟楼蓝图', subsidy: 25 },
   { id: 6, title: '我们的河谷', story: '在钟声响起时，为这座小镇留下你自己的样子。', reward: '全图开放、自由发展', subsidy: 30 },
 ];
 export const STAGE_COLORS = ['#a8b6ae', '#6eabc0', '#c9978b', '#a296bf', '#d9b362'];
