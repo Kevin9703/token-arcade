@@ -14,3 +14,6 @@ __pycache__/
 
 # Player feedback stays local; public implementation plans belong in docs/ROADMAP.md.
 /docs/feedback.md
+
+# Local promotional takes and generated recorder bundle
+/art/promo/

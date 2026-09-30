@@ -2,6 +2,20 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { wheelGesture, smoothFraction, clampElevation, clampZoom, MIN_ELEVATION, MAX_ELEVATION } from '../../src/town/camera-input';
 import { freshTown, parseTown } from '../../src/town/store';
+import { keyboardPan, keyboardPanDistance } from '../../src/town/keyboard-input';
+
+test('WASD covers twelve tiles per second independent of frame rate, zoom and diagonal input', () => {
+  for (const fps of [30, 60, 120]) {
+    for (const zoom of [.52, 1, 1.45, 3.2]) {
+      const pan = keyboardPan(new Set(['w', 'd']));
+      let distance = 0;
+      for (let frame = 0; frame < fps; frame++) distance += Math.hypot(pan.x, pan.y) * keyboardPanDistance(1 / fps, zoom);
+      assert.ok(Math.abs(distance * zoom - 12) < 1e-10);
+    }
+  }
+  assert.equal(keyboardPanDistance(-1, 1), 0);
+  assert.equal(keyboardPanDistance(1 / 120, 1), .1, 'a short tap stays precise');
+});
 
 const wheel = (extra = {}) => ({ deltaX: 0, deltaY: 0, deltaMode: 0, ctrlKey: false, metaKey: false, shiftKey: false, ...extra });
 test('two-finger vertical input tilts without zoom; horizontal input orbits without roll', () => {

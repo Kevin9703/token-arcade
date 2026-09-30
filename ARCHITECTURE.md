@@ -78,3 +78,5 @@ Claude Code 统计 input + output + cache creation，排除 cache read。Codex �
 - `npm run typecheck` / `npm test`：TypeScript 与 Node 测试；测试经 esbuild 编译，不依赖 WebGL。
 
 浏览器用于验证模型、放置、镜头、音频和居民动作，必须使用独立地址或测试存档，保留用户进度。具体结果与尚未覆盖的范围统一记录在 [QA](docs/QA.md)。
+
+宣传片工具位于 `src/promo/` 与 `scripts/promo-server.mjs`，在独立本机端口使用虚构、仅驻留内存的城镇。通过可选的 `SceneEvents.rendered` 回调在实际 WebGL 帧完成后合成字幕并录制画布；主游戏不绑定该回调。录制、加速时钟与剪辑不会进入玩家存档或奖励计算。详见 [录制流程](docs/PROMO.md)。

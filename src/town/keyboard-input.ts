@@ -9,3 +9,8 @@ export function keyboardPan(keys: Set<string>): { x: number; y: number } {
   const x = Number(keys.has('d')) - Number(keys.has('a')), y = Number(keys.has('w')) - Number(keys.has('s'));
   const length = Math.hypot(x, y) || 1; return { x: x / length, y: y / length };
 }
+
+// Scale world distance with zoom to keep screen travel consistent.
+export function keyboardPanDistance(seconds: number, zoom: number): number {
+  return Math.max(0, seconds) * 12 / zoom;
+}

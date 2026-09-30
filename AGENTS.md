@@ -30,7 +30,7 @@ During active development, read local `docs/feedback.md` when present at the sta
 ## Controls and presentation
 
 - Choose or drag a catalog building: its visible model follows the pointer, click/drop places it. **Q/E rotate the building while placing**; R is an alias. Esc or right-click cancels. Coordinate input is optional accessibility support.
-- **WASD pans the camera**, including during placement. Outside placement, hold Q/E or camera arrows to turn continuously; release stops. Clear held input on blur, hidden tabs and form focus. Never intercept typing or browser shortcuts.
+- **WASD pans the camera**, including during placement, at 12 tiles/second at zoom 1; compensate for zoom and normalize diagonal movement. Outside placement, hold Q/E or camera arrows to turn continuously; release stops. Clear held input on blur, hidden tabs and form focus. Never intercept typing or browser shortcuts.
 - Trackpad: two-finger vertical scroll changes elevation, horizontal scroll rotates, pinch zooms, Shift + scroll pans. Mouse controls remain selectable. Camera changes stay smooth; no hard jumps.
 - Original complete 3D models are the preferred style. Shops must have distinct silhouettes and structure, not merely recolored cottages. Inspect all sides, ground contact, doors and footprints. Hinges, crop patches and mill fans remain articulated in GLB exports.
 - Curated Kenney CC0 scenery is allowed with provenance; the rejected modular house assembly must not return. Preserve the user's open Blender scene. Use scripts/headless exports for reproducible asset work.

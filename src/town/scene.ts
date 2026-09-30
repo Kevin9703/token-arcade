@@ -15,10 +15,11 @@ import { SeasonPalette } from './seasons';
 import { ResidentLife, homeForBuilding, type ResidentSeat } from './resident-life';
 import { farmChains, farmDuration, tickFarm, roadRoute, FARM_LABELS, bakeryMaterialLabel, type FarmChain } from './farming';
 import { SeasonalMusic } from './music';
+import { keyboardPanDistance } from './keyboard-input';
 import type { Board, BuildingKind, Cell, Evaluation, TownState } from './types';
 
 export type Tool = 'inspect' | 'road' | 'erase' | 'place' | 'move';
-export interface SceneEvents { select(id: string | null): void; cell(x: number, z: number): void; hover(cell: Cell | null): void; strokeEnd(): void; cancel(): void; assetsReady?(): void; clock?(seconds:number,save:boolean):void }
+export interface SceneEvents { select(id: string | null): void; cell(x: number, z: number): void; hover(cell: Cell | null): void; strokeEnd(): void; cancel(): void; assetsReady?(): void; clock?(seconds:number,save:boolean):void; rendered?(time:number):void }
 type Walker = { group: T.Group; body:T.Group; cargo:T.Group; seated?:T.Group; phase: number; limbs: T.Object3D[] };
 type Particle = { mesh: T.Mesh; velocity: T.Vector3; life: number; duration: number };
 const tempObject = new T.Object3D();
@@ -281,7 +282,7 @@ export class TownScene {
   private keyboardApplied=false;
   holdPan(x: number, y: number): void {
     // Very short taps between animation frames still give a small precise move.
-    if(!x&&!y&&this.keyboardMove.lengthSq()&&!this.keyboardApplied)this.panKeyboard(.025/this.camera.zoom);
+    if(!x&&!y&&this.keyboardMove.lengthSq()&&!this.keyboardApplied)this.panKeyboard(keyboardPanDistance(1/120,this.camera.zoom));
     if(this.keyboardMove.x!==x||this.keyboardMove.y!==y)this.keyboardApplied=false;
     this.keyboardMove.set(x, y); if (x || y) this.focusTarget = undefined;
   }
@@ -365,7 +366,7 @@ export class TownScene {
     const oldPosition = this.camera.position.clone(), oldTarget = this.controls.target.clone(), oldZoom = this.camera.zoom;
     const smooth = smoothFraction(dt, this.reduced);
     if (this.keyboardMove.lengthSq()) {
-      this.panKeyboard(dt*5/this.camera.zoom);
+      this.panKeyboard(keyboardPanDistance(dt,this.camera.zoom));
     }
     if (this.focusTarget) { const delta = this.focusTarget.clone().sub(this.controls.target).multiplyScalar(smoothFraction(dt, this.reduced, 10)); this.controls.target.add(delta); this.camera.position.add(delta); if (this.focusTarget.distanceToSquared(this.controls.target) < .00000025) this.focusTarget = undefined; }
     if (this.orbitDirection) this.orbitSpeed = T.MathUtils.lerp(this.orbitSpeed, this.orbitDirection * .85, 1 - Math.exp(-dt * 12));
@@ -401,6 +402,7 @@ export class TownScene {
       for (const puff of [...this.smoke.children] as T.Mesh[]) { puff.userData.life += dt; puff.position.y += dt * .26; puff.position.x += dt * .12; puff.scale.setScalar(1 + puff.userData.life * .6); (puff.material as T.MeshBasicMaterial).opacity = Math.max(0, .45 - puff.userData.life * .14); if (puff.userData.life > 3.2) { this.smoke.remove(puff); puff.geometry.dispose(); (puff.material as T.Material).dispose(); } }
     }
     this.renderer.render(this.scene, this.camera);
+    this.events.rendered?.(time);
     this.canvas.dataset.cameraAngle = String(Math.round(Math.atan2(this.camera.position.x - this.controls.target.x, this.camera.position.z - this.controls.target.z) * 1800 / Math.PI) / 10);
     this.canvas.dataset.cameraElevation = String(Math.round(this.elevation() * 1800 / Math.PI) / 10); this.canvas.dataset.cameraZoom = this.camera.zoom.toFixed(4);
     this.canvas.dataset.cameraTarget = `${this.controls.target.x.toFixed(3)},${this.controls.target.z.toFixed(3)}`;
