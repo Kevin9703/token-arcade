@@ -123,5 +123,3 @@ npm run build
 - [宣传片录制与剪辑](docs/PROMO.md)
 
 代码与原创模型使用 MIT 许可。导入的 Kenney 植物和道具使用 CC0，来源与原许可随资产保留。四季音乐由 Kevin MacLeod 创作，使用 CC BY 4.0；录音本地随游戏提供，曲目、署名及改动记录见音乐说明。
-
-旧版街机厅保留在 [`codex/legacy-arcade`](https://github.com/Kevin9703/token-arcade/tree/codex/legacy-arcade) 分支；`main` 继续开发河谷小镇。
