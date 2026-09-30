@@ -59,3 +59,20 @@ final result: passed
 
 - P3: Dedicated windmill / leaf-fall animation and further roof / yard variety could deepen the scene.
 - Physical touchpad feel, phone widths and arbitrary dense-plaza traffic remain manual test gaps; no known actionable P0/P1/P2 issue was found in the tested town and fixtures.
+
+## Farming, seasonal music and controls — 2026-09-30
+
+Tested on a separate local origin (`127.0.0.1:4174`) using `art/qa/farm-demo.json`; the user's `4173` saves were preserved. Default browser viewport was 1280 × 720, without an override.
+
+- A connected 3 × 2 field and 3 × 3 mill use the existing bakery. The browser completed repeated full cycles, reached 28 loaves, and retained the 362-coin balance. Cargo, crop height, mill blades and task labels updated. Production resumed after refreshing mid-cycle.
+- Selecting nighttime moved all nine residents, including the farmer and seated neighbor, indoors. All reached `sleeping`; the production phase, elapsed time and 16-loaf inventory stayed paused. Returning to daylight resumed their work.
+- Added road tile (17,16): actor count stayed nine, all IDs and accumulated walking remained intact, displacement was 0–0.195 tiles during the observation and no actor teleported or restarted its gait.
+- Q changed the wheat preview rotation from 0 to 3 while the camera remained 37.9°. E restored the orientation; Esc cancelled without spending coins. D visibly moved the camera target; short taps now register even between render frames.
+- Spring, summer, autumn and winter recordings played from local MP3 files. Season changes briefly showed two playing audio channels during the crossfade; disabling background music paused playback. Credits are available as an HTML page, with source hashes and license notes shipped alongside audio.
+- Medium quality showed 59–60 FPS on the test machine. This is observed local performance, not a benchmark of every laptop. Browser error/warning logs were empty.
+- Farm statuses were moved above the longer explanation so the current task is visible at the default viewport. Settings preserve panel scroll and focused controls during updates.
+- `npm run typecheck`, `npm test` (205 passing), and `npm run build` passed. Meaningful regression coverage includes route outages, night pauses, stocks, save migration, inventory ownership, road-edit continuity, a farmer's bedtime queue, per-bakery material messages, and multi-window farm checkpoints.
+
+Screenshots: `art/qa/farm-flow-playtest.png`, `art/qa/farm-assets-front.png`, `art/qa/farm-assets-back.png`. Original models were inspected from front and back; no changes were made to the user's open Blender scene.
+
+Read the current `docs/feedback.md` after finishing the batch. Missing-flour feedback is implemented; restaurant/livestock/fishing and consumption goals are scoped in `docs/FEEDBACK_DECISIONS.md` as the next batch, not represented as completed features.

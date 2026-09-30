@@ -76,3 +76,11 @@ macOS 本机 executable 为 `/Applications/Blender.app/Contents/MacOS/Blender`�
 坐姿有水平大腿、弯膝小腿和前伸鞋面；bench / park / gazebo 使用同一个座面高度约定及各自变换后的座位锚点。
 
 已有 Blender GUI 中的未保存编辑完全保留；本轮仅从 TypeScript 导出 GLB，不重建旧 `.blend` 文件。新建筑导入 Blender 时应另存独立工程，以保留艺术家改动。
+
+## Farm prefabs (2026-09-30)
+
+`wheatfield-0..3.glb` are 3 × 2 plots with tilled soil, wheat rows, a clear central working lane, boundary posts, harvest crates and tools. The named `crop-patch` articulation changes growth height without rebuilding the field.
+
+`mill-0..3.glb` are 3 × 3 stone windmills with a tapered tower, stone courses, conical roof, arched window, wooden store wing, flour sacks and four lattice sail blades. `mill-fan` survives mesh packing and GLB export as a rotating node. This production mill is distinct from the existing small ornamental `windmill`.
+
+Use `/asset-preview.html?farm=1` and `?farm=1&view=back` for front/back asset review. Music credits and source hashes are shipped in `public/assets/town/audio/`; they are separate licensed works, not original models.

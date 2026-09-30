@@ -243,9 +243,40 @@ function communityBuilding(g: T.Group, kind: BuildingKind, variant: number): voi
     cylinder(g, -1.04, .36, .73, .14, .30, '#957750'); return;
   }
 }
+function farmBuilding(g:T.Group,kind:'wheatfield'|'mill',variant:number):void {
+  if(kind==='wheatfield') {
+    box(g,0,.045,0,2.9,.09,1.9,'#927554');
+    for(const z of [-.88,.88])box(g,0,.10,z,2.85,.085,.055,'#af9872');
+    for(const x of [-1.4,1.4])for(const z of [-.88,.88]){box(g,x,.24,z,.065,.46,.065,palette.wood);box(g,x,.46,z,.10,.05,.10,'#b29771');}
+    // Leave the central farm lane clear for the worker and wheelbarrow.
+    const crop=new T.Group();crop.name='crop-patch';crop.userData.movingPart=true;crop.position.y=.1;g.add(crop);
+    for(const side of [-1,1])for(let row=0;row<4;row++)for(let j=0;j<5;j++) {
+      const x=side*(.4+row*.23),z=(j-2)*.31;
+      box(g,x,.098,z,.028,.018,.22,'#70593f');
+      for(const off of [-.04,.035]){box(crop,x+off,.21,z,.017,.4,.017,'#96a55b');
+        const ear=box(crop,x+off,.41,z,.060,.15,.048,['#dfbb6c','#d6aa56','#d9bd7a','#e1c78b'][variant%4]);ear.rotation.z=side*.13;
+      }
+    }
+    box(g,1.11,.23,.69,.38,.16,.28,'#987953');for(let i=0;i<3;i++)box(g,1.11,.35+i*.02,.68,.30,.08,.20,'#d6b777');
+    const tool=box(g,-1.34,.33,.68,.022,.58,.023,palette.wood);tool.rotation.z=.25;box(g,-1.40,.56,.68,.20,.024,.065,'#7b8272');
+    return;
+  }
+  box(g,0,.09,0,2.86,.18,2.86,'#b9b09a');
+  const tower=new T.Mesh(new T.CylinderGeometry(.56,.81,1.90,16),material('#ddccb0'));tower.position.set(-.18,1.03,-.22);tower.castShadow=true;tower.receiveShadow=true;g.add(tower);
+  for(let row=0;row<8;row++)for(let j=0;j<16;j++){const a=j*Math.PI/8+(row%2)*Math.PI/16,r=.81-row*.026;const stone=box(g,-.18+Math.sin(a)*r,.25+row*.2,-.22+Math.cos(a)*r,Math.PI*r/8*.87,.17,.055,row%2?'#c6b79d':'#bcae96');stone.rotation.y=a;}
+  const cap=new T.Mesh(new T.ConeGeometry(.84,.85,8),seasonalMaterial(['#8f6550','#778771','#6b8290','#a48a62'][variant%4],'roof'));cap.position.set(-.18,2.4,-.22);cap.castShadow=true;g.add(cap);
+  box(g,-.18,.57,.55,.40,.81,.065,palette.wood);box(g,-.18,.16,.74,.65,.11,.36,'#a79c87');archedWindow(g,-.18,1.14,.49,.36,.47);
+  const fan=new T.Group();fan.name='mill-fan';fan.userData.movingPart=true;fan.position.set(-.18,2.20,.71);g.add(fan);
+  for(let k=0;k<4;k++){const blade=new T.Group();blade.rotation.z=k*Math.PI/2;fan.add(blade);box(blade,0,.72,0,.055,1.55,.055,palette.beam);box(blade,.12,.92,.025,.28,.90,.035,'#e0d1ab');for(let j=0;j<5;j++)box(blade,.12,.58+j*.17,.052,.29,.027,.02,'#a89062');}
+  cylinder(fan,0,0,.06,.11,.14,'#897358').rotation.x=Math.PI/2;
+  const store=new T.Group();store.position.set(.85,0,-.35);g.add(store);box(store,0,.49,0,.68,.82,1.4,'#a58860');roof(store,.80,1.51,.99,'#8c7759');
+  for(const z of [.85,1.09]){cylinder(g,.63,.24,z,.14,.39,'#cbbc93',.11);box(g,.63,.44,z,.13,.08,.13,'#a59475');}
+  box(g,-1.02,.30,-.99,.47,.47,.42,'#97764c');for(const y of [.14,.30,.46])box(g,-1.02,y,-.76,.50,.055,.055,'#b29870');
+}
 export function buildingModel(kind: BuildingKind, variant = 0, stage = 0): T.Group {
   const g = new T.Group(); g.name = `${kind}-${variant}-${stage}`;
-  if (['bakery','cafe','grocer','florist'].includes(kind)) retailBuilding(g,kind as 'bakery'|'cafe'|'grocer'|'florist',variant);
+  if(kind==='wheatfield'||kind==='mill')farmBuilding(g,kind,variant);
+  else if (['bakery','cafe','grocer','florist'].includes(kind)) retailBuilding(g,kind as 'bakery'|'cafe'|'grocer'|'florist',variant);
   else if (['library', 'greenhouse', 'granary', 'boathouse'].includes(kind)) communityBuilding(g, kind, variant);
   else if (kind === 'house') cottage(g, variant, kind);
   else if (kind === 'hall') {

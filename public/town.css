@@ -28,3 +28,15 @@
 .small-label,.service-summary span,.setting-row,.goal-meta{color:#63715c}.catalog-price{color:#796438}.connection-status{color:#875342}.connection-status.connected,.needs-list .met b{color:#456952}.needs-list b{color:#63715c}
 .world-clock{font-variant-numeric:tabular-nums;margin-left:8px;color:#4c6355;white-space:nowrap;font-size:11px}.mode-indicator{flex-wrap:wrap;row-gap:6px}.lighting-buttons{flex-wrap:wrap}.lighting-buttons button{min-height:38px}@media(max-width:720px){.world-clock{font-size:9px;margin-left:0}.mode-indicator .last-sync{display:none}}
 #town-ui.night .brand{color:#eef1dc;text-shadow:0 1px 3px #172535}#town-ui.night .brand span,#town-ui.night .mode-indicator,#town-ui.night .world-clock,#town-ui.night .mode-indicator .text-button,#town-ui.night .last-sync{color:#e0e7d5}#town-ui.night .camera-hint{color:#edf0df;text-shadow:0 1px 3px #172535}
+
+/* A small farm ledger sits beside the town; workers and crops remain the focus. */
+.farm-flow { display:flex; align-items:center; justify-content:space-between; gap:8px; background:#e8edde; padding:14px 12px; border-radius:12px; font-size:14px; }
+.farm-flow b { color:#9b9e75; }
+.farm-stocks { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin:16px 0; }
+.farm-stocks div { display:flex; flex-direction:column; gap:8px; padding:12px; border:1px solid #d9dfce; border-radius:12px; }
+.farm-stocks span { font-size:12px; color:#71836e; }.farm-stocks b { font-size:24px; }
+.farm-list { display:grid; gap:8px; margin:16px 0; }.farm-row { display:flex; width:100%; align-items:center; text-align:left; gap:10px; padding:9px; border-radius:12px; background:#eef0e5; }
+.farm-row img { width:64px; height:64px; }.farm-row span { display:flex; flex:1; flex-direction:column; gap:5px; }.farm-row small { color:#71836e; line-height:1.5; }
+.production-status { display:grid; gap:7px; background:#e9ecd9; padding:12px; border-radius:10px; font-size:14px; }.production-status small { color:#728068; }
+.music-credit { font-size:11px; color:#7a836f; line-height:1.7; }.music-credit a { color:inherit; }
+.panel-tabs { flex-wrap:wrap; }

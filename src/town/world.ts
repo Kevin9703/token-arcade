@@ -2,6 +2,7 @@ import { CATALOG, CHAPTERS } from './catalog';
 import type { Board, Building, BuildingKind, Cell, Evaluation, Goal, TownState } from './types';
 
 export const key = (x: number, z: number): string => `${x},${z}`;
+export const STARTER_WIDTH = 18;
 export const fromKey = (s: string): Cell => { const [x, z] = s.split(',').map(Number); return { x, z }; };
 export const activeChapter = (s: TownState): number => Math.min(6, s.chapterStars.findIndex(n => n === 0) < 0 ? 7 : s.chapterStars.findIndex(n => n === 0) + 1);
 export function dimensions(b: Pick<Building, 'kind' | 'rotation'>): { w: number; d: number } {
@@ -24,7 +25,7 @@ export const bridgeSlots = (board: Board): number[] => board.terrain === 'valley
 export function unlocked(s: TownState, board: Board, x: number, z: number): boolean {
   if (x < 0 || z < 0 || x >= board.size || z >= board.size) return false;
   if (board.terrain !== 'valley') return true;
-  if (z >= 13) return x < 12 || s.chapterStars[1] > 0;
+  if (z >= 13) return x < STARTER_WIDTH || s.chapterStars[1] > 0;
   if (z >= 11) return s.chapterStars[2] > 0;
   return s.chapterStars[5] > 0 || (x < 12 && (s.chapterStars[3] > 0 || s.chapterStars[2] > 0 && z >= 3));
 }

@@ -1,6 +1,9 @@
 import type { DataMode, ProjectUsage } from '../core/types';
 
-export type BuildingKind = 'hall' | 'house' | 'bakery' | 'cafe' | 'market' | 'park' | 'bridge' | 'clock' | 'workshop' | 'tree' | 'bench' | 'lamp' | 'flower' | 'picnic' | 'birdhouse' | 'windmill' | 'statue' | 'gardenlamp' | 'fountain' | 'cart' | 'hedge' | 'barrel' | 'planter' | 'gazebo' | 'grocer' | 'florist' | 'library' | 'greenhouse' | 'granary' | 'boathouse';
+export type BuildingKind = 'hall' | 'house' | 'bakery' | 'cafe' | 'market' | 'park' | 'bridge' | 'clock' | 'workshop' | 'tree' | 'bench' | 'lamp' | 'flower' | 'picnic' | 'birdhouse' | 'windmill' | 'statue' | 'gardenlamp' | 'fountain' | 'cart' | 'hedge' | 'barrel' | 'planter' | 'gazebo' | 'grocer' | 'florist' | 'library' | 'greenhouse' | 'granary' | 'boathouse' | 'wheatfield' | 'mill';
+export type FarmPhase = 'sowing' | 'growing' | 'harvesting' | 'to-mill' | 'milling' | 'to-bakery' | 'baking' | 'returning';
+export interface FarmRun { phase: FarmPhase; elapsed: number; millId: string; bakeryId: string; batches: number }
+export interface FarmState { runs: Record<string, FarmRun>; wheat: number; flour: number; bread: number; batches: number; activeSeconds:number }
 export interface Cell { x: number; z: number }
 export interface Building extends Cell { id: string; kind: BuildingKind; rotation: number; placed: boolean; variant: number; projectId?: string }
 export interface Board { size: number; terrain: 'valley' | 'meadow' | 'river'; buildings: Building[]; roads: string[] }
@@ -12,11 +15,12 @@ export interface TownState {
   town: Board; puzzleBoards: Record<string, Board>; demoStep: number; nextId: number;
   tutorialDone: boolean; history: 'unscanned' | 'empty' | 'ready';
   worldSeconds: number;
-  settings: { muted: boolean; lighting: 'day' | 'sunset' | 'night'; clockMode: 'cycle' | 'fixed'; season: 'cycle' | 'spring' | 'summer' | 'autumn' | 'winter'; quality: 'high' | 'medium' | 'low'; reducedMotion: boolean; cameraInput: 'trackpad' | 'mouse' };
+  farm: FarmState;
+  settings: { music: boolean; musicVolume: number; muted: boolean; lighting: 'day' | 'sunset' | 'night'; clockMode: 'cycle' | 'fixed'; season: 'cycle' | 'spring' | 'summer' | 'autumn' | 'winter'; quality: 'high' | 'medium' | 'low'; reducedMotion: boolean; cameraInput: 'trackpad' | 'mouse' };
 }
 export interface BuildingDefinition {
   kind: BuildingKind; name: string; description: string; cost: number; w: number; d: number;
-  category: 'homes' | 'services' | 'landmarks' | 'decor'; chapter: number;
+  category: 'homes' | 'services' | 'landmarks' | 'decor' | 'production'; chapter: number;
   service?: 'food' | 'leisure'; capacity?: number; range?: number;
 }
 export interface BuildingStatus { connected: boolean; entrance: Cell; food: string | null; leisure: string | null; green: boolean; foodDistance?: number; leisureDistance?: number }

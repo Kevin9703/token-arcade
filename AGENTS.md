@@ -1,21 +1,41 @@
-# Codex Task Brief — Token Town
+# Codex Task Brief — Token Town / 河谷小镇
 
-Implement the approved 3D river valley town game. Read `docs/TOKEN_TOWN.md` and `docs/TOWN_3D_ASSETS.md`; older pixel arcade documents are historical references.
+This project is a cozy **3D river valley town game**, built with TypeScript and Three.js. The former pixel arcade has been retired from the main experience. Do not implement new arcade rooms, capsule machines, prize walls, or pixel UI. Historical files and saves may remain for compatibility, but must not guide new work.
 
-- Main entry is `src/town/main.ts`: TypeScript + Three.js, orthographic town view, DOM interface.
-- Preserve local Claude Code / Codex scanners and `GET /api/usage`.
-- Tokens are the only external reward input. Never add commits, tests, PRs or quality scoring. Do not expose conversation histories.
-- 10,000 newly credited tokens = 1 coin, carry residue, monotonic per-project high-water, no workshop multiplier.
-- Chapters grant one-time subsidy entitlements; paid subsidy is capped at 20% of token coins. Keep pending entitlement.
-- Main town and fixed-inventory puzzles have separate boards; puzzles never change main coins.
-- Buildings are permanent inventory instances. Moving, rotation, roads and storage are free and cannot duplicate objects.
-- Live / demo saves are independent `tokenTown` slots. Preserve all original arcade saves and source.
-- The town stays the main view. Choose or drag a building from the catalog; visible model follows the mouse, click/drop places, R rotates, right-click / Esc cancels. Coordinate input is optional accessibility support.
-- Hold Q / E or camera controls for continuous smooth rotation; release stops. Never return to hard view jumps.
-- Buildings currently use the original complete GLBs. Curated Kenney CC0 trees / props use `scripts/build-curated-town.py`; retain provenance and licensing. The modular house assembly was rejected and removed. The user subsequently chose our own models. Continue original modeling; each shop needs a distinct silhouette and structure, not merely a recolored cottage. Visually inspect all sides, ground contact, door / road access and footprint. Original Blender workflow lives in `scripts/blender-town-library.py`.
-- Automatic day/night lasts six minutes per day; seasons cycle every three days. Persist world time without offline progress. Residents animate doors, sleep indoors and rejoin reserved pavement slots in the morning. Clock-only checkpoints must never cause a gameplay conflict or affect rewards.
-- Keep rules independent of render/animation and validate six chapters / six puzzles with achievable three-star layouts.
-- Run `npm run typecheck`, `npm test`, `npm run build`, plus browser checks appropriate to changes.
-- Do not reset or clear the user's saves while testing. Use isolated demo data and preserve user-owned untracked files.
+Read `docs/TOKEN_TOWN.md` and `docs/TOWN_3D_ASSETS.md` before changing the game. During active development, read `docs/feedback.md` at the start of work, after finishing the current batch, and before committing. Preserve the user's feedback text; record implementation decisions separately.
+
+## Product and economy
+
+- `src/town/main.ts` is the main entry. The town itself occupies the main screen; DOM panels support building and planning rather than becoming an analytics dashboard.
+- Preserve local Claude Code / Codex scanners and `GET /api/usage`. Tokens are the only external reward input. Never score commits, tests, docs, PRs or work quality, and never display conversation history.
+- 10,000 newly credited tokens = one coin. Carry fractional residue and monotonic per-project high-water. Workshops have 50 levels and five visual stages, with no coin multiplier.
+- Chapter subsidies are one-time entitlements, paid up to 20% of token coins; retain unpaid entitlement for later settlement.
+- Town and fixed-inventory planning puzzles have separate boards. Puzzles never spend or generate main-town coins.
+- Buildings remain permanent inventory instances. Roads, movement, rotation and storage are free and cannot duplicate objects.
+- Real and demo saves use independent `tokenTown` slots. Migrate new optional state without changing the user's balance, inventory, layout or unlocks. Preserve historical saves.
+
+## Town, villagers and production
+
+- The main map is 24 × 24. Start with the south bank's first 18 columns; chapter two opens the remaining south-bank land. Northern districts still follow chapter progression.
+- Housing and shops connect to the town hall through their actual rotated entrance. Food and leisure use shortest road distance and stable capacity allocation. Park coverage uses the nearest footprint edges within three tiles. Goals count unique serviced homes, never the number of shops or parks.
+- Keep gameplay rules separate from rendering. Retain solvable six-chapter and six-puzzle progression with meaningful three-star layouts.
+- Wheat fields → windmill mills → bakeries form a visible, light production loop. Existing villagers sow, harvest, carry wheat, mill flour and deliver it for baking. Crops, cargo and mill blades animate; the farm ledger persists. No automatic coin generation, maintenance fee or offline punishment.
+- At most three farmers work; road outages pause their chain. Production waits for the worker to reach the job, pauses at night, and resumes without duplicating goods. Show missing-material and disconnected-route explanations.
+- Six minutes per day; seasons cycle every three days. Persist time without offline progress. Villagers open doors, enter homes, sleep inside and rejoin safe walking lanes in the morning.
+- Road edits must preserve resident objects, positions, gait, seats and bedtime state. Recalculate routes smoothly; never recreate the whole crowd for every painted tile.
+- Time/farm-only checkpoints must not masquerade as gameplay conflicts or alter token rewards.
+
+## Controls and presentation
+
+- Choose or drag a catalog building: its visible model follows the pointer, click/drop places it. **Q/E rotate the building while placing**; R is an alias. Esc or right-click cancels. Coordinate input is optional accessibility support.
+- **WASD pans the camera**, including during placement. Outside placement, hold Q/E or camera arrows to turn continuously; release stops. Clear held input on blur, hidden tabs and form focus. Never intercept typing or browser shortcuts.
+- Trackpad: two-finger vertical scroll changes elevation, horizontal scroll rotates, pinch zooms, Shift + scroll pans. Mouse controls remain selectable. Camera changes stay smooth; no hard jumps.
+- Original complete 3D models are the preferred style. Shops must have distinct silhouettes and structure, not merely recolored cottages. Inspect all sides, ground contact, doors and footprints. Hinges, crop patches and mill fans remain articulated in GLB exports.
+- Curated Kenney CC0 scenery is allowed with provenance; the rejected modular house assembly must not return. Preserve the user's open Blender scene. Use scripts/headless exports for reproducible asset work.
+- Seasonal background music uses local, licensed recordings, starts after a user gesture, crossfades at season/loop transitions, and has independent volume controls. Preserve attribution and licenses in the shipped assets. Respect mute, reduced motion and hidden-tab pause.
+
+## Validation
+
+Run `npm run typecheck`, `npm test`, and `npm run build`; add meaningful tests for changed rules and use browser checks for changed interactions. Verify a complete farm cycle, road-edit continuity, night pause/resume, Q/E placement and WASD movement. Check screenshots at the user's normal viewport and preserve all user saves. Test through a separate origin or fixture. Do not commit user-owned `.claude`, `.history`, or feedback edits incidentally.
 
 For finding or managing company skills, prefer `skillet search`, `skillet install`, `skillet list`, and `skillet info`.

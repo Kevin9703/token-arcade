@@ -4,13 +4,14 @@ import { CATALOG, CHAPTER_COSMETICS } from './catalog';
 import { activeChapter, canPlace, canRoad, evaluate, makeBuilding, starsForChapter, starterBoard, subsidyEntitlement, key, cells, water, fromKey, bridgeSlots } from './world';
 import { PUZZLES, freshPuzzle, puzzleStars } from './puzzles';
 import { atHour } from './world-time';
+import { freshFarm, FARM_PHASES } from './farming';
 import type { Board, Building, BuildingKind, TownState } from './types';
 
 export const TOWN_KEYS = { live: 'tokenTown.slot.live.v1', demo: 'tokenTown.slot.demo.v1' };
 const META = 'tokenTown.mode.v1';
-const progressFingerprint=(s:TownState):string=>{const {revision,worldSeconds,settings,...progress}=s;return JSON.stringify(progress);};
+const progressFingerprint=(s:TownState):string=>{const {revision,worldSeconds,settings,farm,...progress}=s;return JSON.stringify(progress);};
 export function freshTown(mode: DataMode): TownState {
-  return { version: 1, mode, revision: 0, coins: 0, tokenCoins: 0, residue: 0, subsidyPaid: 0, chapterStars: [0, 0, 0, 0, 0, 0], puzzleStars: {}, projects: [], town: starterBoard(), puzzleBoards: {}, demoStep: 0, nextId: 20, tutorialDone: false, history: 'unscanned', worldSeconds: 0, settings: { clockMode: 'cycle', season: 'cycle', muted: false, lighting: 'day', quality: 'medium', reducedMotion: false, cameraInput: 'trackpad' } };
+  return { version: 1, mode, revision: 0, coins: 0, tokenCoins: 0, residue: 0, subsidyPaid: 0, chapterStars: [0, 0, 0, 0, 0, 0], puzzleStars: {}, projects: [], town: starterBoard(), puzzleBoards: {}, demoStep: 0, nextId: 20, tutorialDone: false, history: 'unscanned', worldSeconds: 0, farm: freshFarm(), settings: { music: true, musicVolume: .28, clockMode: 'cycle', season: 'cycle', muted: false, lighting: 'day', quality: 'medium', reducedMotion: false, cameraInput: 'trackpad' } };
 }
 function validBoard(board: Board): boolean {
   if (!board || !Number.isInteger(board.size) || board.size < 8 || board.size > 24 || !['valley', 'meadow', 'river'].includes(board.terrain) || !Array.isArray(board.buildings) || !Array.isArray(board.roads)) return false;
@@ -43,6 +44,12 @@ export function parseTown(raw: string | null, mode: DataMode): TownState | null 
     s.settings.clockMode ??= 'cycle'; s.settings.season ??= 'cycle'; s.worldSeconds ??= 0;
     if (!['cycle','fixed'].includes(s.settings.clockMode) || !['cycle','spring','summer','autumn','winter'].includes(s.settings.season) || !Number.isFinite(s.worldSeconds) || s.worldSeconds < 0) return null;
     if (!['trackpad', 'mouse'].includes(s.settings.cameraInput)) return null;
+    s.settings.music ??= true; s.settings.musicVolume ??= .28; s.farm ??= freshFarm();
+    s.farm.activeSeconds ??= 0;
+    if (typeof s.settings.music !== 'boolean' || !Number.isFinite(s.settings.musicVolume) || s.settings.musicVolume < 0 || s.settings.musicVolume > 1) return null;
+    if (!s.farm || !s.farm.runs || Array.isArray(s.farm.runs) || typeof s.farm.runs !== 'object' || [s.farm.wheat,s.farm.flour,s.farm.bread,s.farm.batches].some(n=>!Number.isSafeInteger(n)||n<0)) return null;
+    if(!Number.isFinite(s.farm.activeSeconds)||s.farm.activeSeconds<0)return null;
+    if (Object.values(s.farm.runs).some(r=>!r||!FARM_PHASES.includes(r.phase)||!Number.isFinite(r.elapsed)||r.elapsed<0||typeof r.millId!=='string'||typeof r.bakeryId!=='string'||!Number.isSafeInteger(r.batches)||r.batches<0)) return null;
     return s;
   } catch { return null; }
 }
@@ -87,7 +94,7 @@ export class TownStore {
     this.persistedProgress=progressFingerprint(this.state);
     if (typeof window !== 'undefined') window.addEventListener('storage', e => {
       if (e.key === TOWN_KEYS[this.state.mode] && e.newValue) { const s = parseTown(e.newValue, this.state.mode); if (s&&s.revision>this.state.revision) {
-        if(progressFingerprint(s)===this.persistedProgress){const preferences=JSON.stringify(this.state.settings)!==JSON.stringify(s.settings);this.state.revision=s.revision;this.state.worldSeconds=s.worldSeconds;this.state.settings=s.settings;if(preferences)this.emit();}
+        if(progressFingerprint(s)===this.persistedProgress){const preferences=JSON.stringify(this.state.settings)!==JSON.stringify(s.settings);this.state.revision=s.revision;this.state.worldSeconds=s.worldSeconds;if(s.farm.activeSeconds>this.state.farm.activeSeconds)this.state.farm=s.farm;this.state.settings=s.settings;if(preferences)this.emit();}
         else{this.state=s;this.persistedProgress=progressFingerprint(s);this.conflict=true;this.emit();}
       } }
     });
@@ -100,7 +107,7 @@ export class TownStore {
     try {
       const disk = parseTown(localStorage.getItem(TOWN_KEYS[this.state.mode]), this.state.mode);
       if (disk && disk.revision > this.state.revision) {
-        if(progressFingerprint(disk)===this.persistedProgress)this.state.revision=disk.revision;
+        if(progressFingerprint(disk)===this.persistedProgress){this.state.revision=disk.revision;if(disk.farm.activeSeconds>this.state.farm.activeSeconds)this.state.farm=disk.farm;}
         else{this.state=disk;this.persistedProgress=progressFingerprint(disk);this.conflict=true;this.emit();return;}
       }
       this.state.revision++; localStorage.setItem(TOWN_KEYS[this.state.mode], JSON.stringify(this.state)); localStorage.setItem(META, this.state.mode); this.persistenceError = '';

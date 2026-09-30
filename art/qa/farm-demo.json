@@ -1,0 +1,222 @@
+{
+  "version": 1,
+  "mode": "demo",
+  "revision": 0,
+  "coins": 362,
+  "tokenCoins": 400,
+  "residue": 0,
+  "subsidyPaid": 0,
+  "chapterStars": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+  ],
+  "puzzleStars": {},
+  "projects": [
+    {
+      "id": "demo-project-0",
+      "name": "河谷笔记",
+      "provider": "codex",
+      "tokens": 1850000,
+      "credited": 1850000
+    },
+    {
+      "id": "demo-project-1",
+      "name": "纸飞机",
+      "provider": "claude",
+      "tokens": 1040000,
+      "credited": 1040000
+    },
+    {
+      "id": "demo-project-2",
+      "name": "小小星图",
+      "provider": "codex",
+      "tokens": 740000,
+      "credited": 740000
+    },
+    {
+      "id": "demo-project-3",
+      "name": "口袋花园",
+      "provider": "claude",
+      "tokens": 370000,
+      "credited": 370000
+    }
+  ],
+  "town": {
+    "size": 24,
+    "terrain": "valley",
+    "buildings": [
+      {
+        "id": "hall",
+        "kind": "hall",
+        "x": 5,
+        "z": 19,
+        "rotation": 2,
+        "placed": true,
+        "variant": 0
+      },
+      {
+        "id": "home-1",
+        "kind": "house",
+        "x": 1,
+        "z": 14,
+        "rotation": 0,
+        "placed": true,
+        "variant": 0
+      },
+      {
+        "id": "home-2",
+        "kind": "house",
+        "x": 3,
+        "z": 14,
+        "rotation": 0,
+        "placed": true,
+        "variant": 1
+      },
+      {
+        "id": "home-3",
+        "kind": "house",
+        "x": 8,
+        "z": 14,
+        "rotation": 0,
+        "placed": true,
+        "variant": 2
+      },
+      {
+        "id": "home-4",
+        "kind": "house",
+        "x": 9,
+        "z": 18,
+        "rotation": 2,
+        "placed": true,
+        "variant": 3
+      },
+      {
+        "id": "bakery-1",
+        "kind": "bakery",
+        "x": 6,
+        "z": 14,
+        "rotation": 0,
+        "placed": true,
+        "variant": 0
+      },
+      {
+        "id": "park-1",
+        "kind": "park",
+        "x": 1,
+        "z": 18,
+        "rotation": 2,
+        "placed": true,
+        "variant": 0
+      },
+      {
+        "id": "project-20",
+        "kind": "workshop",
+        "x": 0,
+        "z": 0,
+        "rotation": 0,
+        "placed": false,
+        "variant": 0,
+        "projectId": "demo-project-0"
+      },
+      {
+        "id": "project-21",
+        "kind": "workshop",
+        "x": 0,
+        "z": 0,
+        "rotation": 0,
+        "placed": false,
+        "variant": 0,
+        "projectId": "demo-project-1"
+      },
+      {
+        "id": "project-22",
+        "kind": "workshop",
+        "x": 0,
+        "z": 0,
+        "rotation": 0,
+        "placed": false,
+        "variant": 0,
+        "projectId": "demo-project-2"
+      },
+      {
+        "id": "project-23",
+        "kind": "workshop",
+        "x": 0,
+        "z": 0,
+        "rotation": 0,
+        "placed": false,
+        "variant": 0,
+        "projectId": "demo-project-3"
+      },
+      {
+        "id": "field",
+        "kind": "wheatfield",
+        "x": 12,
+        "z": 14,
+        "rotation": 0,
+        "placed": true,
+        "variant": 0
+      },
+      {
+        "id": "mill",
+        "kind": "mill",
+        "x": 15,
+        "z": 18,
+        "rotation": 2,
+        "placed": true,
+        "variant": 0
+      }
+    ],
+    "roads": [
+      "1,16",
+      "2,16",
+      "3,16",
+      "4,16",
+      "5,16",
+      "6,16",
+      "7,16",
+      "8,16",
+      "9,16",
+      "10,16",
+      "11,16",
+      "1,17",
+      "9,17",
+      "6,18",
+      "6,17",
+      "12,16",
+      "13,16",
+      "14,16",
+      "15,16",
+      "16,16",
+      "16,17"
+    ]
+  },
+  "puzzleBoards": {},
+  "demoStep": 0,
+  "nextId": 25,
+  "tutorialDone": true,
+  "history": "ready",
+  "worldSeconds": 0,
+  "farm": {
+    "runs": {},
+    "wheat": 0,
+    "flour": 0,
+    "bread": 0,
+    "batches": 0
+  },
+  "settings": {
+    "music": true,
+    "musicVolume": 0.28,
+    "clockMode": "fixed",
+    "season": "spring",
+    "muted": false,
+    "lighting": "day",
+    "quality": "medium",
+    "reducedMotion": false,
+    "cameraInput": "trackpad"
+  }
+}

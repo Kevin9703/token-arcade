@@ -1,6 +1,6 @@
 import * as T from 'three';
 import { box, material, packModel, treeModel } from './models';
-import { bridgeSlots, unlocked, water } from './world';
+import { bridgeSlots, unlocked, water, STARTER_WIDTH } from './world';
 import type { Board, TownState } from './types';
 
 // The decorative landscape never occupies gameplay cells. Its seeded groves,
@@ -114,7 +114,7 @@ export function landscape(board: Board, state: TownState, assets = new Map<strin
   }
   if (board.terrain === 'valley') {
     // Low rural fences explain the first expansion boundary without a UI overlay.
-    if (!state.chapterStars[1]) for (let z = 14; z < 24; z += 2) { for (const zz of [z, z + 1.85]) box(stonework, 12.05, .3, zz, .075, .58, .075, '#9a8767'); for (const y of [.23, .46]) box(stonework, 12.05, y, z + .93, .045, .055, 1.8, '#b4a280'); }
+    if (!state.chapterStars[1]) for (let z = 14; z < 24; z += 2) { for (const zz of [z, z + 1.85]) box(stonework, STARTER_WIDTH + .05, .3, zz, .075, .58, .075, '#9a8767'); for (const y of [.23, .46]) box(stonework, STARTER_WIDTH + .05, y, z + .93, .045, .055, 1.8, '#b4a280'); }
     if (!state.chapterStars[2]) for (let x = 1; x < 24; x += 2) { if (bridgeSlots(board).includes(x) || bridgeSlots(board).includes(x - 1)) continue; for (const xx of [x, x + 1.8]) box(stonework, xx, .29, 10.65, .075, .56, .075, '#9a8767'); for (const y of [.23, .43]) box(stonework, x + .9, y, 10.65, 1.7, .055, .04, '#b4a280'); }
   }
   world.add(packModel(stonework));

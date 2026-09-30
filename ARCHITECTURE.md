@@ -55,3 +55,7 @@ TypeScript + Three.js 原生 3D 场景，DOM 交互，现有 esbuild 和 Node �
 360 秒为一天，从 09:00 开始，每三天换一季。日光和天色连续变化，季节由共享 shader uniform 渐变草地、树冠、屋面；冬季增加低密度雪粒。世界时间按活动帧推进，隐藏或关闭页面不产生离线进度。每 20 秒及离开页面保存时钟；旧 v1 存档自动补齐时钟设置。时钟检查点与经济事务分开处理，跨窗口仅时间 / 偏好更新不会撤回正在放置的建筑。
 
 居民只在接通的道路上巡游。20:00–06:00 返家，沿当前车道到本户出口；一户同时只开放给一个居民，其余继续散步。开门后走过门槛并隐藏到室内，门随后关闭。清晨先预约车道空位再开门、走出、并入人流；公园居民站起返家、次日回座。住宅 / 道路搬迁会重建视觉居民系统；夜间刷新直接恢复室内休息状态。没有连通住宅时镇公所提供视觉落脚处。
+
+The farm extension is isolated in `src/town/farming.ts`: road-based chains, production stages, stock accounting and destination-specific material messages. `ResidentLife` gives existing walkers work orders and reserves a safe pavement slot when work ends; `PedestrianTraffic.retarget` keeps their identities and world positions through road edits. `TownScene` drives visual crop/cargo/mill animation, pauses the main farm in puzzles or at night, and waits for the worker's arrival before advancing a phase. Production and token rewards remain separate.
+
+Farm runs, stock and a monotonic active-work clock live in the independent town slots. Older saves gain empty farm state and music defaults. Farm/time-only checkpoints are excluded from the gameplay conflict fingerprint; pending construction can merge the latest farm checkpoint without accumulating duplicate harvests. `music.ts` manages two local HTML audio channels with user-gesture activation, three-second season/loop crossfades and persisted controls. Source licensing and attribution ship with the audio assets.

@@ -13,11 +13,13 @@ import { stoneRoads } from './roads';
 import { worldTime } from './world-time';
 import { SeasonPalette } from './seasons';
 import { ResidentLife, homeForBuilding, type ResidentSeat } from './resident-life';
+import { farmChains, farmDuration, tickFarm, roadRoute, FARM_LABELS, bakeryMaterialLabel, type FarmChain } from './farming';
+import { SeasonalMusic } from './music';
 import type { Board, BuildingKind, Cell, Evaluation, TownState } from './types';
 
 export type Tool = 'inspect' | 'road' | 'erase' | 'place' | 'move';
 export interface SceneEvents { select(id: string | null): void; cell(x: number, z: number): void; hover(cell: Cell | null): void; strokeEnd(): void; cancel(): void; assetsReady?(): void; clock?(seconds:number,save:boolean):void }
-type Walker = { group: T.Group; body:T.Group; seated?:T.Group; phase: number; limbs: T.Object3D[] };
+type Walker = { group: T.Group; body:T.Group; cargo:T.Group; seated?:T.Group; phase: number; limbs: T.Object3D[] };
 type Particle = { mesh: T.Mesh; velocity: T.Vector3; life: number; duration: number };
 const tempObject = new T.Object3D();
 
@@ -29,18 +31,19 @@ export class TownScene {
   private sun = new T.DirectionalLight('#fff2d6', 3.2);
   private ambient = new T.HemisphereLight('#dbe9eb', '#958c63', 1.9);
   private world = new T.Group(); private buildings = new T.Group(); private roadGroup = new T.Group(); private overlay = new T.Group(); private forest = new T.Group();
-  private walkers: Walker[] = []; private traffic?: PedestrianTraffic; private particles: Particle[] = []; private smoke = new T.Group();
+  private walkerBoard?: Board; private walkers: Walker[] = []; private traffic?: PedestrianTraffic; private particles: Particle[] = []; private smoke = new T.Group();
   private extras = new T.Group(); private landings = new Map<string, number>(); private pulseUntil = 0;
   private modelCache = new Map<string, T.Group>(); private modelsLoading = new Set<string>(); private buildingMeshes = new Map<string, T.Group>();
   private sceneryModels = new Map<string,T.Group>();
   private life?:ResidentLife; private seasons=new SeasonPalette(); private clockTick=0; private clockSave=0; private snow?:T.Points;
   private porchLights:T.PointLight[]=[];
+  private farms:FarmChain[]=[]; private music=new SeasonalMusic();
   private board?: Board; private state?: TownState; private evaluation?: Evaluation;
   private signature = ''; private roadsSignature = ''; private terrainSignature = ''; private selection: string | null = null;
   private raycaster = new T.Raycaster(); private pointer = new T.Vector2(); private plane = new T.Plane(new T.Vector3(0, 1, 0), 0);
   private pointerDown?: { x: number; y: number; button: number }; private painting = false; private lastCell?: Cell;
   private cursor = new T.Group(); private ghost?: T.Group; private cursorCell?: Cell;
-  private previewKind: BuildingKind | null = null; private previewRotation = 0;
+  private previewKind: BuildingKind | null = null; private previewRotation = 0; private previewStage=0; private previewVariant=0;
   private tool: Tool = 'inspect'; private grid?: T.LineSegments; private lastTime = 0; private lastFrame = 0;
   private animateLandscape?: (time: number) => void; private orbitDirection = 0; private orbitSpeed = 0; private orbitStep = 0; private focusTarget?: T.Vector3; private initialFocus = true; private reduced = false;
   private pitchStep = 0; private panStep = new T.Vector2(); private zoomTarget = 1;
@@ -81,15 +84,16 @@ export class TownScene {
     const r = this.canvas.getBoundingClientRect(), a = r.width / Math.max(1, r.height), span = a < 1 ? 16 : 13;
     this.camera.left = -span * a; this.camera.right = span * a; this.camera.top = span; this.camera.bottom = -span; this.camera.updateProjectionMatrix(); this.renderer.setSize(r.width, r.height, false);
   }
-  setTool(tool: Tool, kind: BuildingKind | null, rotation: number, stage = 0): void {
-    this.tool = tool; this.previewKind = kind; this.previewRotation = rotation;
+  setTool(tool: Tool, kind: BuildingKind | null, rotation: number, stage = this.previewStage, variant = this.previewVariant): void {
+    this.tool = tool; this.previewKind = kind; this.previewRotation = rotation;this.previewStage=stage;this.previewVariant=variant;
+    this.canvas.dataset.previewRotation=String(rotation);
     this.controls.mouseButtons.LEFT = tool === 'inspect' || tool === 'move' && !kind ? T.MOUSE.PAN : null;
     this.controls.mouseButtons.RIGHT = tool === 'inspect' ? T.MOUSE.PAN : null; this.controls.mouseButtons.MIDDLE = T.MOUSE.PAN;
     this.canvas.style.cursor = tool === 'inspect' ? 'grab' : 'crosshair';
     if (this.grid) this.grid.visible = tool !== 'inspect';
     if (this.ghost) { this.ghost.traverse(o => { if (o instanceof T.Mesh) (o.material as T.Material).dispose(); }); this.cursor.remove(this.ghost); this.ghost = undefined; }
     if (kind) {
-      this.ghost = this.model(kind, 0, stage).clone(); this.ghost.traverse(o => { if (o instanceof T.Mesh) { o.material = (o.material as T.MeshStandardMaterial).clone(); Object.assign(o.material, { transparent: true, opacity: .82, depthWrite: true }); o.castShadow = false; } });
+      this.ghost = this.model(kind, variant, stage).clone(); this.ghost.traverse(o => { if (o instanceof T.Mesh) { o.material = (o.material as T.MeshStandardMaterial).clone(); Object.assign(o.material, { transparent: true, opacity: .82, depthWrite: true }); o.castShadow = false; } });
       this.cursor.add(this.ghost); this.ghost.rotation.y = -rotation * Math.PI / 2;
     }
     if (this.cursorCell) { this.showCursor(this.cursorCell); this.cursor.visible = kind !== null; }
@@ -98,6 +102,7 @@ export class TownScene {
   setPreviewValid(valid: boolean): void { this.cursor.traverse(o => { if (o instanceof T.Line) (o.material as T.LineBasicMaterial).color.set(valid ? '#467b57' : '#d86d55'); }); this.ghost?.traverse(o => { if (o instanceof T.Mesh) { const m = o.material as T.MeshStandardMaterial; m.emissive.set(valid ? '#16371e' : '#ae3020'); m.emissiveIntensity = valid ? .1 : .35; } }); }
   setWorld(state: TownState, board: Board, e: Evaluation): void {
     this.state = state; this.board = board; this.evaluation = e; this.reduced = state.settings.reducedMotion || matchMedia('(prefers-reduced-motion: reduce)').matches;
+    this.farms=board===state.town?farmChains(board,e,state.farm):[];
     const terrainSignature = `${board.size}:${board.terrain}:${state.chapterStars.map(v => v > 0).join()}`;
     if (terrainSignature !== this.terrainSignature) { this.terrainSignature = terrainSignature; this.buildTerrain(); }
     const signature = JSON.stringify(board.buildings) + state.chapterStars.join() + state.projects.map(p => `${p.id}:${stageForLevel(levelFor(p.tokens)).index}`).join();
@@ -128,7 +133,7 @@ export class TownScene {
         gltf.scene.traverse(o => { if (o instanceof T.Mesh) { o.castShadow = true; o.receiveShadow = true; } });
         this.thumbnails.delete(`${kind}-${variant}-${stage}`);
         this.modelCache.set(name, gltf.scene); this.signature = ''; if (this.state && this.board && this.evaluation) this.setWorld(this.state, this.board, this.evaluation);
-        if(this.previewKind===kind)this.setTool(this.tool,this.previewKind,this.previewRotation,stage);
+        if(this.previewKind===kind&&this.previewStage===stage&&this.previewVariant===variant)this.setTool(this.tool,this.previewKind,this.previewRotation,stage,variant);
         this.events.assetsReady?.();
       }, undefined, () => { /* same original native prefab is a complete offline fallback */ });
     }
@@ -138,7 +143,7 @@ export class TownScene {
     const name = `${kind}-${variant}-${stage}`; const cached = this.thumbnails.get(name); if (cached) return cached;
     const scene = new T.Scene(); scene.background = null; scene.add(new T.HemisphereLight('#fff5d9', '#7b805e', 3)); const sun = new T.DirectionalLight('#fff4df', 3); sun.position.set(-3, 6, 5); scene.add(sun);
     const model = this.model(kind, variant, stage).clone(); scene.add(model);
-    const height = kind === 'clock' ? 4.2 : kind === 'workshop' && stage > 0 ? 3.6 : 2.4;
+    const height = kind === 'mill' ? 3.8 : kind === 'clock' ? 4.2 : kind === 'workshop' && stage > 0 ? 3.6 : 2.4;
     const size = Math.max(CATALOG[kind].w, CATALOG[kind].d, height) * .7;
     const camera = new T.OrthographicCamera(-size, size, size, -size, .1, 40); camera.position.set(5, 5, 7); camera.lookAt(0, height * .42, 0);
     const resolution = 384;
@@ -167,12 +172,15 @@ export class TownScene {
     this.clearTransient(this.roadGroup); this.roadGroup.add(stoneRoads(this.board!,this.evaluation!));
   }
   private buildWalkers(): void {
-    for (const w of this.walkers) { this.scene.remove(w.group); this.clearTransient(w.group); } this.walkers = []; this.traffic = undefined; this.life=undefined;
-    const connected = this.evaluation!.connectedRoads; if (connected.size < 2) return;
+    const connected = this.evaluation!.connectedRoads;
     const seats:ResidentSeat[]=[];
-    for(const b of this.board!.buildings.filter(b=>b.placed&&this.evaluation!.buildings[b.id]?.connected))for(const anchor of buildingSeats(b.kind)){const model=this.buildingMeshes.get(b.id)!;model.updateMatrixWorld(true);const p=model.localToWorld(new T.Vector3(...anchor.position)),entry=entrance(b);seats.push({position:{x:p.x,z:p.z},via:{x:entry.x+.5,z:entry.z+.5},y:p.y,yaw:model.rotation.y+anchor.yaw});}
+    for(const b of this.board!.buildings.filter(b=>b.placed&&this.evaluation!.buildings[b.id]?.connected))for(const [seatIndex, anchor] of buildingSeats(b.kind).entries()){const model=this.buildingMeshes.get(b.id)!;model.updateMatrixWorld(true);const p=model.localToWorld(new T.Vector3(...anchor.position)),entry=entrance(b);seats.push({id:`${b.id}:${seatIndex}`,position:{x:p.x,z:p.z},via:{x:entry.x+.5,z:entry.z+.5},y:p.y,yaw:model.rotation.y+anchor.yaw});}
     const requested=Math.min(12,Math.max(2,this.evaluation!.houses*2)),homes=this.board!.buildings.filter(b=>b.placed&&b.kind==='house'&&this.evaluation!.buildings[b.id]?.connected).map(homeForBuilding);
     if(!homes.length)homes.push(homeForBuilding(this.board!.buildings.find(b=>b.placed&&b.kind==='hall')!));
+    if (this.traffic && this.walkerBoard === this.board) { this.traffic.retarget(connected); this.life!.retarget(homes, seats); return; }
+    for (const w of this.walkers) { this.scene.remove(w.group); this.clearTransient(w.group); }
+    this.walkers = []; this.traffic = undefined; this.life = undefined; this.walkerBoard = this.board;
+    if (connected.size < 2) return;
     this.traffic = new PedestrianTraffic(connected, requested+Math.min(seats.length,3));
     const seatMap=new Map<number,ResidentSeat>();seats.slice(0,Math.min(seats.length,3,this.traffic.people.length-2)).forEach((seat,i)=>seatMap.set(this.traffic!.people.length-1-i,seat));
     this.life=new ResidentLife(this.traffic,homes,worldTime(this.state!.worldSeconds,this.state!.settings).sleep,seatMap);
@@ -180,7 +188,8 @@ export class TownScene {
       const body = residentModel(['#748b9c', '#bb976a', '#ba8174', '#819373', '#ac9ab4'][i % 5], i),group=new T.Group();group.add(body);
       group.position.set(person.x, .105, person.z); group.rotation.y = person.angle; this.scene.add(group);
       const limbs = ['leg-left', 'leg-right', 'arm-left', 'arm-right'].map(name => body.getObjectByName(name)!);
-      let seated:T.Group|undefined;if(seatMap.has(i)){seated=packModel(residentModel('#a28273',i,true));group.add(seated);}this.walkers.push({ group,body,seated, phase: person.phase, limbs });
+      const cargo=new T.Group();cargo.visible=false;group.add(cargo);box(cargo,0,.26,.16,.18,.18,.13,'#ceb981');box(cargo,0,.36,.16,.13,.05,.11,'#e0d1ae');
+      let seated:T.Group|undefined;if(seatMap.has(i)){seated=packModel(residentModel('#a28273',i,true));group.add(seated);}this.walkers.push({ group,body,cargo,seated, phase: person.phase, limbs });
     }
   }
   select(id: string | null): void { this.selection = id; this.drawSelection(); }
@@ -268,6 +277,19 @@ export class TownScene {
     this.orbitStep += direction * .16;
   }
   holdRotate(direction: number): void { this.orbitDirection = direction; this.orbitStep = 0; if (!direction) this.orbitSpeed = 0; }
+  private keyboardMove = new T.Vector2();
+  private keyboardApplied=false;
+  holdPan(x: number, y: number): void {
+    // Very short taps between animation frames still give a small precise move.
+    if(!x&&!y&&this.keyboardMove.lengthSq()&&!this.keyboardApplied)this.panKeyboard(.025/this.camera.zoom);
+    if(this.keyboardMove.x!==x||this.keyboardMove.y!==y)this.keyboardApplied=false;
+    this.keyboardMove.set(x, y); if (x || y) this.focusTarget = undefined;
+  }
+  private panKeyboard(distance:number):void {
+    const right=new T.Vector3().setFromMatrixColumn(this.camera.matrix,0);right.y=0;right.normalize();
+    const forward=new T.Vector3().crossVectors(this.camera.up,right).normalize(),delta=right.multiplyScalar(this.keyboardMove.x).addScaledVector(forward,this.keyboardMove.y).multiplyScalar(distance);
+    this.controls.target.add(delta);this.camera.position.add(delta);this.keyboardApplied=true;
+  }
   zoom(factor: number): void { this.zoomTarget = clampZoom(this.zoomTarget * factor); }
   private elevation(): number { const offset = this.camera.position.clone().sub(this.controls.target); return Math.atan2(offset.y, Math.hypot(offset.x, offset.z)); }
   private stopGesture(): void { this.orbitStep = 0; this.pitchStep = 0; this.panStep.set(0, 0); this.zoomTarget = this.camera.zoom; }
@@ -285,6 +307,7 @@ export class TownScene {
   private environment(dt:number,time:number):void {
     if(!this.state)return;const s=this.state;if(s.settings.clockMode==='cycle')s.worldSeconds+=dt;
     const clock=worldTime(s.worldSeconds,s.settings),blend=1-Math.exp(-dt*2);
+    this.music.update(clock.season,s.settings,dt);
     this.sun.color.lerp(new T.Color('#9fb9d2').lerp(new T.Color('#fff2d6'),clock.daylight).lerp(new T.Color('#ffb879'),clock.warmth*.65),blend);
     this.sun.intensity+=(.62+clock.daylight*2.88-this.sun.intensity)*blend;this.ambient.intensity+=(.75+clock.daylight*1.15-this.ambient.intensity)*blend;
     this.ambient.color.lerp(new T.Color('#91add3').lerp(new T.Color('#dbe9eb'),clock.daylight),blend);this.ambient.groundColor.lerp(new T.Color('#344358').lerp(new T.Color('#958c63'),clock.daylight),blend);
@@ -294,17 +317,29 @@ export class TownScene {
     (this.scene.background as T.Color).lerp(color,blend);(this.scene.fog as T.Fog).color.copy(this.scene.background as T.Color);
     this.seasons.update(clock.season,dt);
     if(this.snow){this.snow.visible=this.seasons.snow>.02&&!this.reduced;const m=this.snow.material as T.PointsMaterial;m.opacity=this.seasons.snow*.7;const pos=this.snow.geometry.getAttribute('position');for(let i=0;i<pos.count;i++){pos.setY(i,(pos.getY(i)-dt*.35+8)%8);}pos.needsUpdate=true;}
+    const ready=new Set<string>();
+    for(const [i,job]of this.life?.jobs||[]){const p=this.traffic!.people[i],r=this.life!.residents[i];if(r.mode==='working'&&!r.path.length&&Math.hypot(p.x-job.target.x,p.z-job.target.z)<.15)ready.add(job.fieldId);}
+    const jobs=tickFarm(this.farms,s.farm,dt,clock.sleep,clock.season,ready);
+    this.life?.assignJobs(jobs,(from,to)=>{const roads=this.evaluation!.connectedRoads;if(!roads.size)return [];const start=[...roads].map(k=>{const [x,z]=k.split(',').map(Number);return{x:x+.5,z:z+.5};}).sort((a,b)=>Math.hypot(a.x-from.x,a.z-from.z)-Math.hypot(b.x-from.x,b.z-from.z))[0];return roadRoute(roads,start,to);});
     this.life?.update(dt,clock.sleep);
+    for(const chain of this.farms){const run=s.farm.runs[chain.field.id],crop=this.buildingMeshes.get(chain.field.id)?.getObjectByName('crop-patch');if(crop){const growth=run?.phase==='growing'?Math.min(1,run.elapsed/farmDuration(chain,'growing',clock.season)):run?.phase==='sowing'?.12:run?.phase==='harvesting'?1:.06;crop.scale.y=.12+growth*.88;}if(chain.mill){const fan=this.buildingMeshes.get(chain.mill.id)?.getObjectByName('mill-fan');if(fan&&!this.reduced)fan.rotation.z+=dt*(run?.phase==='milling'&&!clock.sleep?1.2:.13);}}
     for(const door of this.life?.doors||[]){const hinge=this.buildingMeshes.get(door.id)?.getObjectByName('door-hinge');if(hinge)hinge.rotation.y=-door.open*Math.PI*.46;}
     for(const [index,w]of this.walkers.entries()){
       const person=this.traffic!.people[index],r=this.life!.residents[index],pose=walkingPose(r.travelled,w.phase,!this.reduced&&r.travelled>.0001);w.phase=pose.phase;
       w.group.visible=r.visible;w.body.visible=!r.seated;if(w.seated)w.seated.visible=r.seated;
       let height=.105+pose.bob;const h=this.life!.doors[r.home];if(h&&['entering','leaving','opening-out'].includes(r.mode))height+=.12*Math.min(1,Math.hypot(person.x-h.outside.x,person.z-h.outside.z)/.50);
       w.group.position.set(person.x,r.seated?r.seat!.y:height,person.z);w.group.rotation.y=person.angle;
-      w.limbs.forEach((limb,i)=>{const target=(i<2?pose.leg:pose.arm)*(i%2?-1:1);limb.rotation.x+=(target-limb.rotation.x)*(1-Math.exp(-dt*16));});
+      const job=this.life!.jobs.get(index),working=r.mode==='working';w.cargo.visible=working&&Boolean(job?.carrying);w.cargo.children.forEach(o=>{if(o instanceof T.Mesh)o.material=material(job?.carrying==='flour'?'#e9dfc1':'#c8a769');});
+      w.limbs.forEach((limb,i)=>{const target=i>=2&&working&&job?.carrying?-.85:i>=2&&working&&job?.harvesting&&!r.path.length&&!this.reduced?-.45+Math.sin(time*.004+index)*.3:(i<2?pose.leg:pose.arm)*(i%2?-1:1);limb.rotation.x+=(target-limb.rotation.x)*(1-Math.exp(-dt*16));});
     }
-    if(time-this.clockTick>1000){this.clockTick=time;const save=time-this.clockSave>20000;if(save)this.clockSave=time;this.events.clock?.(s.worldSeconds,save);const label=document.getElementById('world-clock');if(label)label.textContent=clock.label;}
+    if(time-this.clockTick>1000){this.clockTick=time;const save=time-this.clockSave>20000;if(save)this.clockSave=time;this.events.clock?.(s.worldSeconds,save);const label=document.getElementById('world-clock');if(label)label.textContent=clock.label;this.updateFarmLabels(clock.sleep);}
     this.canvas.dataset.worldHour=clock.hour.toFixed(2);this.canvas.dataset.season=clock.season;this.canvas.dataset.residentActivities=JSON.stringify(this.life?.residents.map(r=>r.mode)||[]);this.canvas.dataset.doorAngles=JSON.stringify(this.life?.doors.map(h=>({id:h.id,open:+h.open.toFixed(2)}))||[]);
+    this.canvas.dataset.farm=JSON.stringify(s.farm);this.canvas.dataset.residents=JSON.stringify(this.traffic?.people.map((p,i)=>({id:i,x:+p.x.toFixed(3),z:+p.z.toFixed(3),travelled:+p.totalTravelled.toFixed(3)}))||[]);
+  }
+  private updateFarmLabels(sleep:boolean):void {
+    if(!this.state)return;for(const good of ['wheat','flour','bread'] as const)document.querySelectorAll(`[data-farm-stock="${good}"]`).forEach(el=>el.textContent=String(this.state!.farm[good]));
+    for(const chain of this.farms){const run=this.state.farm.runs[chain.field.id];document.querySelectorAll('[data-farm-field]').forEach(el=>{if((el as HTMLElement).dataset.farmField===chain.field.id)el.textContent=chain.problem|| (sleep?'邻居休息中 · 清晨继续':run?FARM_LABELS[run.phase]:'准备播种');});}
+    document.querySelectorAll('[data-bakery-material]').forEach(el=>{el.textContent=bakeryMaterialLabel((el as HTMLElement).dataset.bakeryMaterial!,this.farms,this.state!.farm,sleep);});
   }
   celebrate(type: 'coin' | 'building' | 'chapter', cell?: Cell): void {
     if (!this.board || this.reduced) return;
@@ -329,6 +364,9 @@ export class TownScene {
     this.environment(dt,time);
     const oldPosition = this.camera.position.clone(), oldTarget = this.controls.target.clone(), oldZoom = this.camera.zoom;
     const smooth = smoothFraction(dt, this.reduced);
+    if (this.keyboardMove.lengthSq()) {
+      this.panKeyboard(dt*5/this.camera.zoom);
+    }
     if (this.focusTarget) { const delta = this.focusTarget.clone().sub(this.controls.target).multiplyScalar(smoothFraction(dt, this.reduced, 10)); this.controls.target.add(delta); this.camera.position.add(delta); if (this.focusTarget.distanceToSquared(this.controls.target) < .00000025) this.focusTarget = undefined; }
     if (this.orbitDirection) this.orbitSpeed = T.MathUtils.lerp(this.orbitSpeed, this.orbitDirection * .85, 1 - Math.exp(-dt * 12));
     let angle = this.orbitSpeed * dt;

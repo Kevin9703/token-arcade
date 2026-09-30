@@ -12,6 +12,7 @@ var HOST = "127.0.0.1";
 var PUBLIC_DIR = path.join(__dirname, "..", "public");
 var HOME = os.homedir();
 var MIME = {
+  ".mp3": "audio/mpeg",
   ".html": "text/html; charset=utf-8",
   ".css": "text/css; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",

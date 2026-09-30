@@ -1,0 +1,38 @@
+[
+  {
+    "season": "spring",
+    "title": "Heartwarming",
+    "artist": "Kevin MacLeod",
+    "license": "CC BY 4.0",
+    "source": "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Heartwarming.mp3",
+    "sha256": "343feffd0a60140f1d2c09ee8c7ea14d86c5b78960c0aa8e6d8f1be68af216a1",
+    "changes": "Normalized to -20 LUFS, two-second fade-in, transcoded to MP3 96kbps"
+  },
+  {
+    "season": "summer",
+    "title": "Carefree",
+    "artist": "Kevin MacLeod",
+    "license": "CC BY 4.0",
+    "source": "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Carefree.mp3",
+    "sha256": "1f22eb0ce18bc1c2b147095ac3a55fa88c9fd7b7a52584353832fcc7a69f00f6",
+    "changes": "Normalized to -20 LUFS, two-second fade-in, transcoded to MP3 96kbps"
+  },
+  {
+    "season": "autumn",
+    "title": "At Rest",
+    "artist": "Kevin MacLeod",
+    "license": "CC BY 4.0",
+    "source": "https://incompetech.com/music/royalty-free/mp3-royaltyfree/At%20Rest.mp3",
+    "sha256": "29e815dfd6348fcf620dd4cc1666f6d376adef0993bf6c95a74213d05ad60d11",
+    "changes": "Normalized to -20 LUFS, two-second fade-in, transcoded to MP3 96kbps"
+  },
+  {
+    "season": "winter",
+    "title": "Relaxing Piano Music",
+    "artist": "Kevin MacLeod",
+    "license": "CC BY 4.0",
+    "source": "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Relaxing%20Piano%20Music.mp3",
+    "sha256": "445187b60781f039a6e4d5cc991eff1503c6a852088a15ec0a65c876477b20b3",
+    "changes": "Normalized to -20 LUFS, two-second fade-in, transcoded to MP3 96kbps; first five minutes excerpted"
+  }
+]

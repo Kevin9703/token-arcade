@@ -1,6 +1,8 @@
 import type { BuildingDefinition, BuildingKind, Chapter } from './types';
 
 export const CATALOG: Record<BuildingKind, BuildingDefinition> = {
+  wheatfield: { kind: 'wheatfield', name: '河岸麦田', description: '村民播种、收割，再沿道路把麦子送到风车磨坊。需要住宅、磨坊和面包店连路，最多三位村民务农。', cost: 6, w: 3, d: 2, category: 'production', chapter: 1 },
+  mill: { kind: 'mill', name: '风车磨坊', description: '接收麦田送来的小麦，磨成面粉，再送往面包店。连接三处入口，粮食就会沿街流动。', cost: 32, w: 3, d: 3, category: 'production', chapter: 1 },
   hall: { kind: 'hall', name: '镇公所', description: '小镇的心脏。所有道路从这里连接起来。', cost: 0, w: 3, d: 3, category: 'landmarks', chapter: 1 },
   house: { kind: 'house', name: '河谷木屋', description: '住进十位邻居。为他们安排好道路、食物和绿地。', cost: 8, w: 2, d: 2, category: 'homes', chapter: 1 },
   bakery: { kind: 'bakery', name: '晨光面包店', description: '八格步行距离内，为六栋住宅供应新鲜面包。', cost: 20, w: 2, d: 2, category: 'services', chapter: 1, service: 'food', capacity: 6, range: 8 },

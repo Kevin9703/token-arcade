@@ -72,9 +72,19 @@ export function samplePatrol(track: PatrolTrack, distance: number): WalkPoint & 
   const a = track.points[low], b = track.points[(low + 1) % track.points.length], t = (d - track.lengths[low]) / (track.lengths[low + 1] - track.lengths[low]);
   return { x: a.x + (b.x - a.x) * t, z: a.z + (b.z - a.z) * t, angle: Math.atan2(b.x - a.x, b.z - a.z) };
 }
-export interface Pedestrian extends WalkPoint { active:boolean; distance: number; speed: number; cruiseSpeed: number; angle: number; travelled: number; totalTravelled: number; pause: number; untilPause: number; phase: number }
+export function nearestOnTrack(track: PatrolTrack, p: WalkPoint): number {
+  let best = Infinity, arc = 0;
+  track.points.forEach((a, i) => {
+    const b = track.points[(i + 1) % track.points.length], dx = b.x - a.x, dz = b.z - a.z, length = Math.hypot(dx, dz);
+    if (!length) return;
+    const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.z - a.z) * dz) / (length * length)));
+    const distance = Math.hypot(a.x + dx * t - p.x, a.z + dz * t - p.z);
+    if (distance < best) { best = distance; arc = track.lengths[i] + t * length; }
+  }); return arc;
+}
+export interface Pedestrian extends WalkPoint { active:boolean; distance: number; speed: number; cruiseSpeed: number; angle: number; travelled: number; totalTravelled: number; pause: number; untilPause: number; phase: number; retargeting?: boolean }
 export class PedestrianTraffic {
-  readonly track: PatrolTrack;
+  track: PatrolTrack;
   readonly people: Pedestrian[] = [];
   blockers:number[]=[];
   private random: () => number;
@@ -87,11 +97,30 @@ export class PedestrianTraffic {
       this.people.push({ ...p, active:true, distance, speed: 0, cruiseSpeed: .44 + this.random() * .12, travelled: 0, totalTravelled: 0, pause: this.random(), untilPause: 12 + this.random() * 16, phase: this.random() * 6 });
     }
   }
+  retarget(roads: Set<string>): void {
+    this.track = pavementPatrol(roads);
+    for (const p of this.people) {
+      p.distance = nearestOnTrack(this.track, p);
+      p.retargeting = this.track.length > 0 && Math.hypot(p.x - samplePatrol(this.track, p.distance).x, p.z - samplePatrol(this.track, p.distance).z) > .005;
+    }
+    this.blockers = [];
+  }
   update(dt: number): void {
+    this.people.forEach(p=>{p.travelled=0;});
     if (!this.track.length) return;
     const active=this.people.filter(p=>p.active).sort((a,b)=>a.distance-b.distance),before=active.map(p=>p.distance);
     this.people.forEach(p=>{p.travelled=0;});
     active.forEach((p, i) => {
+      if (p.retargeting) {
+        const target = samplePatrol(this.track, p.distance), length = Math.hypot(target.x - p.x, target.z - p.z), step = Math.min(length, dt * .54);
+        const next = { x: p.x + (target.x - p.x) * step / (length || 1), z: p.z + (target.z - p.z) * step / (length || 1) };
+        if (canWalkTo(next, active, i)) { // Keep the current actor while it rejoins changed pavement.
+          if(step>.00001){const angle=Math.atan2(target.x-p.x,target.z-p.z),turn=Math.atan2(Math.sin(angle-p.angle),Math.cos(angle-p.angle));p.angle+=Math.max(-dt*4,Math.min(dt*4,turn));}
+          p.x = next.x; p.z = next.z; p.travelled = step; p.totalTravelled += step;
+          if (length <= step + .005) p.retargeting = false;
+        }
+        return;
+      }
       p.pause = Math.max(0, p.pause - dt); p.untilPause -= dt;
       if (p.untilPause <= 0 && p.pause === 0) { p.pause = .6 + this.random() * 1.1; p.untilPause = 14 + this.random() * 18; }
       const gap = Math.min(active.length > 1 ? mod(before[(i + 1) % before.length] - before[i], this.track.length) : Infinity,...this.blockers.map(d=>mod(d-before[i],this.track.length)));
