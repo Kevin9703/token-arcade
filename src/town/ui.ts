@@ -1,3 +1,5 @@
+import { STORIES, FESTIVALS, LANDMARKS, storyGoals, festivalGoals } from './community';
+import type { Season } from './world-time';
 import {ORDERS,GOODS,RECIPES,PRODUCTION_KINDS,stationRun,availableGoods,orderStatus,type Good} from './village';
 import {missingHomeNeeds} from './home-needs';
 import { farmChains, FARM_LABELS, bakeryMaterialLabel } from './farming';
@@ -29,6 +31,7 @@ export class TownUI {
   readonly scene: TownScene;
   private panel: Panel = null; private category = 'homes'; private selectedId: string | null = null;
   private selectedResident: number | null = null;
+  private communityTab = 'stories'; private festivalVenue = ''; private communityMarkup = ''; private seenRestored = new Set<string>();
   private tool: Tool = 'inspect'; private pendingKind: BuildingKind | null = null; private pendingId: string | undefined; private rotation = 0;
   private hoverCell: Cell = { x: 6, z: 17 }; private busy = false; private toastTimer = 0; private coordinateOpen = false;
   private toastMessage = ''; private toastUntil = 0;
@@ -37,6 +40,7 @@ export class TownUI {
   private heldKeys = new Set<string>(); private heldCameraButton = false; private ignoreCameraClickUntil = 0;
   constructor(private root: HTMLElement, readonly store: TownStore, canvas: HTMLCanvasElement) {
     this.e = evaluate(store.board);
+    this.seenRestored = new Set(Object.entries(store.state.community.restorations).filter(([,r])=>r.phase==='done').map(([id])=>id));
     this.scene = new TownScene(canvas, { select: id => this.select(id), selectResident: index => this.selectResident(index), residentUpdated: () => this.updateResidentCard(), cell: (x, z) => this.onCell(x, z), hover: p => this.onHover(p), strokeEnd: () => this.scene.sound(390), cancel: () => { this.resetTool(); this.panel = null; this.render(); }, assetsReady: () => this.render(), clock: (seconds,save) => this.store.clock(seconds,save) });
     store.subscribe(() => { this.e = evaluate(store.board); if (store.conflict) { this.notice = '已载入另一个窗口保存的最新进度，请重新选择操作'; store.conflict = false; this.resetTool(); } this.render(); });
     root.addEventListener('click', e => { const el = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-action]'); if (el && !el.disabled) void this.action(el.dataset.action!, el); });
@@ -87,9 +91,10 @@ export class TownUI {
   private residentPanel(): string {
     const info = this.selectedResident === null ? null : this.scene.residentInfo(this.selectedResident);
     if (!info) return '<p>点击街道上的一位村民，认识这位邻居。</p>';
-    return `<section class="resident-card" data-resident-id="${info.id}"><div class="resident-identity"><img src="${this.scene.residentPortrait(info.index)}" alt="${info.name}的肖像"/><div><h3>${info.name}</h3><span>${info.trait}</span></div></div><p class="resident-bio">${info.bio}</p><div class="resident-now"><span class="small-label">${icon('Sun')} 此刻</span><strong data-resident-status>${escapeHTML(info.status)}</strong><p data-resident-intention ${info.intention === info.status ? 'hidden' : ''}>${escapeHTML(info.intention)}</p></div><dl class="resident-places"><div><dt>${icon('MapPin')} 去向</dt><dd data-resident-destination>${escapeHTML(info.destination)}</dd></div><div><dt>${icon('House')} 住处</dt><dd data-resident-home>${escapeHTML(info.home)}</dd></div></dl>${info.homeId ? button(`resident-home:${info.homeId}`, '看看他的家', 'House', 'secondary') : ''}<p class="panel-note">行动随村民的实际行程更新。你可以继续浏览小镇。</p></section>`;
+    return `<section class="resident-card" data-resident-id="${info.id}"><div class="resident-identity"><img src="${this.scene.residentPortrait(info.index)}" alt="${info.name}的肖像"/><div><h3>${info.name}</h3><span>${info.trait}</span></div></div><p class="resident-bio">${info.bio}</p><div class="resident-now"><span class="small-label">${icon('Sun')} 此刻</span><strong data-resident-status>${escapeHTML(info.status)}</strong><p data-resident-intention ${info.intention === info.status ? 'hidden' : ''}>${escapeHTML(info.intention)}</p></div><dl class="resident-places"><div><dt>${icon('MapPin')} 去向</dt><dd data-resident-destination>${escapeHTML(info.destination)}</dd></div><div><dt>${icon('House')} 住处</dt><dd data-resident-home>${escapeHTML(info.home)}</dd></div></dl>${!this.store.activePuzzle&&STORIES.some(t=>t.index===info.index)?this.communityHost(true):''}${info.homeId ? button(`resident-home:${info.homeId}`, '看看他的家', 'House', 'secondary') : ''}<p class="panel-note">行动随村民的实际行程更新。你可以继续浏览小镇。</p></section>`;
   }
   private updateResidentCard(): void {
+    this.updateCommunityView();
     if (this.panel === 'orders') for (const info of this.scene.residentInfos()) {
       const el=this.root.querySelector(`[data-roster-resident="${info.index}"]`); if (el && el.textContent !== info.status) el.textContent=info.status;
     }
@@ -179,7 +184,7 @@ export class TownUI {
     else if (this.panel === 'puzzles') content = this.puzzlePanel();
     else if (this.panel === 'book') content = this.bookPanel();
     else if (this.panel === 'production') content = this.productionPanel()+this.villagePanel();
-    else if(this.panel==='orders')content=this.orderPanel()+this.residentRoster();
+    else if(this.panel==='orders')content=this.communityPanel();
     else if (this.panel === 'settings') content = this.settingsPanel();
     else if (this.panel === 'detail') content = this.detailPanel();
     else if (this.panel === 'resident') content = this.residentPanel();
@@ -187,9 +192,9 @@ export class TownUI {
     return `<aside class="town-panel ${this.panel === 'settings' ? 'settings-panel' : ''}" aria-label="${titles[this.panel!]}"><div class="panel-heading"><div><span class="small-label">${this.store.activePuzzle ? '规划关' : '河谷小镇'}</span><h2>${titles[this.panel!]}</h2></div>${button('close-panel', '关闭面板', 'X', 'icon-only')}</div><div class="panel-content">${content}</div></aside>`;
   }
   private buildPanel(): string {
-    return `<div class="panel-tabs">${[['homes', '住宅'], ['production', '农事'], ['services', '服务'], ['landmarks', '地标'], ['decor', '装饰']].map(([id, name]) => button(`category:${id}`, name, '', this.category === id ? 'active' : '')).join('')}</div><p class="panel-note">点击建筑，模型会跟随鼠标；也可以直接拖到空地。左键放置，Q / E 旋转，右键取消。</p><div class="catalog-grid">${Object.values(CATALOG).filter(d => d.category === this.category && d.kind !== 'hall' && d.kind !== 'workshop').map(d => {
+    return `<div class="panel-tabs">${[['homes', '住宅'], ['production', '农事'], ['services', '服务'], ['landmarks', '地标'], ['decor', '装饰']].map(([id, name]) => button(`category:${id}`, name, '', this.category === id ? 'active' : '')).join('')}</div><p class="panel-note">点击建筑，模型会跟随鼠标；也可以直接拖到空地。左键放置，Q / E 旋转，右键取消。</p><div class="catalog-grid">${Object.values(CATALOG).filter(d => d.category === this.category && d.kind !== 'hall' && d.kind !== 'workshop' && !LANDMARKS.some(l=>l.kind===d.kind)).map(d => {
       const available = this.store.unlockedKind(d.kind), p = PUZZLES.find(p => p.reward === d.kind),order=ORDERS.find(o=>o.reward===d.kind);
-      return `<button data-action="buy:${d.kind}" class="catalog-item ${available ? '' : 'locked'} ${this.pendingKind === d.kind && !this.pendingId ? 'selected' : ''}" ${available ? '' : 'disabled'}>${this.thumbnail(d.kind)}<b>${d.name}</b><span class="catalog-price">${icon(available ? 'Coins' : 'Lock')}${available ? d.cost : order?`邻里心愿` : p ? `规划关 ${PUZZLES.indexOf(p) + 1}` : `第 ${d.chapter} 章`}</span><small>${d.w} × ${d.d} 格${d.service ? ` · ${serviceDefinition(this.store.board,d.kind).capacity} 户` : ''}</small></button>`;
+      return `<button data-action="buy:${d.kind}" class="catalog-item ${available ? '' : 'locked'} ${this.pendingKind === d.kind && !this.pendingId ? 'selected' : ''}" ${available ? '' : 'disabled'}>${this.thumbnail(d.kind)}<b>${d.name}</b><span class="catalog-price">${icon(available ? 'Coins' : 'Lock')}${available ? d.cost : order?`邻里订单` : STORIES.some(t=>t.reward===d.kind)?'街坊故事':FESTIVALS.some(f=>f.reward===d.kind)?'四季节庆': p ? `规划关 ${PUZZLES.indexOf(p) + 1}` : `第 ${d.chapter} 章`}</span><small>${d.w} × ${d.d} 格${d.service ? ` · ${serviceDefinition(this.store.board,d.kind).capacity} 户` : ''}</small></button>`;
     }).join('')}</div>${button('inventory', `已收纳 ${this.store.board.buildings.filter(b => !b.placed).length} 栋 · 免费摆放`, 'Archive', 'inventory-link')}`;
   }
   private inventoryPanel(): string {
@@ -213,7 +218,12 @@ export class TownUI {
     return `<section class="book-section"><h3>项目工坊 <span>${s.projects.length}</span></h3><p class="panel-note">下面这些是 AI 项目工坊，不是住宅或商店。每个名称来自你的项目文件夹，点击可定位或摆放。工坊随项目 token 升级，共 50 级、五个外观阶段；不提供住宅服务或金币倍率。</p>${s.projects.length ? s.projects.map(p => {
       const info = levelInfo(p.tokens), b = s.town.buildings.find(b => b.projectId === p.id)!;
       return `<article class="project-row">${this.thumbnail('workshop', visualVariant(b,s), info.stage.index)}<div><b>${escapeHTML(p.name)}</b><span class="project-level" style="color:${STAGE_COLORS[info.stage.index]}">项目工坊 · Lv.${info.level} · ${STAGE_NAMES[info.stage.index]}</span><small>${fmtCompact(p.tokens)} token · ${escapeHTML(p.provider)}</small><div class="level-progress"><span style="width:${info.progress * 100}%"></span></div>${button(b.placed ? `find:${b.id}` : `place-owned:${b.id}`, b.placed ? '去看看' : '免费摆放', 'ArrowUpRight', 'text-button')}</div></article>`;
-    }).join('') : `<div class="empty-state">${icon('House')}<p>同步 token 后，项目工坊会来到这里。</p>${button('sync', s.mode === 'demo' ? '收集演示 token' : '同步 token', 'RefreshCw', 'secondary')}</div>`}</section><section class="book-section"><h3>规划收藏</h3><div class="collection-grid">${PUZZLES.map(p => `<div class="collection-item ${(s.puzzleStars[p.id] || 0) ? '' : 'locked'}">${this.thumbnail(p.reward)}<b>${CATALOG[p.reward].name}</b><small>${(s.puzzleStars[p.id] || 0) > 0 ? (s.puzzleStars[p.id] || 0) === 3 ? '原色与三星配色已解锁' : '蓝图已解锁' : `通关「${p.title}」`}</small></div>`).join('')}</div></section><section class="book-section"><h3>邻里回忆</h3><div class="collection-grid">${ORDERS.map(o=>`<div class="collection-item ${(s.village.completed[o.id]||0)?'':'locked'}">${this.thumbnail(o.reward)}<b>${o.name}</b><small>${s.village.completed[o.id]||0} 次分享 · ${(s.village.completed[o.id]||0)>0?CATALOG[o.reward].name+'已解锁':'首次分享解锁蓝图'}</small></div>`).join('')}</div></section><section class="book-section"><h3>河谷荣誉</h3><div class="honor-list">${CHAPTERS.map((c, i) => `<div><span>${c.title}<small class="honor-reward">${CATALOG[CHAPTER_COSMETICS[i]].name} · ${s.chapterStars[i] >= 2 ? s.chapterStars[i] === 3 ? "全部纪念配色已解锁" : "首款纪念配色已解锁" : "额外星级解锁配色"}</small></span>${stars(s.chapterStars[i])}</div>`).join('')}</div></section>`;
+    }).join('') : `<div class="empty-state">${icon('House')}<p>同步 token 后，项目工坊会来到这里。</p>${button('sync', s.mode === 'demo' ? '收集演示 token' : '同步 token', 'RefreshCw', 'secondary')}</div>`}</section><section class="book-section"><h3>规划收藏</h3><div class="collection-grid">${PUZZLES.map(p => `<div class="collection-item ${(s.puzzleStars[p.id] || 0) ? '' : 'locked'}">${this.thumbnail(p.reward)}<b>${CATALOG[p.reward].name}</b><small>${(s.puzzleStars[p.id] || 0) > 0 ? (s.puzzleStars[p.id] || 0) === 3 ? '原色与三星配色已解锁' : '蓝图已解锁' : `通关「${p.title}」`}</small></div>`).join('')}</div></section><section class="book-section"><h3>邻里回忆</h3><div class="collection-grid">${ORDERS.map(o=>`<div class="collection-item ${(s.village.completed[o.id]||0)?'':'locked'}">${this.thumbnail(o.reward)}<b>${o.name}</b><small>${s.village.completed[o.id]||0} 次分享 · ${(s.village.completed[o.id]||0)>0?CATALOG[o.reward].name+'已解锁':'首次分享解锁蓝图'}</small></div>`).join('')}</div></section>${this.communityCollection()}<section class="book-section"><h3>河谷荣誉</h3><div class="honor-list">${CHAPTERS.map((c, i) => `<div><span>${c.title}<small class="honor-reward">${CATALOG[CHAPTER_COSMETICS[i]].name} · ${s.chapterStars[i] >= 2 ? s.chapterStars[i] === 3 ? "全部纪念配色已解锁" : "首款纪念配色已解锁" : "额外星级解锁配色"}</small></span>${stars(s.chapterStars[i])}</div>`).join('')}</div></section>`;
+  }
+  private communityCollection():string {
+    const s=this.store.state,c=s.community;
+    const items=[...STORIES.map(t=>({kind:t.reward,title:t.title,progress:(c.stories[t.id]?.step||0)+'/3 段回忆',done:c.stories[t.id]?.step===3})),...FESTIVALS.map(f=>({kind:f.reward,title:f.name,progress:(c.festivalStars[f.id]||0)+'/2 档成果',done:Boolean(c.festivalStars[f.id])}))];
+    return `<section class="book-section"><h3>街坊与四季纪念</h3><div class="collection-grid">${items.map(t=>`<div class="collection-item ${t.done?'':'locked'}">${this.thumbnail(t.kind)}<b>${CATALOG[t.kind].name}</b><small>${t.title}<br>${t.progress}</small></div>`).join('')}</div>${button('community-tab:stories','继续街坊故事','BookOpen','text-button')}</section><section class="book-section"><h3>修复的河谷</h3><div class="honor-list">${LANDMARKS.map(d=>{const b=s.town.buildings.find(b=>b.kind===d.kind);return `<div><span>${d.title}</span><b>${b&&c.restorations[b.id]?.phase==='done'?'已修复':b?'等待修复':'未领取'}</b></div>`;}).join('')}</div>${button('community-tab:landmarks','看看河谷遗址','Hammer','text-button')}</section>`;
   }
   private coverageAudit(chapter: number): string {
     const board = this.store.board, homes = board.buildings.filter(b => b.placed && b.kind === 'house');
@@ -248,6 +258,35 @@ export class TownUI {
     const options=b.kind==='restaurant'?RECIPES.map(p=>[p.id,p.name]):b.kind==='cowshed'?[['milk','鲜奶'],['cheese','奶酪（消耗 1 鲜奶）']]:['vegetablefield','greenhouse'].includes(b.kind)?[['carrot','胡萝卜 · 春季更快'],['potato','土豆 · 夏季更快']]:[];
     return `<section class="village-detail">${b.kind==='fishinghut'?`${button(`view-fishing:${b.id}`,'看看码头','MapPin','secondary')}<p class="panel-note">码头在小屋朝河的一侧。钓鱼和务农轮班；夜间、断路或鲜鱼库存满时休息。河岸船屋只是装饰，不安排钓鱼。</p>`:''}<p class="farm-status" data-village-station="${escapeHTML(b.id)}">${this.scene.productionStatus(b)}</p>${options.length?`<label class="setting-row"><span>${b.kind==='restaurant'?'菜谱':'本次生产'}</span><select aria-label="${CATALOG[b.kind].name}生产选择" data-production="${escapeHTML(b.id)}">${options.map(([id,name])=>`<option value="${id}" ${(r.nextChoice||r.choice)===id?'selected':''}>${name}</option>`).join('')}</select></label>${r.nextChoice?'<small>当前批次完成后切换，原料不会浪费。</small>':''}`:''}${b.kind==='restaurant'?`<p class="panel-note">${RECIPES.map(p=>`${p.name}：${Object.entries(p.ingredients).map(([g,n])=>`${GOODS[g as Good]} ${n}`).join(' + ')} → 料理 2`).join('<br>')}</p>`:''}<div class="village-stocks">${Object.entries(GOODS).filter(([g])=>b.kind==='restaurant'?g!=='bread':b.kind==='cowshed'?['milk','cheese'].includes(g):b.kind==='pigpen'?g==='truffle':b.kind==='fishinghut'?g==='fish':['carrot','potato'].includes(g)).map(([g,name])=>`<span>${name} <b data-village-stock="${escapeHTML(b.id)}|${g}">${s.village.stock[b.id]?.[g as Good]||0}</b></span>`).join('')}</div><p class="panel-note">库存保存在这处设施；运输中的材料由村民携带。断路或夜晚会暂停，恢复后继续。</p></section>`;
   }
+  private goalList(goals:Goal[]):string {return `<ul class="story-goals">${goals.map(g=>`<li class="${g.met?'met':'missing'}">${icon(g.met?'Check':'Flag')}<span>${g.label}</span><b>${Math.min(g.current,g.need)}/${g.need}</b></li>`).join('')}</ul>`;}
+  private storyCard(id:string):string {
+    const s=this.store.state,def=STORIES.find(t=>t.id===id)!;const info=this.scene.residentInfo(def.index),p=s.community.stories[id],step=p?.step||0,goals=storyGoals(s,this.e,id,info?.homeId),home=s.town.buildings.find(b=>b.id===(p?.homeId||info?.homeId));
+    return `<article class="order-card story-card"><div class="story-person"><img src="${this.scene.residentPortrait(def.index)}" alt="${info?.name||['林禾','温书','江沐'][STORIES.indexOf(def)]}的肖像"/><div><h3>${['林禾','温书','江沐'][STORIES.indexOf(def)]} · ${def.title}</h3><small>${step}/3 段回忆 · ${step===3?'故事已完成':def.chapters[step]}</small></div></div><div class="story-steps" aria-label="已完成 ${step} 段故事">${def.chapters.map((title,i)=>`<span class="${i<step?'done':i===step?'current':''}">${i<step?'✓':i+1} ${title}</span>`).join('')}</div><p class="story-dialogue">“${step===3?def.thanks[2]:def.dialogue[step]}”</p>${step===3?`<p class="panel-note">${CATALOG[def.reward].name}蓝图与四款配色已解锁，在建设 → 装饰购买。</p>`:!home?'<p class="panel-note">先接通起步住宅，让这位邻居搬来。第一段故事只需免费调整布局。</p>':`<p class="panel-note">围绕${p?'已记录':'当前'}的小家：${buildingLabel(home)}。搬迁后按新位置计算；收纳时目标暂停。</p>${this.goalList(goals)}${button('find:'+home.id,'看看这栋住宅','MapPin','text-button')}${button('claim-story:'+id+','+step,step===1?'分享 2 份面包':'记下这段故事','Check','primary',goals.every(g=>g.met)?'':'disabled')}`}<small>完整故事奖励：${CATALOG[def.reward].name} · 不增加金币</small></article>`;
+  }
+  private communityHost(resident=false):string {const html=resident?this.storyCard(STORIES.find(t=>t.index===this.selectedResident)!.id):this.communityBody();this.communityMarkup=html;return `<div class="community-content">${html}</div>`;}
+  private communityPanel():string {
+    if(this.store.activePuzzle)return '<p class="story">街坊故事、节庆和地标都属于主城。规划关保持独立。</p>';
+    return `<div class="panel-tabs community-tabs">${[['stories','故事'],['festivals','节庆'],['landmarks','修复'],['orders','订单'],['roster','街坊']].map(([id,name])=>button('community-tab:'+id,name,'',this.communityTab===id?'active':'')).join('')}</div>${this.communityHost()}`;
+  }
+  private communityBody():string {
+    if(this.communityTab==='roster')return this.residentRoster();
+    if(this.communityTab==='orders')return this.orderPanel();
+    if(this.communityTab==='stories')return `<p class="story">认识街坊，帮他们把河谷过成自己的家。每人三段故事，没有期限，记下的回忆永久保留。</p>${STORIES.map(t=>this.storyCard(t.id)).join('')}`;
+    if(this.communityTab==='landmarks')return this.landmarkPanel();
+    const s=this.store.state,c=s.community,season=worldTime(s.worldSeconds,s.settings).season,have=availableGoods(s,this.e),venues=s.town.buildings.filter(b=>b.placed&&b.kind==='park');
+    if(!venues.some(b=>b.id===this.festivalVenue))this.festivalVenue=venues[0]?.id||'';
+    return `<p class="story">准备食物，再布置一处人人走得到的公园。两户能来即可开场，四户走得更近则解锁配色。准备跨季保留，也可以取消取回食物。</p>${FESTIVALS.map(f=>`<article class="order-card festival-card"><h3>${f.name} ${f.id===season?'<small>当季</small>':''}</h3><p>${f.story}</p><div class="village-stocks">${Object.entries(f.needs).map(([g,n])=>`<span>${GOODS[g as Good]} <b>${have[g as Good]||0}</b> / ${n}</span>`).join('')}</div><small>成果 ${c.festivalStars[f.id]||0}/2 · ${CATALOG[f.reward].name}${(c.festivalStars[f.id]||0)>=2?'全部配色已解锁':(c.festivalStars[f.id]||0)?'蓝图已解锁':'蓝图待解锁'}</small>${c.festival?.id===f.id?`<p class="prepared-basket">${icon('Check')} 食物已备好，已从库存扣除；不会过期</p><label class="setting-row"><span>聚会公园</span><select aria-label="聚会公园" data-community="venue">${venues.length?venues.map(b=>`<option value="${escapeHTML(b.id)}" ${b.id===this.festivalVenue?'selected':''}>${buildingLabel(b)}</option>`).join(''):'<option value="">先摆放一座公园</option>'}</select></label>${this.goalList(festivalGoals(s,this.e,this.festivalVenue))}<details><summary>更好的聚会布局 · 解锁配色</summary>${this.goalList(festivalGoals(s,this.e,this.festivalVenue,true))}</details>${f.id!==season?'<p class="panel-note">等到对应季节开场，准备进度保留。</p>':''}${button('celebrate-festival','邀请街坊开场','Flag','primary',f.id===season&&festivalGoals(s,this.e,this.festivalVenue).every(g=>g.met)?'':'disabled')}${button('cancel-festival','取消准备并取回食物','Archive','text-button')}`:button('prepare-festival:'+f.id,'准备这场节庆','Wheat','secondary',c.festival||Object.entries(f.needs).some(([g,n])=>(have[g as Good]||0)<n)?'disabled':'')}</article>`).join('')}`;
+  }
+  private landmarkPanel():string {
+    const s=this.store.state;
+    return `<p class="story">每处遗址只有一个，免费领取并选择空地摆放，不会覆盖你的老城。接路后，居民实际领补给、送到现场并动手修复。最多三名工人仍共用生产与修复。</p>${LANDMARKS.map(d=>{const b=s.town.buildings.find(b=>b.kind===d.kind),r=b&&s.community.restorations[b.id];return `<article class="order-card landmark-card">${this.thumbnail(d.kind)}<h3>${d.title}</h3><p>${d.story}</p><div class="village-stocks">${Object.entries(d.needs).map(([g,n])=>`<span>${GOODS[g as Good]} ${r?.delivered[g as Good]||0}/${n}</span>`).join('')}</div><small>补给送齐后，现场修复 ${d.seconds} 秒 · 无金币奖励</small>${!b?button('acquire-landmark:'+d.kind,'免费领取唯一遗址','Archive','primary',activeChapter(s)>=d.chapter?'':'disabled')+`<p class="panel-note">第 ${d.chapter} 章开放。</p>`:`<p class="farm-status">${this.scene.restorationStatus(b.id)}</p>${button((b.placed?'find:':'place-owned:')+b.id,b.placed?'看看遗址':'免费摆放','MapPin','secondary')}${!r?button('restore-landmark:'+b.id,'安排修复','Hammer','primary',b.placed&&this.e.buildings[b.id]?.connected&&!s.community.activeRestoration?'':'disabled'):r.phase==='done'?'<p class="prepared-basket">修复完成。它现在是街坊可游览的地标。</p>':''}`}</article>`;}).join('')}`;
+  }
+  private updateCommunityView(force=false):void {
+    for(const [id,r]of Object.entries(this.store.state.community.restorations))if(r.phase==='done'&&!this.seenRestored.has(id)){this.seenRestored.add(id);const b=this.store.state.town.buildings.find(b=>b.id===id);if(b){this.scene.celebrate('building',{x:b.x+.5,z:b.z+.5});this.toast(`${CATALOG[b.kind].name}修复完成！街坊有了一处新的游览地点`,6000);}}
+    const host=this.root.querySelector<HTMLElement>('.community-content');if(!host||!force&&document.activeElement?.closest('select'))return;
+    const html=this.panel==='resident'?this.storyCard(STORIES.find(t=>t.index===this.selectedResident)!.id):this.communityBody();
+    if(html!==this.communityMarkup){const parent=host.closest('.panel-content')!,scroll=parent.scrollTop;host.innerHTML=html;this.communityMarkup=html;parent.scrollTop=scroll;}
+  }
   private villagePanel():string {
     return `<h3>种植、养殖与钓鱼</h3><p class="story">至多三位邻居轮流工作。面包与料理用来完成邻里心愿；不消耗金币来生产，也没有离线惩罚。</p><p class="panel-note">春天胡萝卜、夏天土豆生长更快，秋天收获更多，冬天温室照常种菜。牛棚可在鲜奶与奶酪间选择，小猪寻找松露，钓鱼小屋夏天收鱼更快。</p>${this.store.state.town.buildings.filter(b=>b.placed&&PRODUCTION_KINDS.includes(b.kind)).map(b=>`<article class="village-card"><h4>${button('find:'+b.id,CATALOG[b.kind].name,'MapPin','text-button')}</h4>${this.villageDetail(b)}</article>`).join('')}${button('orders','去准备一份邻里心愿','ClipboardList','primary')}`;
   }
@@ -279,7 +318,14 @@ export class TownUI {
       case 'book': this.panel = 'book'; break;
       case 'settings': this.panel = 'settings'; break;
       case 'orders': this.panel='orders';break;
-      case 'order': this.store.selectOrder(value);this.panel='orders';break;
+      case 'community-tab': this.communityTab=value;this.panel='orders';break;
+      case 'claim-story': {const [id,step]=value.split(',');const def=STORIES.find(t=>t.id===id),home=def&&this.scene.residentInfo(def.index)?.homeId;const problem=this.store.claimStory(id,Number(step),home);if(problem)this.toast(problem);else {this.scene.celebrate('chapter');this.toast(def!.thanks[Number(step)],6000);}return;}
+      case 'prepare-festival': {const problem=this.store.prepareFestival(value as Season);this.toast(problem||'食物已放进节庆篮，换季也会保留。接下来布置聚会公园');return;}
+      case 'cancel-festival': {const problem=this.store.cancelFestival();this.toast(problem||'已取消准备，食物退回镇公所的共享篮');return;}
+      case 'celebrate-festival': {const problem=this.store.celebrateFestival(this.festivalVenue);if(problem)this.toast(problem);else{this.scene.celebrate('chapter');this.toast('节庆开场了！街坊会陆续来公园，蓝图已解锁',5500);}return;}
+      case 'acquire-landmark': {const problem=this.store.acquireLandmark(value as BuildingKind);if(problem){this.toast(problem);return;}const b=this.store.state.town.buildings.find(b=>b.kind===value)!;this.panel=null;this.setTool('move',b.kind,b.id);this.toast('遗址免费领取，只此一处。摆好后接上入口道路，再安排修复');return;}
+      case 'restore-landmark': {const problem=this.store.beginRestoration(value);this.toast(problem||'居民会实际领取、送来补给，再动手修复；夜间和断路保留进度');return;}
+      case 'order': this.store.selectOrder(value);this.communityTab='orders';this.panel='orders';break;
       case 'cancel-order': this.store.selectOrder(null);this.toast('订单已取消，库存全部保留');return;
       case 'fulfill-order': {const problem=this.store.fulfillOrder(value);if(problem)this.toast(problem);else {this.scene.celebrate('chapter');this.toast('邻居来分享收获了！首次完成会解锁新的装饰蓝图',5500);}return;}
       case 'production': this.panel = 'production'; break;
@@ -354,6 +400,7 @@ export class TownUI {
   private change(event: Event): void {
     const input = event.target as HTMLInputElement;
     if (input.dataset.setting === 'clock') this.store.updateSettings({clockMode:input.checked?'cycle':'fixed'});
+    if(input.dataset.community==='venue'){this.festivalVenue=input.value;this.communityMarkup='';this.updateCommunityView(true);return;}
     if(input.dataset.production){this.store.chooseProduction(input.dataset.production,input.value);return;}
     if (input.dataset.setting === 'season') this.store.updateSettings({season:input.value as typeof this.store.state.settings.season});
     if (input.dataset.setting === 'music') this.store.updateSettings({music:input.checked});

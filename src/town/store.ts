@@ -1,3 +1,5 @@
+import { freshCommunity, validCommunity, communityUnlock, completeStory, prepareFestival, cancelFestival, celebrateFestival, LANDMARKS, FESTIVALS } from './community';
+import type { Season } from './world-time';
 import { TOWN_SIZE, LEGACY_TOWN_SIZE, foundationHeight } from './terrain';
 import {freshVillage,validVillage,ORDERS,completeOrder} from './village';
 import {worldTime} from './world-time';
@@ -13,9 +15,9 @@ import type { Board, Building, BuildingKind, TownState } from './types';
 
 export const TOWN_KEYS = { live: 'tokenTown.slot.live.v1', demo: 'tokenTown.slot.demo.v1' };
 const META = 'tokenTown.mode.v1';
-const progressFingerprint=(s:TownState):string=>{const {revision,worldSeconds,settings,farm,village,...progress}=s;return JSON.stringify({...progress,villageProgress:{completed:village.completed,activeOrder:village.activeOrder,choices:village.choices}});};
+const progressFingerprint=(s:TownState):string=>{const {revision,worldSeconds,settings,farm,village,community,...progress}=s;return JSON.stringify({...progress,villageProgress:{completed:village.completed,activeOrder:village.activeOrder,choices:village.choices},communityProgress:{stories:community.stories,festival:community.festival,festivalStars:community.festivalStars,restorationIds:Object.keys(community.restorations).sort()}});};
 export function freshTown(mode: DataMode): TownState {
-  return { version: 1, mode, revision: 0, coins: 0, tokenCoins: 0, residue: 0, subsidyPaid: 0, chapterStars: [0, 0, 0, 0, 0, 0], puzzleStars: {}, projects: [], town: starterBoard(), puzzleBoards: {}, demoStep: 0, nextId: 20, tutorialDone: false, history: 'unscanned', worldSeconds: 0, farm: freshFarm(), village:freshVillage(), settings: { music: true, musicVolume: .28, clockMode: 'cycle', season: 'cycle', muted: false, lighting: 'day', quality: 'medium', reducedMotion: false, cameraInput: 'trackpad', cameraSpeed: 24, goalCollapsed: false } };
+  return { version: 1, mode, revision: 0, coins: 0, tokenCoins: 0, residue: 0, subsidyPaid: 0, chapterStars: [0, 0, 0, 0, 0, 0], puzzleStars: {}, projects: [], town: starterBoard(), puzzleBoards: {}, demoStep: 0, nextId: 20, tutorialDone: false, history: 'unscanned', worldSeconds: 0, farm: freshFarm(), village:freshVillage(), community:freshCommunity(), settings: { music: true, musicVolume: .28, clockMode: 'cycle', season: 'cycle', muted: false, lighting: 'day', quality: 'medium', reducedMotion: false, cameraInput: 'trackpad', cameraSpeed: 24, goalCollapsed: false } };
 }
 function validBoard(board: Board): boolean {
   if (!board || !Number.isInteger(board.size) || board.size < 8 || board.size > TOWN_SIZE || !['valley', 'meadow', 'river'].includes(board.terrain) || !Array.isArray(board.buildings) || !Array.isArray(board.roads)) return false;
@@ -60,6 +62,7 @@ export function parseTown(raw: string | null, mode: DataMode): TownState | null 
     if(!Number.isFinite(s.farm.activeSeconds)||s.farm.activeSeconds<0)return null;
     if (Object.values(s.farm.runs).some(r=>!r||!FARM_PHASES.includes(r.phase)||!Number.isFinite(r.elapsed)||r.elapsed<0||typeof r.millId!=='string'||typeof r.bakeryId!=='string'||!Number.isSafeInteger(r.batches)||r.batches<0)) return null;
     s.village ??= freshVillage();if(!validVillage(s.village))return null;
+    s.community ??= freshCommunity();if(!validCommunity(s.community,s))return null;
     // An additive map migration: preserve every layout, inventory, ledger and unlock.
     s.town.size = TOWN_SIZE;
     return s;
@@ -106,7 +109,7 @@ export class TownStore {
     this.persistedProgress=progressFingerprint(this.state);
     if (typeof window !== 'undefined') window.addEventListener('storage', e => {
       if (e.key === TOWN_KEYS[this.state.mode] && e.newValue) { const s = parseTown(e.newValue, this.state.mode); if (s&&s.revision>this.state.revision) {
-        if(progressFingerprint(s)===this.persistedProgress){const preferences=JSON.stringify(this.state.settings)!==JSON.stringify(s.settings);this.state.revision=s.revision;this.state.worldSeconds=s.worldSeconds;if(s.farm.activeSeconds>this.state.farm.activeSeconds)this.state.farm=s.farm;if(s.village.activeSeconds>this.state.village.activeSeconds)this.state.village=s.village;this.state.settings=s.settings;if(preferences)this.emit();}
+        if(progressFingerprint(s)===this.persistedProgress){const preferences=JSON.stringify(this.state.settings)!==JSON.stringify(s.settings);this.state.revision=s.revision;this.state.worldSeconds=s.worldSeconds;if(s.farm.activeSeconds>this.state.farm.activeSeconds)this.state.farm=s.farm;if(s.village.activeSeconds>this.state.village.activeSeconds)this.state.village=s.village;this.adoptCommunity(s);this.state.settings=s.settings;if(preferences)this.emit();}
         else{this.state=s;this.persistedProgress=progressFingerprint(s);this.conflict=true;this.emit();}
       } }
     });
@@ -119,7 +122,7 @@ export class TownStore {
     try {
       const disk = parseTown(localStorage.getItem(TOWN_KEYS[this.state.mode]), this.state.mode);
       if (disk && disk.revision > this.state.revision) {
-        if(progressFingerprint(disk)===this.persistedProgress){this.state.revision=disk.revision;if(disk.farm.activeSeconds>this.state.farm.activeSeconds)this.state.farm=disk.farm;if(disk.village.activeSeconds>this.state.village.activeSeconds)this.state.village=disk.village;}
+        if(progressFingerprint(disk)===this.persistedProgress){this.state.revision=disk.revision;if(disk.farm.activeSeconds>this.state.farm.activeSeconds)this.state.farm=disk.farm;if(disk.village.activeSeconds>this.state.village.activeSeconds)this.state.village=disk.village;this.adoptCommunity(disk);}
         else{this.state=disk;this.persistedProgress=progressFingerprint(disk);this.conflict=true;this.emit();return false;}
       }
       this.state.revision++; localStorage.setItem(TOWN_KEYS[this.state.mode], JSON.stringify(this.state)); localStorage.setItem(META, this.state.mode); this.persistenceError = '';
@@ -132,6 +135,7 @@ export class TownStore {
   get puzzle() { return PUZZLES.find(p => p.id === this.activePuzzle); }
   unlockedKind(kind: BuildingKind): boolean {
     if (this.activePuzzle) return this.board.buildings.some(b => b.kind === kind);
+    const community=communityUnlock(this.state,kind);if(community!==null)return community;
     const order=ORDERS.find(o=>o.reward===kind);if(order)return (this.state.village.completed[order.id]||0)>0;
     const p = PUZZLES.find(p => p.reward === kind); return p ? (this.state.puzzleStars[p.id] || 0) > 0 : CATALOG[kind].chapter <= activeChapter(this.state);
   }
@@ -153,7 +157,7 @@ export class TownStore {
     const candidate: Building = existing ? { ...existing, x, z, rotation, placed: true } : { ...makeBuilding(`building-${this.state.nextId}`, kind, x, z, rotation), variant: kind === 'house' ? this.state.nextId % 4 : 0 };
     const invalid = canPlace(this.state, this.board, candidate); if (invalid) return invalid;
     if (!existing) {
-      if (kind === 'workshop' || kind === 'hall') return '请从库存选择已有的建筑';
+      if (kind === 'workshop' || kind === 'hall' || LANDMARKS.some(d=>d.kind===kind)) return '请从库存选择已有的建筑';
       if (this.state.coins < CATALOG[kind].cost) return '金币还不够。同步 token，或先试试免费的规划关';
       this.state.coins -= CATALOG[kind].cost; this.state.nextId++; this.board.buildings.push(candidate);
     } else Object.assign(existing, candidate);
@@ -166,6 +170,7 @@ export class TownStore {
     const p = PUZZLES.find(p => p.reward === b.kind);
     if (p && (this.state.puzzleStars[p.id] || 0) < 3) return false;
     if (this.activePuzzle) return false;
+    const festival=FESTIVALS.find(f=>f.reward===b.kind);if(festival&&(this.state.community.festivalStars[festival.id]||0)<2)return false;
     const chapter = CHAPTER_COSMETICS.indexOf(b.kind), stars = this.state.chapterStars[chapter] || 0;
     if (chapter >= 0 && stars < 2) return false;
     b.variant = (b.variant + 1) % (p || chapter >= 0 && stars === 2 ? 2 : 4); this.commit(); return true;
@@ -186,6 +191,38 @@ export class TownStore {
   chooseProduction(id:string,choice:string):void {const run=this.state.village.runs[id];if(!run||!['milk','cheese','carrot','potato','soup','fish'].includes(choice))return;this.state.village.choices[id]=choice;if(run.phase==='work'&&run.elapsed===0&&!Object.keys(run.cargo).length)run.choice=choice;else run.nextChoice=choice;this.commit();}
   selectOrder(id:string|null):void {if(this.activePuzzle)return;if(id===null||ORDERS.some(o=>o.id===id)){this.state.village.activeOrder=id;this.commit();}}
   fulfillOrder(id:string):string {if(this.activePuzzle)return '请回到主城完成订单';if(!this.commit(false))return '城镇记录已更新，请再试一次';const problem=completeOrder(this.state,evaluate(this.state.town),id,worldTime(this.state.worldSeconds,this.state.settings).season);if(!problem){this.state.village.activeSeconds+=.001;this.commit();}return problem;}
+  private adoptCommunity(disk:TownState):void {
+    const local=this.state.community,other=disk.community;if(other.activeSeconds<=local.activeSeconds)return;
+    const choices=(c:typeof local)=>JSON.stringify([c.stories,c.festival,c.festivalStars]);
+    if(choices(local)===choices(other))local.gathering=other.gathering;
+    for(const id of Object.keys(local.restorations))if(other.restorations[id])local.restorations[id]=other.restorations[id];
+    if(local.activeRestoration&&local.restorations[local.activeRestoration]?.phase==='done')local.activeRestoration=null;
+    local.activeSeconds=other.activeSeconds;
+  }
+  private communityAction(change:()=>string):string {
+    if(this.activePuzzle)return '请回到主城继续街坊故事';
+    if(!this.commit(false))return '城镇记录已更新，请再试一次';
+    const problem=change();if(problem)return problem;
+    this.state.community.activeSeconds+=.001;
+    return this.commit()?'':'城镇记录未保存，请查看最新进度后再试';
+  }
+  claimStory(id:string,step:number,homeId?:string):string {return this.communityAction(()=>completeStory(this.state,evaluate(this.state.town),id,step,homeId));}
+  prepareFestival(id:Season):string {return this.communityAction(()=>prepareFestival(this.state,evaluate(this.state.town),id));}
+  cancelFestival():string {return this.communityAction(()=>{cancelFestival(this.state);return '';});}
+  celebrateFestival(venueId:string):string {return this.communityAction(()=>celebrateFestival(this.state,evaluate(this.state.town),venueId,worldTime(this.state.worldSeconds,this.state.settings).season));}
+  acquireLandmark(kind:BuildingKind):string {return this.communityAction(()=>{
+    const def=LANDMARKS.find(d=>d.kind===kind);if(!def)return '没有这个遗址';
+    if(activeChapter(this.state)<def.chapter)return `完成第 ${def.chapter-1} 章后开放这处遗址`;
+    if(this.state.town.buildings.some(b=>b.kind===kind))return '遗址已经在你的库存或地图上';
+    this.state.town.buildings.push({...makeBuilding(`landmark-${this.state.nextId++}`,kind,0,0),placed:false});return '';
+  });}
+  beginRestoration(id:string):string {return this.communityAction(()=>{
+    const b=this.state.town.buildings.find(b=>b.id===id),def=LANDMARKS.find(d=>d.kind===b?.kind),e=evaluate(this.state.town);
+    if(!def||!b?.placed||!e.buildings[id]?.connected)return '先摆好遗址，并接通它的入口道路';
+    if(this.state.community.restorations[id])return '这处遗址已开始修复';
+    if(this.state.community.activeRestoration)return '先修好当前遗址，三位工人还要照顾生产';
+    this.state.community.restorations[id]={phase:'pickup',sourceId:'',good:null,cargo:{},delivered:{},elapsed:0};this.state.community.activeRestoration=id;return '';
+  });}
   updateSettings(update: Partial<TownState['settings']>): void { Object.assign(this.state.settings, update); this.commit(); }
   clock(seconds:number,save=false):void { this.state.worldSeconds=seconds; if(save)this.commit(false); }
   visitHour(hour:number):void { this.state.worldSeconds=atHour(this.state.worldSeconds,hour); this.state.settings.clockMode='cycle'; this.commit(); }

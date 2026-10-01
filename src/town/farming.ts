@@ -8,7 +8,7 @@ export const FARM_PHASES: FarmPhase[] = ['sowing', 'growing', 'harvesting', 'to-
 export const FARM_LABELS: Record<FarmPhase, string> = { sowing: '播种', growing: '麦苗生长', harvesting: '收割小麦', 'to-mill': '把麦子送往磨坊', milling: '风车磨面', 'to-bakery': '把面粉送往面包店', baking: '烘焙面包', returning: '回麦田准备下一季' };
 export const freshFarm = (): FarmState => ({ runs: {}, wheat: 0, flour: 0, bread: 0, batches: 0, activeSeconds:0 });
 export interface FarmChain { field: Building; mill?: Building; bakery?: Building; toMill: WalkPoint[]; toBakery: WalkPoint[]; returning: WalkPoint[]; problem: string }
-export interface FarmJob {cycles?:number; fieldId: string; phase: FarmPhase; target: WalkPoint; entrance: WalkPoint; buildingId?:string; access?:WalkPoint[]; accessId?:string; carrying: 'wheat' | import('./village').Good | null; harvesting: boolean }
+export interface FarmJob {chainId?:string;cycles?:number; fieldId: string; phase: FarmPhase; target: WalkPoint; entrance: WalkPoint; buildingId?:string; access?:WalkPoint[]; accessId?:string; carrying: 'wheat' | import('./village').Good | null; harvesting: boolean }
 export function bakeryMaterialLabel(id:string,chains:FarmChain[],farm:FarmState,sleep:boolean):string {
   if(sleep)return '夜间休息中';
   const runs=chains.filter(c=>c.bakery?.id===id&&!c.problem).map(c=>farm.runs[c.field.id]).filter(Boolean);

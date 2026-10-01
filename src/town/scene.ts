@@ -1,4 +1,6 @@
 import * as T from 'three';
+import { tickRestoration, restorationStatus as restorationLabel, LANDMARKS } from './community';
+import { setLandmarkState } from './community-models';
 import {tickVillage,productionDuration,PRODUCTION_KINDS,stationRun,availableGoods,orderStatus,type Good} from './village';
 import {scheduledJobs} from './work-scheduler';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -127,7 +129,7 @@ export class TownScene {
     if (this.grid) this.grid.visible = tool !== 'inspect';
     if (this.ghost) { this.ghost.traverse(o => { if (o instanceof T.Mesh) (o.material as T.Material).dispose(); }); this.cursor.remove(this.ghost); this.ghost = undefined; }
     if (kind) {
-      this.ghost = this.model(kind, variant, stage).clone(); this.ghost.traverse(o => { if (o instanceof T.Mesh) { o.material = (o.material as T.MeshStandardMaterial).clone(); Object.assign(o.material, { transparent: true, opacity: .82, depthWrite: true }); o.castShadow = false; } });
+      this.ghost = this.model(kind, variant, stage).clone();const landmark=this.state?.town.buildings.find(b=>b.kind===kind);setLandmarkState(this.ghost,Boolean(landmark&&this.state?.community.restorations[landmark.id]?.phase==='done')); this.ghost.traverse(o => { if (o instanceof T.Mesh) { o.material = (o.material as T.MeshStandardMaterial).clone(); Object.assign(o.material, { transparent: true, opacity: .82, depthWrite: true }); o.castShadow = false; } });
       this.cursor.add(this.ghost); this.ghost.rotation.y = -rotation * Math.PI / 2;
     }
     if (this.cursorCell) { this.showCursor(this.cursorCell); this.cursor.visible = kind !== null; }
@@ -145,7 +147,7 @@ export class TownScene {
       for (const b of board.buildings.filter(b => b.placed)) {
         const project = state.projects.find(p => p.id === b.projectId); const stage = project ? stageForLevel(levelFor(project.tokens)).index : 0;
         const model = this.model(b.kind, visualVariant(b,state), stage).clone(); const dims = dimensions(b);
-        model.position.set(b.x + dims.w / 2, (foundationHeight(board,b) ?? groundHeight(board,b.x+dims.w/2,b.z+dims.d/2)) + BUILDING_GROUND_Y, b.z + dims.d / 2); model.rotation.y = -b.rotation * Math.PI / 2; model.userData.buildingId = b.id;
+        model.position.set(b.x + dims.w / 2, (foundationHeight(board,b) ?? groundHeight(board,b.x+dims.w/2,b.z+dims.d/2)) + BUILDING_GROUND_Y, b.z + dims.d / 2); model.rotation.y = -b.rotation * Math.PI / 2; model.userData.buildingId = b.id;setLandmarkState(model,state.community.restorations[b.id]?.phase==='done');
         model.traverse(o => { o.userData.buildingId = b.id; }); this.buildings.add(model); this.buildingMeshes.set(b.id, model);
         if(b.kind==='house'&&this.porchLights.length<3){const light=new T.PointLight('#ffc47c',0,2.7,2);light.position.set(.52,.87,1.04);model.add(light);this.porchLights.push(light);}
       }
@@ -177,7 +179,7 @@ export class TownScene {
   thumbnail(kind: BuildingKind, variant = 0, stage = 0): string {
     const name = `${kind}-${variant}-${stage}`; const cached = this.thumbnails.get(name); if (cached) return cached;
     const scene = new T.Scene(); scene.background = null; scene.add(new T.HemisphereLight('#fff5d9', '#7b805e', 3)); const sun = new T.DirectionalLight('#fff4df', 3); sun.position.set(-3, 6, 5); scene.add(sun);
-    const model = this.model(kind, variant, stage).clone(); scene.add(model);
+    const model = this.model(kind, variant, stage).clone(); setLandmarkState(model,true); scene.add(model);
     const height = kind === 'mill' ? 3.8 : kind === 'clock' ? 4.2 : kind === 'workshop' && stage > 0 ? 3.6 : 2.4;
     const size = Math.max(CATALOG[kind].w, CATALOG[kind].d, height) * .7;
     const camera = new T.OrthographicCamera(-size, size, size, -size, .1, 40); camera.position.set(5, 5, 7); camera.lookAt(0, height * .42, 0);
@@ -226,6 +228,7 @@ export class TownScene {
       const surface = walkSurface(this.board!.buildings, person, this.board!);
       group.position.set(surface.x, surface.y, surface.z); group.rotation.y = person.angle; this.scene.add(group);
       const limbs = ['leg-left', 'leg-right', 'arm-left', 'arm-right'].map(name => body.getObjectByName(name)!);
+      const hammer=new T.Group();hammer.name='repair-hammer';hammer.visible=false;group.add(hammer);hammer.position.set(.16,.4,.18);box(hammer,0,.09,0,.025,.25,.025,'#88664d');box(hammer,0,.23,0,.13,.065,.055,'#7c817b');
       const rod=new T.Group();rod.name='fishing-rod';rod.visible=false;group.add(rod);rod.position.set(.12,.33,.16);box(rod,0,.48,0,.015,.95,.015,'#987751');rod.rotation.x=0;const line=new T.Line(new T.BufferGeometry().setFromPoints([new T.Vector3(0,.94,0),new T.Vector3(.16,-.68,.75)]),new T.LineBasicMaterial({color:'#e1d9ba'}));rod.add(line);box(rod,.16,-.68,.75,.045,.06,.045,'#c68f75');
       const cargo=new T.Group();cargo.visible=false;group.add(cargo);box(cargo,0,.26,.16,.18,.18,.13,'#ceb981');box(cargo,0,.36,.16,.13,.05,.11,'#e0d1ae');
       let seated:T.Group|undefined;if(seatMap.has(i)){seated=packModel(residentModel(RESIDENT_COLORS[i % RESIDENT_COLORS.length],i,true));group.add(seated);}this.walkers.push({ group,body,cargo,seated, phase: person.phase, limbs });
@@ -233,6 +236,15 @@ export class TownScene {
   }
   select(id: string | null): void { this.selection = id; this.drawSelection(); }
   selectResident(index: number | null): void { this.residentSelection = index; if (index === null) this.residentHalo.visible = false; }
+  restorationStatus(id:string):string {
+    if(!this.state||!this.evaluation)return '';
+    const sleep=worldTime(this.state.worldSeconds,this.state.settings).sleep,label=restorationLabel(this.state,this.evaluation,id,sleep);
+    const run=this.state.community.restorations[id],worker=[...(this.life?.jobs.entries()||[])].find(([,job])=>job.chainId===`restoration-${id}`);
+    if(sleep||!run||run.phase==='done'||!worker||!this.evaluation.buildings[id]?.connected)return label;
+    const [index]=worker,r=this.life!.residents[index];if(r.mode!=='working')return label;
+    const name=residentProfile(index)!.name;
+    return `${name}${r.path.length?'正在前往':run.phase==='pickup'?'正在领取补给':run.phase==='deliver'?'正在送达补给':'正在修复'} · ${label}`;
+  }
   residentInfo(index: number): ResidentInfo | null { return this.state && this.board && this.life ? describeResident(index, this.state, this.board, this.life) : null; }
   residentInfos(): ResidentInfo[] { return this.life?.residents.map((_,index)=>this.residentInfo(index)).filter((r):r is ResidentInfo=>r!==null) || []; }
   productionStatus(b: Building): string {
@@ -424,17 +436,21 @@ export class TownScene {
     for(const [i,job]of this.life?.jobs||[]){const p=this.traffic!.people[i],r=this.life!.residents[i];if(r.mode==='working'&&!r.path.length&&Math.hypot(p.x-job.target.x,p.z-job.target.z)<.15)ready.add(job.fieldId);}
     const farmJobs=tickFarm(this.farms,s.farm,dt,clock.sleep,clock.season,ready);
     const villageJobs=this.board===s.town?tickVillage(s,this.evaluation!,dt,clock.sleep,clock.season,ready):[];
-    const jobs=scheduledJobs(farmJobs,villageJobs);
+    const restorationJobs=this.board===s.town?tickRestoration(s,this.evaluation!,dt,clock.sleep,ready):[];
+    const jobs=scheduledJobs(farmJobs,[...villageJobs,...restorationJobs]);
     this.life?.assignJobs(jobs,(from,to)=>{const roads=this.evaluation!.connectedRoads;if(!roads.size)return [];const start=[...roads].map(k=>{const [x,z]=k.split(',').map(Number);return{x:x+.5,z:z+.5};}).sort((a,b)=>Math.hypot(a.x-from.x,a.z-from.z)-Math.hypot(b.x-from.x,b.z-from.z))[0];return roadRoute(roads,start,to);});
-    const celebration=s.village.celebration>0;
-    const placesSignature=this.roadsSignature+String(celebration);
+    const gathering=this.board===s.town?s.community.gathering:null;
+    const celebration=this.board===s.town&&(s.village.celebration>0||Boolean(gathering&&this.evaluation!.buildings[gathering.venueId]?.connected));
+    const placesSignature=this.roadsSignature+String(celebration)+(gathering?.venueId||'')+LANDMARKS.map(d=>s.town.buildings.find(b=>b.kind===d.kind)?.id).filter(id=>id&&s.community.restorations[id]?.phase==='done').join();
     if(this.placesSignature!==placesSignature){this.placesSignature=placesSignature;
     const places=this.board!.buildings.filter(b=>b.placed&&this.evaluation!.buildings[b.id]?.connected&&(CATALOG[b.kind].service||b.kind==='park')).map(b=>{const p=entrance(b),d=dimensions(b),position={x:p.x+.5,z:p.z+.5},dx=b.x+d.w/2-position.x,dz=b.z+d.d/2-position.z,l=Math.hypot(dx,dz);return{id:b.id,buildingId:interiorSpot(b)?b.id:undefined,position,target:interiorSpot(b)||{x:position.x+dx/l*.48,z:position.z+dz/l*.48}};});
+    for(const b of this.board!.buildings.filter(b=>b.placed&&s.community.restorations[b.id]?.phase==='done'&&this.evaluation!.buildings[b.id]?.connected)){const p=entrance(b),position={x:p.x+.5,z:p.z+.5};places.push({id:b.id,buildingId:undefined,position,target:{x:position.x,z:position.z-.2}});}
     const homePlaces = this.board!.buildings.filter(b=>b.placed&&b.kind==='house'&&this.evaluation!.buildings[b.id]?.connected).map(doorstepPlace);
-    if(celebration){const hall=this.board!.buildings.find(b=>b.kind==='hall')!,p=entrance(hall),d=dimensions(hall),position={x:p.x+.5,z:p.z+.5},dx=hall.x+d.w/2-position.x,dz=hall.z+d.d/2-position.z,l=Math.hypot(dx,dz);for(let i=0;i<3;i++)places.push({id:`festival-${i}`,buildingId:undefined,position,target:{x:position.x+dx/l*.45-dz/l*(i-1)*.65,z:position.z+dz/l*.45+dx/l*(i-1)*.65}});}
+    if(celebration){const hall=this.board!.buildings.find(b=>b.id===gathering?.venueId&&b.placed&&this.evaluation!.buildings[b.id]?.connected)||this.board!.buildings.find(b=>b.kind==='hall')!,p=entrance(hall),position={x:p.x+.5,z:p.z+.5};const spots=[...this.evaluation!.connectedRoads].map(k=>{const [x,z]=k.split(',').map(Number);return{x:x+.5,z:z+.5};}).sort((a,b)=>Math.hypot(a.x-position.x,a.z-position.z)-Math.hypot(b.x-position.x,b.z-position.z));for(const [i,spot]of spots.slice(0,3).entries())places.push({id:`festival-${hall.id}:${i}`,buildingId:undefined,position:spot,target:{x:spot.x+.18,z:spot.z+.16}});}
     this.life?.setPlaces([...places,...homePlaces],this.evaluation!.connectedRoads);
     }
     this.life?.update(dt,clock.sleep);
+    for(const b of this.board!.buildings.filter(b=>LANDMARKS.some(d=>d.kind===b.kind))){const model=this.buildingMeshes.get(b.id);if(model){const done=s.community.restorations[b.id]?.phase==='done';setLandmarkState(model,done);const fan=model.getObjectByName('landmark-fan');if(fan&&done&&!this.reduced)fan.rotation.z+=dt*.2;}}
     for(const chain of this.farms){const run=s.farm.runs[chain.field.id],crop=this.buildingMeshes.get(chain.field.id)?.getObjectByName('crop-patch');if(crop){const growth=run?.phase==='growing'?Math.min(1,run.elapsed/farmDuration(chain,'growing',clock.season)):run?.phase==='sowing'?.12:run?.phase==='harvesting'?1:.06;crop.scale.y=.12+growth*.88;}if(chain.mill){const fan=this.buildingMeshes.get(chain.mill.id)?.getObjectByName('mill-fan');if(fan&&!this.reduced)fan.rotation.z+=dt*(run?.phase==='milling'&&!clock.sleep?1.2:.13);}}
     for(const b of this.board!.buildings.filter(b=>b.placed&&PRODUCTION_KINDS.includes(b.kind))){
       const model=this.buildingMeshes.get(b.id)!,run=stationRun(s.village,b);
@@ -449,7 +465,7 @@ export class TownScene {
       let height=surface.y+pose.bob;const portal=this.life!.portals.get(r.insideBuilding||r.path.find(p=>p.gate)?.gate?.id||'');if(portal){const t=Math.min(1,Math.hypot(person.x-portal.outside.x,person.z-portal.outside.z)/.45);height=Math.max(height,surface.y+(portal.floor+groundHeight(this.board!,person.x,person.z)-surface.y)*t+pose.bob);}
       const h=this.life!.doors[r.home];if(h&&['entering','leaving','opening-out'].includes(r.mode))height+=.12*Math.min(1,Math.hypot(person.x-h.outside.x,person.z-h.outside.z)/.50);
       w.group.position.set(r.seated?person.x:surface.x,r.seated?r.seat!.y:height,r.seated?person.z:surface.z);w.group.rotation.y=person.angle;
-      const job=this.life!.jobs.get(index),working=r.mode==='working';const rod=w.group.getObjectByName('fishing-rod')!;rod.visible=working&&job?.harvesting===true&&job.phase==='harvesting'&&jobFishing(job?.fieldId,this.board!)&&!r.path.length;if(rod.visible&&!this.reduced)rod.rotation.x=Math.sin(time*.002)*.035;w.cargo.visible=working&&Boolean(job?.carrying);w.cargo.children.forEach(o=>{if(o instanceof T.Mesh)o.material=material(job?.carrying==='flour'?'#e9dfc1':job?.carrying==='fish'?'#87b8b2':job?.carrying==='carrot'?'#cb925d':job?.carrying==='milk'?'#ebe3cb':'#c8a769');});
+      const job=this.life!.jobs.get(index),working=r.mode==='working';const hammer=w.group.getObjectByName('repair-hammer')!;hammer.visible=working&&Boolean(job?.fieldId.startsWith('restoration-'))&&job?.phase==='harvesting'&&!r.path.length;if(hammer.visible)hammer.rotation.x=this.reduced?-.3:Math.sin(time*.006)*.55-.4;const rod=w.group.getObjectByName('fishing-rod')!;rod.visible=working&&job?.harvesting===true&&job.phase==='harvesting'&&jobFishing(job?.fieldId,this.board!)&&!r.path.length;if(rod.visible&&!this.reduced)rod.rotation.x=Math.sin(time*.002)*.035;w.cargo.visible=working&&Boolean(job?.carrying);w.cargo.children.forEach(o=>{if(o instanceof T.Mesh)o.material=material(job?.carrying==='flour'?'#e9dfc1':job?.carrying==='fish'?'#87b8b2':job?.carrying==='carrot'?'#cb925d':job?.carrying==='milk'?'#ebe3cb':'#c8a769');});
       w.limbs.forEach((limb,i)=>{const target=i>=2&&working&&job?.carrying?-.85:i>=2&&working&&job?.harvesting&&!r.path.length&&!this.reduced?-.45+Math.sin(time*.004+index)*.3:(i<2?pose.leg:pose.arm)*(i%2?-1:1);limb.rotation.x+=(target-limb.rotation.x)*(1-Math.exp(-dt*16));});
     }
     const selected = this.residentSelection === null ? undefined : this.walkers[this.residentSelection]; this.residentHalo.visible = !this.cleanView&&!this.streetView&&Boolean(selected?.group.visible);
@@ -459,7 +475,7 @@ export class TownScene {
   }
   private publishDiagnostics(clock: ReturnType<typeof worldTime>):void {
     const s=this.state!;
-    this.canvas.dataset.village=JSON.stringify(s.village);this.canvas.dataset.workers=JSON.stringify([...(this.life?.jobs.entries()||[])].map(([i,j])=>({resident:i,id:j.fieldId,target:j.target,path:this.life!.residents[i].path.length,mode:this.life!.residents[i].mode,inside:this.life!.residents[i].insideBuilding})));
+    this.canvas.dataset.community=JSON.stringify(s.community);this.canvas.dataset.village=JSON.stringify(s.village);this.canvas.dataset.workers=JSON.stringify([...(this.life?.jobs.entries()||[])].map(([i,j])=>({resident:i,id:j.fieldId,target:j.target,path:this.life!.residents[i].path.length,mode:this.life!.residents[i].mode,inside:this.life!.residents[i].insideBuilding})));
     this.canvas.dataset.clockHands=JSON.stringify(this.board!.buildings.filter(b=>b.placed&&b.kind==='clock').map(b=>({id:b.id,hour:this.buildingMeshes.get(b.id)?.getObjectByName('clock-hour-0')?.rotation.z,minute:this.buildingMeshes.get(b.id)?.getObjectByName('clock-minute-0')?.rotation.z})));
     this.canvas.dataset.smokeSources=JSON.stringify(this.board!.buildings.filter(b=>b.placed&&['bakery','restaurant'].includes(b.kind)).map(b=>({id:b.id,origin:smokeOrigin(this.buildingMeshes.get(b.id)!)?.toArray()})));
     this.canvas.dataset.worldHour=clock.hour.toFixed(2);this.canvas.dataset.season=clock.season;this.canvas.dataset.residentActivities=JSON.stringify(this.life?.residents.map(r=>r.mode)||[]);this.canvas.dataset.doorAngles=JSON.stringify(this.life?.allDoors.map(h=>({id:h.id,open:+h.open.toFixed(2)}))||[]);

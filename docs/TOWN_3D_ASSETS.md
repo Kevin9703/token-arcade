@@ -1,6 +1,6 @@
 # 河谷小镇 · 3D 资产与制作流程
 
-当前城镇使用完整 3D 网格，模型源是 `src/town/models.ts` 与 `src/town/village-models.ts`。建筑、居民和环境采用统一的微缩景观比例、木石材质、柔和阴影与暖色灯光。玩法占地和价格以 [游戏规则](TOKEN_TOWN.md) 为准，实际检查见 [验收记录](QA.md)。
+当前城镇使用完整 3D 网格，模型源是 `src/town/models.ts`、`src/town/village-models.ts` 与 `src/town/community-models.ts`。建筑、居民和环境采用统一的微缩景观比例、木石材质、柔和阴影与暖色灯光。玩法占地和价格以 [游戏规则](TOKEN_TOWN.md) 为准，实际检查见 [验收记录](QA.md)。
 
 ## 原创模型与导出
 
@@ -8,7 +8,7 @@
 npm run build:assets
 ```
 
-`scripts/build-town-assets.mjs` 输出 `public/assets/town/models/` 中的 **176 个 GLB**：39 类建筑 / 装饰各四种外观，项目工坊五个阶段各四款外观。`scene.ts` 通过 GLTFLoader 按需加载，同源 TypeScript 模型作为加载失败时的完整备用。
+`scripts/build-town-assets.mjs` 输出 `public/assets/town/models/` 中的 **216 个 GLB**：49 类建筑 / 装饰各四种外观，项目工坊五个阶段各四款外观。`scene.ts` 通过 GLTFLoader 按需加载，同源 TypeScript 模型作为加载失败时的完整备用。
 
 模型使用倒角木石构件、砖基、实心山墙、瓦缝、排水边、窗框、百叶、花箱、门廊、老虎窗和烟囱。网格按材质合批并索引化，活动部件保持独立节点。
 
@@ -102,3 +102,11 @@ blender --background --python scripts/build-curated-town.py
 四季录音是独立的 CC BY 4.0 作品，曲目、署名、来源、改动和哈希见 [音乐授权](../public/assets/town/audio/CREDITS.md) 与同目录 `sources.json`。旧像素字体与街机素材已移除；当前发布资源全部位于 `public/assets/town/`，各自授权随资源保留。
 
 参考：[Blender 格式支持](https://www.blender.org/features/pipeline/)、[glTF 导出文档](https://docs.blender.org/manual/en/latest/addons/import_export/scene_gltf2.html)。
+
+## 街坊纪念与修复模型
+
+新增香草架、读书角、听溪石景、春日花拱、夏日野餐伞、秋收南瓜车、冬日暖灯架，以及旧水井、林间观景台、旧风车。各有四款外观，从 TypeScript 生成四十个 GLB，不修改玩家的 Blender 场景。纪念物为纯装饰；开放地标的工作 / 访问点在道路侧，没有虚构房门。
+
+三处地标保留 `landmark-ruin` / `landmark-restored` 两组活动部件，旧风车单独保留 `landmark-fan`。导出时两组均保留，实际实例根据修复账本选择显示，缩略图显示修好状态；叶片不能与塔身合并。现有居民加独立修复工具，动画只在实际到岗修复时显示。
+
+模型陈列页 `asset-preview.html?community=1` 可检查前面，追加 `&view=back` 检查后面，`&ruins=1` 检查未修好状态。陈列页用于开发验证，不在主城添加测试按钮。

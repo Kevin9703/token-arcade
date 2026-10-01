@@ -54,3 +54,13 @@
 #town-ui.street-view .home-needs-layer{display:none}
 .camera-controls .active{background:#dce6d0;color:#416747;border-radius:7px}
 body:has(#town-ui.clean-view) #town-scene:focus{outline:none}
+
+/* Stories keep their goals beside the town, with a small keepsake for each memory. */
+.community-tabs{flex-wrap:nowrap;gap:3px}.community-tabs button{flex:1;padding:7px 4px;white-space:nowrap}
+.story-person{display:flex;align-items:center;gap:10px;margin-bottom:12px}.story-person img{width:52px;height:52px;object-fit:contain;border-radius:14px;background:#e3e8d7;flex-shrink:0}.story-person h3{font-size:13px;line-height:1.6;margin-bottom:4px}.story-person small{font-size:10px;color:#75836a}
+.story-steps{display:flex;flex-direction:column;gap:6px;margin:12px 0;font-size:10px;color:#8a927e}.story-steps span{border-left:2px solid #d6dcc9;padding-left:9px}.story-steps .done{color:#65815c;border-color:#90a883}.story-steps .current{color:#456952;border-color:#456952;font-weight:600}
+.order-card .story-dialogue{font-size:12px;color:#596d53;padding:12px 10px;margin:12px 0;background:#eceddf;border-radius:9px;line-height:1.9}
+.story-goals{list-style:none;padding:0;margin:14px 0;display:grid;gap:10px}.story-goals li{display:flex;align-items:flex-start;gap:7px;font-size:11px;line-height:1.7;color:#80624d}.story-goals svg{width:13px;height:13px;flex-shrink:0;margin-top:3px}.story-goals span{flex:1}.story-goals b{font-weight:500;color:#6e7d60;white-space:nowrap}.story-goals .met{color:#456952}
+.story-card>.primary,.festival-card>.primary,.festival-card>.secondary,.landmark-card>.primary,.landmark-card>.secondary{width:100%;margin:10px 0}.story-card>.text-button,.festival-card>.text-button{width:100%;font-size:10px;margin:6px 0 12px}.story-card>.panel-note{margin:9px 0}.story-card>small,.festival-card>small{display:block;line-height:1.8}
+.prepared-basket{display:flex;align-items:center;gap:7px;padding:10px;background:#e5ebd9;color:#526f4c;border-radius:9px}.prepared-basket svg{width:15px;flex-shrink:0}.festival-card h3{font-size:14px;line-height:1.6}.festival-card h3 small{font-size:10px;color:#6b845e;margin-left:7px}.festival-card>p{margin:9px 0;font-size:12px}.festival-card details{margin:12px 0;color:#65785b;font-size:11px}.festival-card summary{cursor:pointer;line-height:1.8}.festival-card .setting-row{flex-direction:column;align-items:flex-start;gap:8px}.festival-card select{width:100%}
+.landmark-card>.model-preview{display:block;width:160px;height:133px;object-fit:contain;margin:-4px auto 5px}.landmark-card h3{font-size:15px}.landmark-card>p{margin:10px 0;font-size:12px}.landmark-card .farm-status{background:#e9eddd;border-radius:9px;padding:10px;line-height:1.8}.community-content>.story{margin-bottom:16px}

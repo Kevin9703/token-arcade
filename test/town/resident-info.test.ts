@@ -52,6 +52,7 @@ test('a selected neighbor follows doorstep, shop, seat and bedtime transitions w
   r.mode='visiting';r.visitId=`doorstep-${home.id}`;assert.equal(info().status,'前往住宅门前');assert.equal(info().destination,buildingLabel(home));
   r.mode='lingering';assert.equal(info().status,'在门前歇脚');r.visitId=bakery.id;assert.equal(info().status,'在晨光面包店停留');
   r.visitId='festival-1';assert.equal(info().destination,'镇公所前的庭院');
+  const park=s.town.buildings.find(b=>b.kind==='park')!;r.visitId=`festival-${park.id}:1`;assert.equal(info().destination,buildingLabel(park));r.mode='visiting';assert.equal(info().status,'前往绿荫小公园');
   r.mode='seated';r.seat={id:'park-1:0',position:{x:0,z:0},via:{x:0,z:0},yaw:0,y:0};assert.equal(info().status,'坐着休息');
   r.mode='going-home';assert.equal(info().intention,'回家睡觉');r.mode='sleeping';r.visible=false;assert.equal(info().status,'在家睡觉');assert.equal(info().visible,false);assert.equal(info().name,name);
   r.mode='opening-out';assert.equal(info().status,'开门迎接清晨');

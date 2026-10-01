@@ -1,6 +1,16 @@
 import type { BuildingDefinition, BuildingKind, Chapter } from './types';
 
 export const CATALOG: Record<BuildingKind, BuildingDefinition> = {
+  herbshelf:{kind:'herbshelf',name:'麦香香草架',description:'完成林禾三段故事的纪念蓝图。木架上留着河谷的香草和麦穗。',cost:3,w:1,d:1,category:'decor',chapter:1},
+  readingnook:{kind:'readingnook',name:'树荫读书角',description:'完成温书三段故事的纪念蓝图。小书柜、坐垫与一杯午后茶。',cost:4,w:1,d:1,category:'decor',chapter:1},
+  riverstones:{kind:'riverstones',name:'听溪石景',description:'完成江沐三段故事的纪念蓝图。河石、芦苇和小水盆组成安静的庭院。',cost:3,w:1,d:1,category:'decor',chapter:1},
+  springarch:{kind:'springarch',name:'春日花拱',description:'春日花会解锁。更好的聚会布局解锁四款配色。',cost:5,w:2,d:1,category:'decor',chapter:1},
+  summerparasol:{kind:'summerparasol',name:'夏日野餐伞',description:'夏日河畔野餐解锁。遮阳伞、软垫和小食篮。',cost:4,w:2,d:1,category:'decor',chapter:1},
+  autumncart:{kind:'autumncart',name:'秋收南瓜车',description:'秋日丰收节解锁。小推车装着南瓜与田野的收获。',cost:4,w:1,d:1,category:'decor',chapter:1},
+  winterlantern:{kind:'winterlantern',name:'冬日暖灯架',description:'冬日灯市解锁。木架上挂着三盏暖灯。',cost:4,w:1,d:1,category:'decor',chapter:1},
+  oldwell:{kind:'oldwell',name:'河岸旧水井',description:'邻里 → 修复免费领取唯一遗址，摆好并接路。居民实际领取、送达补给后修复，成为游览地点。',cost:0,w:2,d:2,category:'landmarks',chapter:2},
+  woodlookout:{kind:'woodlookout',name:'林间观景台',description:'免费领取唯一遗址，接通道路并安排补给修复。木台与修好的栏杆是街坊观赏林山的地方。',cost:0,w:3,d:2,category:'landmarks',chapter:3},
+  oldmill:{kind:'oldmill',name:'河谷旧风车',description:'免费领取唯一遗址，送达修复补给后由居民修好叶片。开放的风车纪念地标，不生产面粉。',cost:0,w:3,d:3,category:'landmarks',chapter:4},
   vegetablefield:{kind:'vegetablefield',name:'街坊菜地',description:'种胡萝卜或土豆，收成送往饭馆。春季胡萝卜、夏季土豆长得更快；冬季露地保留进度休耕。',cost:6,w:3,d:2,category:'production',chapter:2},
   cowshed:{kind:'cowshed',name:'牧场牛棚',description:'照料奶牛产鲜奶，也能用一瓶鲜奶制作奶酪。送往饭馆或完成邻里订单。',cost:24,w:3,d:2,category:'production',chapter:2},
   pigpen:{kind:'pigpen',name:'松露猪圈',description:'小猪在围栏里拱土寻找松露，供秋日丰收会使用。不宰杀动物。',cost:18,w:3,d:2,category:'production',chapter:2},

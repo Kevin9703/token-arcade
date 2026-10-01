@@ -81,7 +81,7 @@ export class ResidentLife {
     this.workRoute=route;
     const workers=this.residents.map((r,i)=>({r,i})).filter(({r})=>!r.seat);
     const next=new Map<number,FarmJob>();
-    const chain=(job:FarmJob)=>job.fieldId.replace(/-(work|deliver|return)$/,'');
+    const chain=(job:FarmJob)=>job.chainId||job.fieldId.replace(/-(work|deliver|return)$/,'');
     const claimed=new Set<number>(),assignments=jobs.map(job=>({job,worker:workers.find(w=>!claimed.has(w.i)&&this.jobs.get(w.i)&&chain(this.jobs.get(w.i)!)===chain(job))}));
     for(const a of assignments)if(a.worker)claimed.add(a.worker.i);
     for(const a of assignments){if(!a.worker){a.worker=workers.find(w=>!claimed.has(w.i));if(a.worker)claimed.add(a.worker.i);}}

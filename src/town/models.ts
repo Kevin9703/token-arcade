@@ -1,5 +1,6 @@
 import * as T from 'three';
 import {villageModel} from './village-models';
+import {communityModel, COMMUNITY_KINDS} from './community-models';
 import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import type { BuildingKind } from './types';
@@ -316,7 +317,8 @@ function farmBuilding(g:T.Group,kind:'wheatfield'|'mill',variant:number):void {
 }
 export function buildingModel(kind: BuildingKind, variant = 0, stage = 0): T.Group {
   const g = new T.Group(); g.name = `${kind}-${variant}-${stage}`;
-  if(['vegetablefield','cowshed','pigpen','fishinghut','restaurant','apronstand','harvesttable','wheatbanner'].includes(kind))villageModel(g,kind,variant);
+  if(COMMUNITY_KINDS.includes(kind))communityModel(g,kind,variant);
+  else if(['vegetablefield','cowshed','pigpen','fishinghut','restaurant','apronstand','harvesttable','wheatbanner'].includes(kind))villageModel(g,kind,variant);
   else if(kind==='wheatfield'||kind==='mill')farmBuilding(g,kind,variant);
   else if (['bakery','cafe','grocer','florist'].includes(kind)) retailBuilding(g,kind as 'bakery'|'cafe'|'grocer'|'florist',variant);
   else if (['library', 'greenhouse', 'granary', 'boathouse'].includes(kind)) communityBuilding(g, kind, variant);

@@ -2,7 +2,7 @@ import type { ProjectUsage } from '../data/types';
 
 export type DataMode = 'live' | 'demo';
 
-export type BuildingKind = 'hall' | 'house' | 'bakery' | 'cafe' | 'market' | 'park' | 'bridge' | 'clock' | 'workshop' | 'tree' | 'bench' | 'lamp' | 'flower' | 'picnic' | 'birdhouse' | 'windmill' | 'statue' | 'gardenlamp' | 'fountain' | 'cart' | 'hedge' | 'barrel' | 'planter' | 'gazebo' | 'grocer' | 'florist' | 'library' | 'greenhouse' | 'granary' | 'boathouse' | 'wheatfield' | 'mill' | 'vegetablefield' | 'cowshed' | 'pigpen' | 'fishinghut' | 'restaurant' | 'apronstand' | 'harvesttable' | 'wheatbanner';
+export type BuildingKind = 'hall' | 'house' | 'bakery' | 'cafe' | 'market' | 'park' | 'bridge' | 'clock' | 'workshop' | 'tree' | 'bench' | 'lamp' | 'flower' | 'picnic' | 'birdhouse' | 'windmill' | 'statue' | 'gardenlamp' | 'fountain' | 'cart' | 'hedge' | 'barrel' | 'planter' | 'gazebo' | 'grocer' | 'florist' | 'library' | 'greenhouse' | 'granary' | 'boathouse' | 'wheatfield' | 'mill' | 'vegetablefield' | 'cowshed' | 'pigpen' | 'fishinghut' | 'restaurant' | 'apronstand' | 'harvesttable' | 'wheatbanner' | 'herbshelf' | 'readingnook' | 'riverstones' | 'springarch' | 'summerparasol' | 'autumncart' | 'winterlantern' | 'oldwell' | 'woodlookout' | 'oldmill';
 export type FarmPhase = 'sowing' | 'growing' | 'harvesting' | 'to-mill' | 'milling' | 'to-bakery' | 'baking' | 'returning';
 export interface FarmRun { phase: FarmPhase; elapsed: number; millId: string; bakeryId: string; batches: number }
 export interface FarmState { runs: Record<string, FarmRun>; wheat: number; flour: number; bread: number; batches: number; activeSeconds:number }
@@ -19,6 +19,7 @@ export interface TownState {
   worldSeconds: number;
   farm: FarmState;
   village: import('./village').VillageState;
+  community: import('./community').CommunityState;
   settings: { music: boolean; musicVolume: number; muted: boolean; lighting: 'day' | 'sunset' | 'night'; clockMode: 'cycle' | 'fixed'; season: 'cycle' | 'spring' | 'summer' | 'autumn' | 'winter'; quality: 'high' | 'medium' | 'low'; reducedMotion: boolean; cameraInput: 'trackpad' | 'mouse'; cameraSpeed?: 12 | 24 | 36; goalCollapsed?: boolean };
 }
 export interface BuildingDefinition {

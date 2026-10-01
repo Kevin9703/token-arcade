@@ -37,6 +37,11 @@ export interface ResidentInfo extends NonNullable<ReturnType<typeof residentProf
 }
 
 function workInfo(job: FarmJob, s: TownState, board: Board): { action: string; destination?: Building } {
+  if(job.fieldId.startsWith('restoration-')){
+    const id=s.community.activeRestoration,run=id?s.community.restorations[id]:undefined;
+    const destination=board.buildings.find(b=>b.id===(run?.phase==='pickup'?run.sourceId:id));
+    return {action:run?.phase==='pickup'?'领取地标修复补给':run?.phase==='deliver'?'把补给送到遗址':'动手修复地标',destination};
+  }
   const field = board.buildings.find(b => b.id === job.fieldId);
   if (field) {
     const run = s.farm.runs[field.id];
@@ -80,10 +85,11 @@ export function describeResident(index: number, s: TownState, board: Board, life
     status = r.mode === 'opening-out' ? '开门迎接清晨' : '走出家门'; intention = '回到街道，开始新的一天'; destination = '家门前的街道';
   } else if (['visiting', 'lingering'].includes(r.mode)) {
     const doorstep = r.visitId?.startsWith('doorstep-'), festival = r.visitId?.startsWith('festival-');
-    const place = board.buildings.find(b => b.id === (doorstep ? r.visitId!.slice('doorstep-'.length) : r.visitId));
-    const where = festival ? '镇公所' : doorstep ? '住宅门前' : place ? CATALOG[place.kind].name : '街角';
+    const venueId = festival ? r.visitId!.slice('festival-'.length).split(':')[0] : '';
+    const place = board.buildings.find(b => b.id === (festival ? venueId : doorstep ? r.visitId!.slice('doorstep-'.length) : r.visitId));
+    const where = doorstep ? '住宅门前' : place ? CATALOG[place.kind].name : festival ? '镇公所' : '街角';
     status = r.mode === 'visiting' ? `前往${where}` : festival ? '和邻居分享收获' : doorstep ? '在门前歇脚' : `在${where}停留`;
-    intention = festival ? '参加邻里小聚会' : doorstep ? '在门旁停一会儿，看看街坊' : place?.kind === 'park' ? '去公园散散步' : '逛逛街坊的小店';
+    intention = festival ? '参加邻里小聚会' : doorstep ? '在门旁停一会儿，看看街坊' : place?.kind === 'park' ? '去公园散散步' : place && ['oldwell','woodlookout','oldmill'].includes(place.kind) ? '看看街坊一起修好的河谷地标' : '逛逛街坊的小店';
     destination = place ? buildingLabel(place) : festival ? '镇公所前的庭院' : '街角';
   } else if (['seated', 'sitting', 'going-seat', 'standing'].includes(r.mode)) {
     const place = board.buildings.find(b => b.id === r.seat?.id?.split(':')[0]);
