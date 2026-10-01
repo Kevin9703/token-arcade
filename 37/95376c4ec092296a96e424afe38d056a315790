@@ -1,0 +1,35 @@
+public/town.css
+  s_84a8c4b5748940::t_cbc4ab6095ee0e 44
+src/town/scene.ts
+  s_84a8c4b5748940::t_c12d02a1d94834 447
+  s_84a8c4b5748940::t_dabe0df469f96e 375-386
+docs/ROADMAP.md
+  s_84a8c4b5748940::t_1515050af38ddf 38
+src/town/ui.ts
+  s_84a8c4b5748940::t_c12d02a1d94834 130
+docs/QA.md
+  s_84a8c4b5748940::t_1515050af38ddf 114-122
+public/app.js
+  s_84a8c4b5748940::t_abf3fb324115ac 4232
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.1",
+  "base_commit_sha": "3795376c4ec092296a96e424afe38d056a315790",
+  "prompts": {},
+  "humans": {
+    "h_858d8e7c2e7145": {
+      "author": "kevin.zhang <547607118@qq.com>"
+    }
+  },
+  "sessions": {
+    "s_84a8c4b5748940": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0f0c6-c968-7eb2-9a16-f64685d798dc",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "kevin.zhang <547607118@qq.com>"
+    }
+  }
+}
