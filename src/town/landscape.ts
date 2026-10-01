@@ -1,6 +1,7 @@
 import * as T from 'three';
 import { box, material, packModel, treeModel } from './models';
 import { bridgeSlots, unlocked, water, STARTER_WIDTH } from './world';
+import { sceneryBatch } from './scenery-batch';
 import type { Board, TownState } from './types';
 
 // The decorative landscape never occupies gameplay cells. Its seeded groves,
@@ -34,7 +35,8 @@ export function landscape(board: Board, state: TownState, assets = new Map<strin
   const grass = new T.Mesh(grassGeometry, new T.MeshStandardMaterial({ vertexColors: true, roughness: .95 })); grass.material.userData.seasonRole='ground'; grass.receiveShadow = true; world.add(grass);
   const floorMaterial=material('#d6decf').clone();floorMaterial.userData.seasonRole='ground';const floor = new T.Mesh(new T.PlaneGeometry(240, 240), floorMaterial); floor.rotation.x = -Math.PI / 2; floor.position.set(n / 2, -1.65, n / 2); floor.receiveShadow = true; world.add(floor);
   const waterTime = { value: 0 }, ducks: T.Group[] = [];
-  const prop = (name: string,x:number,y:number,z:number,scale=1,rotation=0) => {const source=assets.get(name);if(!source)return;const model=source.clone();model.position.set(x,y,z);model.scale.setScalar(scale);model.rotation.y=rotation;world.add(model);return model;};
+  const props = new Map<string,T.Matrix4[]>();
+  const prop = (name: string,x:number,y:number,z:number,scale=1,rotation=0) => {if(!assets.has(name))return;const placement=new T.Object3D();placement.position.set(x,y,z);placement.scale.setScalar(scale);placement.rotation.y=rotation;placement.updateMatrix();const list=props.get(name)||[];list.push(placement.matrix.clone());props.set(name,list);};
   const ribbon = (edge:(x:number)=>number,inside:(x:number)=>number,y:number,color:string) => {
     const vertices:number[]=[];for(let i=0;i<n*4;i++){const a=i/4,b=(i+1)/4;for(const [x,z] of [[a,edge(a)],[a,inside(a)],[b,edge(b)],[b,edge(b)],[a,inside(a)],[b,inside(b)]])vertices.push(x,y,z);}
     const geo=new T.BufferGeometry().setAttribute('position',new T.Float32BufferAttribute(vertices,3));geo.computeVertexNormals();const mesh=new T.Mesh(geo,material(color));mesh.receiveShadow=true;world.add(mesh);
@@ -117,6 +119,7 @@ export function landscape(board: Board, state: TownState, assets = new Map<strin
     if (!state.chapterStars[1]) for (let z = 14; z < 24; z += 2) { for (const zz of [z, z + 1.85]) box(stonework, STARTER_WIDTH + .05, .3, zz, .075, .58, .075, '#9a8767'); for (const y of [.23, .46]) box(stonework, STARTER_WIDTH + .05, y, z + .93, .045, .055, 1.8, '#b4a280'); }
     if (!state.chapterStars[2]) for (let x = 1; x < 24; x += 2) { if (bridgeSlots(board).includes(x) || bridgeSlots(board).includes(x - 1)) continue; for (const xx of [x, x + 1.8]) box(stonework, xx, .29, 10.65, .075, .56, .075, '#9a8767'); for (const y of [.23, .43]) box(stonework, x + .9, y, 10.65, 1.7, .055, .04, '#b4a280'); }
   }
+  for(const [name, placements] of props) world.add(sceneryBatch(assets.get(name)!,placements));
   world.add(packModel(stonework));
   return { world, forest, update(time: number) { waterTime.value = time / 1000; ducks.forEach((duck,i)=>{const t=time*.000065;duck.position.set(n*.28+Math.sin(t)*n*.19-i*.25,-.12+Math.sin(time*.002+i)*.007,river+1+Math.sin(t*1.3)*.28+i*.09);duck.rotation.y=Math.cos(t)>0?0:Math.PI;}); } };
 }

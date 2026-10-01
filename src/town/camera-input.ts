@@ -4,11 +4,11 @@ export interface WheelInput {
   ctrlKey: boolean; metaKey: boolean; shiftKey: boolean;
 }
 export type CameraGesture = { kind: 'orbit' | 'pan' | 'zoom'; x: number; y: number };
-export const MIN_ELEVATION = Math.PI * 26 / 180;
+export const MIN_ELEVATION = Math.PI * 12 / 180;
 export const MAX_ELEVATION = Math.PI * 72 / 180;
 export const DEFAULT_ELEVATION = Math.PI * 40 / 180;
 export const clampElevation = (angle: number) => Math.max(MIN_ELEVATION, Math.min(MAX_ELEVATION, angle));
-export const clampZoom = (zoom: number) => Math.max(.52, Math.min(3.2, zoom));
+export const clampZoom = (zoom: number) => Math.max(.52, Math.min(5.5, zoom));
 
 // WheelEvent cannot reliably distinguish a precision mouse from a trackpad.
 // Use an explicit preference; Ctrl-wheel is also the browser's pinch signal.

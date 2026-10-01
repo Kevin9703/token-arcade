@@ -6,6 +6,10 @@ Start with `docs/README.md`; read `docs/TOKEN_TOWN.md` and `docs/TOWN_3D_ASSETS.
 
 During active development, read local `docs/feedback.md` when present at the start of work, after finishing the current batch, and before committing. Preserve the user's wording, mark implemented and verified items complete, and annotate partial or planned items honestly. Record implementation decisions in `docs/ROADMAP.md`; update verification in `docs/QA.md`. The feedback file is intentionally Git-ignored: never stage, force-add or commit it.
 
+## Git publishing
+
+Keep changes local. Push to `main` only after the user explicitly asks again; historical push authorization does not authorize a new batch. Never include local feedback or user-owned Blender / history changes incidentally.
+
 ## Product and economy
 
 - `src/town/main.ts` is the main entry. The town itself occupies the main screen; DOM panels support building and planning rather than becoming an analytics dashboard.
@@ -33,6 +37,8 @@ During active development, read local `docs/feedback.md` when present at the sta
 
 - Choose or drag a catalog building: its visible model follows the pointer, click/drop places it. **Q/E rotate the building while placing**; R is an alias. Esc or right-click cancels. Coordinate input is optional accessibility support.
 - **WASD pans the camera**, including during placement, at 12 tiles/second at zoom 1; compensate for zoom and normalize diagonal movement. Outside placement, hold Q/E or camera arrows to turn continuously; release stops. Clear held input on blur, hidden tabs and form focus. Never intercept typing or browser shortcuts.
+- Observation modes: H hides every HUD layer and H / Esc restores it; V toggles a separate perspective street camera. Street movement uses actual clear roads for entry, avoids building footprints and water, and follows bridge height. Observation never changes resident jobs, rewards or saved layout; construction returns to the orthographic camera.
+- Balanced quality targets 30 FPS, up to 1.5 pixel ratio and 1024 shadows; fine quality targets 60 FPS, up to 2 pixel ratio and 2048 shadows. Bound large-display framebuffers, batch repeated scenery, refresh shadows separately, and suspend animation frames while hidden. Keep diagnostic serialization off the per-frame path.
 - Trackpad: two-finger vertical scroll changes elevation, horizontal scroll rotates, pinch zooms, Shift + scroll pans. Mouse controls remain selectable. Camera changes stay smooth; no hard jumps.
 - Original complete 3D models are the preferred style. Shops must have distinct silhouettes and structure, not merely recolored cottages. Inspect all sides, ground contact, doors and footprints. Hinges, crop patches, livestock and mill fans remain articulated in GLB exports.
 - Curated Kenney CC0 scenery is allowed with provenance; the rejected modular house assembly must not return. Preserve the user's open Blender scene. Use scripts/headless exports for reproducible asset work.

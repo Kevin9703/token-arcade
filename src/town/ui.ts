@@ -3,7 +3,7 @@ import {missingHomeNeeds} from './home-needs';
 import { farmChains, FARM_LABELS, bakeryMaterialLabel } from './farming';
 import { keyboardIntent, keyboardPan } from './keyboard-input';
 import { worldTime } from './world-time';
-import { createElement, Coins, RefreshCw, House, Route, Move, ClipboardList, Puzzle, BookOpen, Settings, X, ArrowLeft, ArrowRight, RotateCw, ZoomIn, ZoomOut, Focus, Check, Lock, Star, TreeDeciduous, Coffee, Wheat, ArrowUpRight, Volume2, VolumeX, Sun, Moon, Sunset, Sunrise, Download, Upload, Archive, MousePointer2, Eraser, Flag, Hammer, ChevronRight, Sparkles, MapPin, Info } from 'lucide';
+import { createElement, Coins, RefreshCw, House, Route, Move, ClipboardList, Puzzle, BookOpen, Settings, X, ArrowLeft, ArrowRight, RotateCw, ZoomIn, ZoomOut, Focus, Check, Lock, Star, TreeDeciduous, Coffee, Wheat, ArrowUpRight, Volume2, VolumeX, Sun, Moon, Sunset, Sunrise, Download, Upload, Archive, MousePointer2, Eraser, Flag, Hammer, ChevronRight, Sparkles, MapPin, Info, Eye, Footprints } from 'lucide';
 import type { IconNode } from 'lucide';
 import { levelInfo, stageForLevel } from './levels';
 import { fmtCompact } from './format';
@@ -19,7 +19,7 @@ import { TownScene } from './scene';
 import type { Tool } from './scene';
 
 type Panel = 'build' | 'inventory' | 'quests' | 'puzzles' | 'book' | 'settings' | 'detail' | 'resident' | 'history' | 'production' | 'orders' | null;
-const iconNodes: Record<string, IconNode> = { Coins, RefreshCw, House, Route, Move, ClipboardList, Puzzle, BookOpen, Settings, X, ArrowLeft, ArrowRight, RotateCw, ZoomIn, ZoomOut, Focus, Check, Lock, Star, TreeDeciduous, Coffee, Wheat, ArrowUpRight, Volume2, VolumeX, Sun, Moon, Sunset, Sunrise, Download, Upload, Archive, MousePointer2, Eraser, Flag, Hammer, ChevronRight, Sparkles, MapPin, Info };
+const iconNodes: Record<string, IconNode> = { Coins, RefreshCw, House, Route, Move, ClipboardList, Puzzle, BookOpen, Settings, X, ArrowLeft, ArrowRight, RotateCw, ZoomIn, ZoomOut, Focus, Check, Lock, Star, TreeDeciduous, Coffee, Wheat, ArrowUpRight, Volume2, VolumeX, Sun, Moon, Sunset, Sunrise, Download, Upload, Archive, MousePointer2, Eraser, Flag, Hammer, ChevronRight, Sparkles, MapPin, Info, Eye, Footprints };
 const iconCache = new Map<string, string>();
 function icon(name: string): string { if (!iconCache.has(name)) iconCache.set(name, createElement(iconNodes[name], { width: 20, height: 20, 'stroke-width': 1.65, 'aria-hidden': 'true' }).outerHTML); return iconCache.get(name)!; }
 export const escapeHTML = (v: string): string => String(v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
@@ -33,6 +33,7 @@ export class TownUI {
   private hoverCell: Cell = { x: 6, z: 17 }; private busy = false; private toastTimer = 0; private coordinateOpen = false;
   private toastMessage = ''; private toastUntil = 0;
   private e: Evaluation; private progressPanel = 0; private notice = ''; private modeChanged = false;
+  private cleanView = false;
   private heldKeys = new Set<string>(); private heldCameraButton = false; private ignoreCameraClickUntil = 0;
   constructor(private root: HTMLElement, readonly store: TownStore, canvas: HTMLCanvasElement) {
     this.e = evaluate(store.board);
@@ -58,6 +59,7 @@ export class TownUI {
     window.addEventListener('blur', () => { this.heldKeys.clear(); this.heldCameraButton = false; this.scene.holdRotate(0); this.scene.holdPan(0, 0); });
     document.addEventListener('visibilitychange', () => { if (document.hidden) { this.heldKeys.clear(); this.heldCameraButton = false; this.scene.holdRotate(0); this.scene.holdPan(0, 0); } });
     window.addEventListener('pagehide',()=>this.store.commit(false));
+    canvas.setAttribute('aria-label','河谷小镇。H 隐藏或恢复界面，V 进入或退出街道视角，Esc 返回建设视角；WASD 移动，Q/E 转向，拖动或两指滑动观察。');
     this.render();
   }
   private thumbnail(b: BuildingKind, variant = 0, stage = 0): string { return `<img class="model-preview" src="${this.scene.thumbnail(b, variant, stage)}" alt="${CATALOG[b].name}" draggable="false"/>`; }
@@ -150,13 +152,14 @@ export class TownUI {
     return `<header class="town-header"><div class="brand">${icon('House')}<div><h1>Token Town</h1><span>${this.store.activePuzzle ? '河谷规划桌' : '你的河谷小镇'}</span></div></div><div class="header-actions">${this.store.activePuzzle ? button('leave-puzzle', '回到小镇', 'ArrowLeft', 'back-town') : ''}<div class="coin-wallet" aria-label="金币余额">${icon('Coins')}<strong data-testid="coin-balance">${s.coins.toLocaleString('zh-CN')}</strong><span>金币</span></div>${button('sync', this.busy ? '读取中' : s.mode === 'demo' ? '收集演示 token' : '同步 token', 'RefreshCw', 'sync-button', `aria-label="${this.busy ? '读取中' : s.mode === 'demo' ? '收集演示 token' : '同步 token'}" ${this.busy ? 'disabled' : ''}`)}${button('settings', '设置', 'Settings', 'icon-only settings-button')}</div></header><div class="mode-indicator">${s.mode === 'demo' ? '<span class="mode-dot demo-dot"></span>演示城镇' : '<span class="mode-dot"></span>本地城镇'}${button(s.mode === 'demo' ? 'live' : 'demo', s.mode === 'demo' ? '切换真实记录' : '试试演示', '', 'text-button')}${s.history === 'ready' ? `<span class="last-sync">${s.projects.length} 个项目为这里供能</span>` : ''}<span id="world-clock" class="world-clock">${worldTime(s.worldSeconds,s.settings).label}</span></div>`;
   }
   private cameraControls(): string {
-    return `<div class="camera-controls" aria-label="镜头控制">${button('camera-left', '左转镜头', 'ArrowLeft', 'icon-only')}${button('camera-right', '右转镜头', 'ArrowRight', 'icon-only')}<i></i>${button('zoom-in', '放大', 'ZoomIn', 'icon-only')}${button('zoom-out', '缩小', 'ZoomOut', 'icon-only')}${button('overview', '俯瞰河谷', 'MapPin', 'icon-only')}${button('focus', '回到小镇', 'Focus', 'icon-only')}</div><span class="camera-hint">${this.store.state.settings.cameraInput === 'trackpad' ? 'WASD 移动 · 两指转动 · 捏合缩放' : 'WASD 移动 · 滚轮缩放 · Q / E 转镜头'}</span>`;
+    return `<div class="camera-controls" aria-label="镜头控制">${button('camera-left', '左转镜头', 'ArrowLeft', 'icon-only')}${button('camera-right', '右转镜头', 'ArrowRight', 'icon-only')}<i></i>${button('zoom-in', '放大', 'ZoomIn', 'icon-only')}${button('zoom-out', '缩小', 'ZoomOut', 'icon-only')}${button('overview', '俯瞰河谷', 'MapPin', 'icon-only')}${button('focus', '回到小镇', 'Focus', 'icon-only')}${button('street-view',this.scene.streetView?'退出街道视角':'街道视角','Footprints',`icon-only ${this.scene.streetView?'active':''}`,'title="V 切换街道视角；WASD 行走，拖动观察"')}${button('clean-view','纯享模式','Eye','icon-only','title="H 隐藏全部界面，再按 H 或 Esc 恢复"')}</div><span class="camera-hint">H 纯享 · V 街道 · ${this.store.state.settings.cameraInput === 'trackpad' ? 'WASD 移动 · 两指转动 · 捏合缩放' : 'WASD 移动 · 滚轮缩放 · Q / E 转镜头'}</span>`;
   }
   render(): void {
     const previousPanel=this.root.querySelector('.town-panel'),panelName=previousPanel?.getAttribute('aria-label'),scroll=previousPanel?.querySelector('.panel-content')?.scrollTop||0;
     const focusSetting=(document.activeElement as HTMLElement|null)?.dataset.setting;
     const board = this.store.board; this.scene.setWorld(this.store.state, board, this.e);
     this.root.innerHTML = `${this.header()}${this.homeBubbles()}${this.currentGoal()}${this.onboarding()}${this.toolbar()}${this.toolRibbon()}${this.cameraControls()}${this.panel ? this.panelHTML() : ''}<div id="town-toast" class="${Date.now() < this.toastUntil ? 'visible' : ''}" role="status" aria-live="polite">${Date.now() < this.toastUntil ? `${icon('Sparkles')}<span>${escapeHTML(this.toastMessage)}</span>` : ''}</div>${this.store.persistenceError || this.notice ? `<div class="save-notice" role="alert">${escapeHTML(this.store.persistenceError || this.notice)}</div>` : ''}`;
+    this.root.classList.toggle('clean-view',this.cleanView);this.root.classList.toggle('street-view',this.scene.streetView);this.root.inert=this.cleanView;
     this.scene.positionHomeBubbles(this.root);
     this.scene.select(this.selectedId); this.onHover(this.hoverCell);
     this.scene.selectResident(this.panel === 'resident' ? this.selectedResident : null);
@@ -255,11 +258,14 @@ export class TownUI {
   }
   private settingsPanel(): string {
     const s = this.store.state;
-    return `<h3>河谷的时光</h3><label class="setting-row"><span>昼夜自动变化</span><input type="checkbox" aria-label="昼夜自动变化" data-setting="clock" ${s.settings.clockMode === 'cycle' ? 'checked' : ''} /></label><p class="panel-note">六分钟过一天，每三天换一季。晚上邻居会回家睡觉，清晨再出门。离开游戏时，时间会暂停。</p><div class="lighting-buttons">${[['day', 'Sun', '白昼'], ['sunset', 'Sunset', '傍晚'], ['night', 'Moon', '夜晚']].map(([id, symbol, name]) => button(`lighting:${id}`, name, symbol, s.settings.clockMode === 'fixed' && s.settings.lighting === id ? 'active' : '')).join('')}</div><div class="lighting-buttons">${button('visit-hour:20', '看邻居回家', 'Moon')}${button('visit-hour:6', '迎接清晨', 'Sunrise')}</div><label class="setting-row"><span>季节</span><select aria-label="季节" data-setting="season">${[['cycle','随时间变化'],['spring','春 · 新芽'],['summer','夏 · 浓绿'],['autumn','秋 · 金叶'],['winter','冬 · 落雪']].map(([id,name])=>`<option value="${id}" ${s.settings.season===id?'selected':''}>${name}</option>`).join('')}</select></label><h3>四季轻音乐</h3><label class="setting-row"><span>背景音乐</span><input type="checkbox" aria-label="背景音乐" data-setting="music" ${s.settings.music ? 'checked' : ''} /></label><label class="setting-row"><span>音乐音量</span><input type="range" aria-label="音乐音量" data-setting="music-volume" min="0" max="100" step="1" value="${Math.round(s.settings.musicVolume*100)}" /></label><p id="music-status" class="panel-note">点击城镇开启音乐</p><p class="panel-note">春日钢琴、夏日民谣、秋日慢旋律、冬日轻钢琴。换季会渐变切换。</p><p class="music-credit">音乐：Kevin MacLeod (incompetech.com) · <a href="./assets/town/audio/credits.html" target="_blank" rel="noopener">曲目与 CC BY 4.0 授权</a></p><label class="setting-row"><span>全部声音</span><input type="checkbox" data-setting="sound" ${s.settings.muted ? '' : 'checked'} /></label><label class="setting-row"><span>减少动态效果</span><input type="checkbox" data-setting="motion" ${s.settings.reducedMotion ? 'checked' : ''} /></label><label class="setting-row"><span>画面质量</span><select aria-label="画面质量" data-setting="quality"><option value="high" ${s.settings.quality === 'high' ? 'selected' : ''}>精细 · Retina 清晰画面</option><option value="medium" ${s.settings.quality === 'medium' ? 'selected' : ''}>中等 · 柔和阴影</option><option value="low" ${s.settings.quality === 'low' ? 'selected' : ''}>轻量 · 省电</option></select></label><h3>镜头操作</h3><label class="setting-row"><span>控制方式</span><select aria-label="镜头控制方式" data-setting="camera"><option value="trackpad" ${s.settings.cameraInput === 'trackpad' ? 'selected' : ''}>触控板</option><option value="mouse" ${s.settings.cameraInput === 'mouse' ? 'selected' : ''}>鼠标</option></select></label><p class="panel-note">${s.settings.cameraInput === 'trackpad' ? '两指上下滑改变俯仰，左右滑旋转；捏合缩放，Shift + 两指滑动平移。' : '拖动平移，滚轮缩放；按住 Q / E 或镜头箭头连续旋转。'} 点击「回到小镇」可恢复舒适视角。</p><h3>你的记录</h3><p class="panel-note">${s.mode === 'live' ? '本地城镇' : '演示城镇'}。读取只在这台电脑上进行，无需账号。</p>${button(s.mode === 'live' ? 'demo' : 'live', s.mode === 'live' ? '进入独立演示城镇' : '回到真实记录城镇', 'RefreshCw', 'secondary')}<div class="ledger-summary"><div><span>token 铸币</span><b>${s.tokenCoins}</b></div><div><span>经营补贴</span><b>${s.subsidyPaid} / ${subsidyEntitlement(s)}</b></div><div><span>下一枚金币</span><b>${s.residue.toLocaleString()} / 10,000</b></div></div><h3>存档与备份</h3><p class="panel-note">进度自动保存在当前浏览器。换浏览器或设备前，可以导出备份。</p><div class="save-actions">${button('export', '导出存档', 'Download', 'secondary')}${button('import', '导入存档', 'Upload', 'secondary')}<input id="save-file" type="file" accept="application/json,.json" hidden /></div><h3>怎么玩</h3><p class="panel-note">点击建筑查看需求；建设后为门口接路。铺路、搬迁与收纳都免费。按住 Q / E 或镜头按钮持续旋转，松开停止，摆放时 Q / E 旋转建筑，WASD 移动镜头，Esc 结束操作。</p>${button('show-tutorial', '再看一次起步引导', 'Info', 'text-button')}`;
+    return `<h3>河谷的时光</h3><label class="setting-row"><span>昼夜自动变化</span><input type="checkbox" aria-label="昼夜自动变化" data-setting="clock" ${s.settings.clockMode === 'cycle' ? 'checked' : ''} /></label><p class="panel-note">六分钟过一天，每三天换一季。晚上邻居会回家睡觉，清晨再出门。离开游戏时，时间会暂停。</p><div class="lighting-buttons">${[['day', 'Sun', '白昼'], ['sunset', 'Sunset', '傍晚'], ['night', 'Moon', '夜晚']].map(([id, symbol, name]) => button(`lighting:${id}`, name, symbol, s.settings.clockMode === 'fixed' && s.settings.lighting === id ? 'active' : '')).join('')}</div><div class="lighting-buttons">${button('visit-hour:20', '看邻居回家', 'Moon')}${button('visit-hour:6', '迎接清晨', 'Sunrise')}</div><label class="setting-row"><span>季节</span><select aria-label="季节" data-setting="season">${[['cycle','随时间变化'],['spring','春 · 新芽'],['summer','夏 · 浓绿'],['autumn','秋 · 金叶'],['winter','冬 · 落雪']].map(([id,name])=>`<option value="${id}" ${s.settings.season===id?'selected':''}>${name}</option>`).join('')}</select></label><h3>四季轻音乐</h3><label class="setting-row"><span>背景音乐</span><input type="checkbox" aria-label="背景音乐" data-setting="music" ${s.settings.music ? 'checked' : ''} /></label><label class="setting-row"><span>音乐音量</span><input type="range" aria-label="音乐音量" data-setting="music-volume" min="0" max="100" step="1" value="${Math.round(s.settings.musicVolume*100)}" /></label><p id="music-status" class="panel-note">点击城镇开启音乐</p><p class="panel-note">春日钢琴、夏日民谣、秋日慢旋律、冬日轻钢琴。换季会渐变切换。</p><p class="music-credit">音乐：Kevin MacLeod (incompetech.com) · <a href="./assets/town/audio/credits.html" target="_blank" rel="noopener">曲目与 CC BY 4.0 授权</a></p><label class="setting-row"><span>全部声音</span><input type="checkbox" data-setting="sound" ${s.settings.muted ? '' : 'checked'} /></label><label class="setting-row"><span>减少动态效果</span><input type="checkbox" data-setting="motion" ${s.settings.reducedMotion ? 'checked' : ''} /></label><label class="setting-row"><span>画面质量</span><select aria-label="画面质量" data-setting="quality"><option value="high" ${s.settings.quality === 'high' ? 'selected' : ''}>精细 · 60 帧</option><option value="medium" ${s.settings.quality === 'medium' ? 'selected' : ''}>均衡 · 30 帧与柔和阴影</option><option value="low" ${s.settings.quality === 'low' ? 'selected' : ''}>省电 · 30 帧，无阴影</option></select></label><h3>观赏河谷</h3>${button('clean-view','纯享模式 · H 隐藏全部界面','Eye','secondary')}${button('street-view','走进街道 · V 切换视角','Footprints','secondary')}<p class="panel-note">纯享模式只留下画面，H 或 Esc 恢复。街道视角：WASD 行走，拖动看四周，Q/E 转向；触控板两指调整方向，捏合调整视野。Esc 回到建设视角。</p><h3>镜头操作</h3><label class="setting-row"><span>控制方式</span><select aria-label="镜头控制方式" data-setting="camera"><option value="trackpad" ${s.settings.cameraInput === 'trackpad' ? 'selected' : ''}>触控板</option><option value="mouse" ${s.settings.cameraInput === 'mouse' ? 'selected' : ''}>鼠标</option></select></label><p class="panel-note">${s.settings.cameraInput === 'trackpad' ? '两指上下滑改变俯仰，左右滑旋转；捏合缩放，Shift + 两指滑动平移。' : '拖动平移，滚轮缩放；按住 Q / E 或镜头箭头连续旋转。'} 点击「回到小镇」可恢复舒适视角。</p><h3>你的记录</h3><p class="panel-note">${s.mode === 'live' ? '本地城镇' : '演示城镇'}。读取只在这台电脑上进行，无需账号。</p>${button(s.mode === 'live' ? 'demo' : 'live', s.mode === 'live' ? '进入独立演示城镇' : '回到真实记录城镇', 'RefreshCw', 'secondary')}<div class="ledger-summary"><div><span>token 铸币</span><b>${s.tokenCoins}</b></div><div><span>经营补贴</span><b>${s.subsidyPaid} / ${subsidyEntitlement(s)}</b></div><div><span>下一枚金币</span><b>${s.residue.toLocaleString()} / 10,000</b></div></div><h3>存档与备份</h3><p class="panel-note">进度自动保存在当前浏览器。换浏览器或设备前，可以导出备份。</p><div class="save-actions">${button('export', '导出存档', 'Download', 'secondary')}${button('import', '导入存档', 'Upload', 'secondary')}<input id="save-file" type="file" accept="application/json,.json" hidden /></div><h3>怎么玩</h3><p class="panel-note">点击建筑查看需求；建设后为门口接路。铺路、搬迁与收纳都免费。按住 Q / E 或镜头按钮持续旋转，松开停止，摆放时 Q / E 旋转建筑，WASD 移动镜头，Esc 结束操作。</p>${button('show-tutorial', '再看一次起步引导', 'Info', 'text-button')}`;
   }
   private async action(action: string, _button: HTMLButtonElement): Promise<void> {
     const [command, value] = action.split(':');
+    if(this.scene.streetView&&!['street-view','clean-view','camera-left','camera-right','zoom-in','zoom-out','overview','focus','settings','lighting','visit-hour','close-panel'].includes(command)){this.scene.setStreetView(false);this.render();}
     switch (command) {
+      case 'clean-view': this.toggleCleanView();return;
+      case 'street-view': this.toggleStreetView();return;
       case 'toggle-goal': this.store.updateSettings({goalCollapsed:!this.store.state.settings.goalCollapsed}); return;
       case 'inspect': this.resetTool(); this.panel = null; break;
       case 'build': this.panel = this.store.activePuzzle ? 'inventory' : 'build'; break;
@@ -319,8 +325,8 @@ export class TownUI {
       case 'camera-right': if (Date.now() >= this.ignoreCameraClickUntil) this.scene.rotate(1); return;
       case 'zoom-in': this.scene.zoom(1.2); return;
       case 'zoom-out': this.scene.zoom(1 / 1.2); return;
-      case 'focus': this.scene.focus(); return;
-      case 'overview': this.scene.overview(); return;
+      case 'focus': this.scene.focus(); this.render();return;
+      case 'overview': this.scene.overview();this.render(); return;
       case 'visit-hour': this.store.visitHour(Number(value)); return;
       case 'lighting': this.store.updateSettings({ clockMode:'fixed', lighting: value as 'day' | 'sunset' | 'night' }); return;
       case 'export': {
@@ -358,13 +364,24 @@ export class TownUI {
     if (input.dataset.setting === 'quality') this.store.updateSettings({ quality: input.value as 'high' | 'medium' | 'low' });
     if (input.id === 'save-file' && input.files?.[0]) { void input.files[0].text().then(raw => { this.resetTool(); this.selectedId = null; if (this.store.importSave(raw)) this.toast('存档已导入'); else this.toast('文件不是当前模式的有效河谷小镇存档，原进度已保留'); }); }
   }
+  private toggleCleanView():void {
+    this.cleanView=!this.cleanView;this.resetTool();this.panel=null;this.selectedId=null;this.scene.select(null);this.scene.setCleanView(this.cleanView);this.render();
+    if(this.cleanView)document.getElementById('town-scene')?.focus({preventScroll:true});
+  }
+  private toggleStreetView():void {
+    this.resetTool();this.selectedId=null;this.panel=null;const requested=!this.scene.streetView;
+    if(this.scene.setStreetView(requested)!==requested)this.toast('先铺一段空闲道路，再走进街道');
+    this.render();document.getElementById('town-scene')?.focus({preventScroll:true});
+  }
   private syncCameraKeys(): void {
     if (!this.heldCameraButton) this.scene.holdRotate(this.pendingKind ? 0 : this.heldKeys.has('q') ? -1 : this.heldKeys.has('e') ? 1 : 0);
     const pan = keyboardPan(this.heldKeys); this.scene.holdPan(pan.x, pan.y);
   }
   private keydown(event: KeyboardEvent): void {
     if ((event.target as HTMLElement).closest('input, select, textarea, [contenteditable="true"]') || event.isComposing || event.metaKey || event.ctrlKey || event.altKey) return;
-    if (event.key === 'Escape') { this.resetTool(); this.panel = null; this.render(); return; }
+    if(event.key.toLowerCase()==='h'){event.preventDefault();if(!event.repeat)this.toggleCleanView();return;}
+    if(event.key.toLowerCase()==='v'){event.preventDefault();if(!event.repeat)this.toggleStreetView();return;}
+    if (event.key === 'Escape') { if(this.cleanView){this.cleanView=false;this.scene.setCleanView(false);}this.scene.setStreetView(false); this.resetTool(); this.panel = null; this.render(); return; }
     const key = event.key.toLowerCase(), intent = keyboardIntent(key, Boolean(this.pendingKind), event.repeat);
     if (!intent) return; event.preventDefault();
     if (intent === 'turn-left' || intent === 'turn-right') {

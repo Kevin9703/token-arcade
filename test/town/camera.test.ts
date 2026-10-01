@@ -38,7 +38,7 @@ test('Shift scroll pans; line and page deltas normalize without sudden full turn
 });
 test('pitch and zoom stay inside usable town views, including extreme gestures', () => {
   assert.equal(clampElevation(-100), MIN_ELEVATION); assert.equal(clampElevation(100), MAX_ELEVATION);
-  assert.equal(clampZoom(.001), .52); assert.equal(clampZoom(100), 3.2);
+  assert.equal(clampZoom(.001), .52); assert.equal(clampZoom(100), 5.5);
   // Clamping the pending target removes overscroll; reversing responds immediately.
   const current = MAX_ELEVATION, pending = clampElevation(current + 10) - current;
   assert.equal(pending, 0); assert.ok(clampElevation(current + pending - .1) < current);

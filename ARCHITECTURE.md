@@ -28,6 +28,8 @@ TypeScript + Three.js 构建原生 3D 城镇，DOM 提供 HUD 和建设面板，
 | `roads.ts` / `landscape.ts` | 石板道路、路缘、草地、土壤、河岸、流水、林地和背景丘陵 |
 | `camera-input.ts` / `keyboard-input.ts` | 手势映射、平滑参数、俯仰和缩放限制、快捷键和 WASD 平移 |
 | `scene.ts` | GLB 加载、原生模型备用、正交镜头、射线拾取、预览、居民和农事动画、画质 |
+| `render-policy.ts` / `scenery-batch.ts` | 画质帧率 / 分辨率 / 阴影预算，完整重复景观的实例合批；不参与生产计时或经济 |
+| `street-camera.ts` | 安全道路入口、通畅街道朝向、建筑 / 河道阻挡与桥面眼睛高度；街景独立于建设相机 |
 | `music.ts` | 两个本地音频通道、首次操作激活、季节与循环交叉淡化、音量和暂停 |
 | `ui.ts` | HUD、建设、搬迁、委托、规划关、图鉴、设置和目录拖放 |
 | `asset-preview.ts` | 独立模型陈列与前后方检查 |

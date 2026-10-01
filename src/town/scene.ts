@@ -23,6 +23,8 @@ import { updateClockHands, smokeOrigin } from './building-effects';
 import { describeResident, residentProfile, RESIDENT_COLORS, type ResidentInfo } from './resident-info';
 import { pickResident } from './resident-picking';
 import { productionStatus, fishingView } from './production-feedback';
+import { renderPolicy, frameDue } from './render-policy';
+import { streetStart, streetMove, streetHeight, streetOpen, streetHeading } from './street-camera';
 import type { Board, Building, BuildingKind, Cell, Evaluation, TownState } from './types';
 
 export type Tool = 'inspect' | 'road' | 'erase' | 'place' | 'move';
@@ -36,6 +38,11 @@ export class TownScene {
   readonly renderer: T.WebGLRenderer;
   private scene = new T.Scene();
   private camera = new T.OrthographicCamera(-16, 16, 12, -12, .1, 250);
+  private streetCamera = new T.PerspectiveCamera(58, 1, .035, 180);
+  private streetPosition?: T.Vector3; private streetYaw = 0; private streetPitch = -.06; private streetFov = 58;
+  private cleanView = false; private streetDrag?: {x:number;y:number}; private shadowFrame = -Infinity; private debugFrame = 0; private placesSignature = '';
+  get streetView(): boolean { return Boolean(this.streetPosition); }
+  private get viewCamera(): T.Camera { return this.streetView ? this.streetCamera : this.camera; }
   private controls: OrbitControls;
   private sun = new T.DirectionalLight('#fff2d6', 3.2);
   private ambient = new T.HemisphereLight('#dbe9eb', '#958c63', 1.9);
@@ -61,11 +68,12 @@ export class TownScene {
   private pitchStep = 0; private panStep = new T.Vector2(); private zoomTarget = 1;
   private lastPointer?: { clientX: number; clientY: number }; private pointerInside = false;
   private thumbnails = new Map<string, string>(); private sounds?: AudioContext;
-  private resizeObserver: ResizeObserver; private running = true; private paused = false;
+  private resizeObserver: ResizeObserver; private running = true; private paused = false; private frameHandle: number | null = null;
   fps = 0; private frameCount = 0; private fpsTime = 0;
   constructor(private canvas: HTMLCanvasElement, private events: SceneEvents) {
-    this.renderer = new T.WebGLRenderer({ canvas, antialias: true, alpha: false, powerPreference: 'high-performance' });
+    this.renderer = new T.WebGLRenderer({ canvas, antialias: true, alpha: false, powerPreference: 'low-power' });
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2)); this.renderer.shadowMap.enabled = true; this.renderer.shadowMap.type = T.PCFShadowMap;
+    this.renderer.shadowMap.autoUpdate = false;
     this.renderer.outputColorSpace = T.SRGBColorSpace; this.renderer.toneMapping = T.ACESFilmicToneMapping; this.renderer.toneMappingExposure = 1.06;
     this.scene.background = new T.Color('#d9e0ce'); this.scene.fog = new T.Fog('#d9e0ce', 80, 160);
     this.sun.position.set(-18, 28, 14); this.sun.castShadow = true; this.sun.shadow.mapSize.set(2048, 2048);
@@ -78,7 +86,7 @@ export class TownScene {
     this.controls.enableRotate = false; this.controls.enableDamping = true; this.controls.dampingFactor = .12;
     this.controls.enableZoom = false; // One wheel handler owns orbit, pan and pinch.
     this.controls.minPolarAngle = Math.PI / 2 - MAX_ELEVATION; this.controls.maxPolarAngle = Math.PI / 2 - MIN_ELEVATION;
-    this.controls.minZoom = .52; this.controls.maxZoom = 3.2; this.controls.screenSpacePanning = false;
+    this.controls.minZoom = .52; this.controls.maxZoom = 5.5; this.controls.screenSpacePanning = false;
     this.controls.mouseButtons.LEFT = T.MOUSE.PAN; this.controls.mouseButtons.RIGHT = T.MOUSE.PAN;
     this.controls.update();
     this.resizeObserver = new ResizeObserver(() => this.resize()); this.resizeObserver.observe(canvas);
@@ -86,16 +94,24 @@ export class TownScene {
     canvas.addEventListener('pointerdown', e => this.down(e)); canvas.addEventListener('pointermove', e => this.move(e)); canvas.addEventListener('pointerup', e => this.up(e)); canvas.addEventListener('pointercancel', () => this.endStroke());
     canvas.addEventListener('wheel', e => this.wheel(e), { passive: false });
     canvas.addEventListener('pointerleave', () => { this.pointerInside = false; if (!this.painting) { this.cursor.visible = false; this.events.hover(null); } });
-    document.addEventListener('visibilitychange', () => { this.paused = document.hidden; this.lastTime = performance.now(); if (this.paused) this.stopGesture(); });
+    document.addEventListener('visibilitychange', () => { this.paused = document.hidden; this.lastTime = performance.now(); if (this.paused) {this.stopGesture();if(this.frameHandle!==null)cancelAnimationFrame(this.frameHandle);this.frameHandle=null;} else this.queueFrame(); });
     window.addEventListener('blur', () => this.stopGesture());
+    canvas.addEventListener('pointercancel',()=>{this.streetDrag=undefined;});
     canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); this.running = false; document.getElementById('graphics-error')?.classList.remove('hidden'); });
-    canvas.addEventListener('webglcontextrestored', () => { this.running = true; requestAnimationFrame(t => this.frame(t)); document.getElementById('graphics-error')?.classList.add('hidden'); });
-    this.resize(); requestAnimationFrame(t => this.frame(t));
+    canvas.addEventListener('webglcontextrestored', () => { this.running = true; this.applyQuality();this.queueFrame(); document.getElementById('graphics-error')?.classList.add('hidden'); });
+    this.resize(); this.queueFrame();
     void Promise.allSettled(['tree-0','pine','birch','rock','boulder','cart','hedge','fountain','stall'].map(async name => {const gltf=await new GLTFLoader().loadAsync(`./assets/town/curated/${name}.glb`);gltf.scene.traverse(o=>{if(o instanceof T.Mesh){o.castShadow=true;o.receiveShadow=true;}});this.sceneryModels.set(name,gltf.scene);})).then(()=>{if(this.board && this.state)this.buildTerrain();});
   }
   private resize(): void {
     const r = this.canvas.getBoundingClientRect(), a = r.width / Math.max(1, r.height), span = a < 1 ? 16 : 13;
     this.camera.left = -span * a; this.camera.right = span * a; this.camera.top = span; this.camera.bottom = -span; this.camera.updateProjectionMatrix(); this.renderer.setSize(r.width, r.height, false);
+    this.streetCamera.aspect=a;this.streetCamera.updateProjectionMatrix();this.applyQuality();this.positionHomeBubbles();
+  }
+  private applyQuality():void {
+    const p=renderPolicy(this.state?.settings.quality||'medium',devicePixelRatio,this.canvas.clientWidth,this.canvas.clientHeight);
+    if(this.renderer.getPixelRatio()!==p.pixelRatio)this.renderer.setPixelRatio(p.pixelRatio);
+    if(this.sun.shadow.mapSize.x!==p.shadowSize){this.sun.shadow.mapSize.set(p.shadowSize,p.shadowSize);this.sun.shadow.map?.dispose();this.sun.shadow.map=null;}
+    this.renderer.shadowMap.enabled=p.shadows;this.renderer.shadowMap.needsUpdate=true;
   }
   setTool(tool: Tool, kind: BuildingKind | null, rotation: number, stage = this.previewStage, variant = this.previewVariant): void {
     this.tool = tool; this.previewKind = kind; this.previewRotation = rotation;this.previewStage=stage;this.previewVariant=variant;
@@ -135,7 +151,8 @@ export class TownScene {
     const roadSignature = state.mode+board.terrain+JSON.stringify(board.buildings.map(b=>[b.id,b.kind,b.x,b.z,b.rotation,b.placed]))+board.roads.join('|') + Array.from(e.connectedRoads).join('|');
     if (roadSignature !== this.roadsSignature) { this.roadsSignature = roadSignature; this.buildRoads(); this.buildWalkers(); }
     this.drawSelection();
-    this.renderer.setPixelRatio(state.settings.quality === 'low' ? 1 : Math.min(Math.max(devicePixelRatio, state.settings.quality === 'high' ? 1.5 : 1.25), state.settings.quality === 'high' ? 2.5 : 2)); this.renderer.shadowMap.enabled = state.settings.quality !== 'low';
+    this.applyQuality();
+    if(this.streetPosition&&!streetOpen(board,{x:this.streetPosition.x,z:this.streetPosition.z})){const safe=streetStart(board,this.streetPosition);if(safe)this.streetPosition.set(safe.x,streetHeight(board,safe),safe.z);else this.setStreetView(false);}
     if (this.initialFocus) { this.initialFocus = false; this.focus(board.terrain === 'valley' ? { x: 6, z: 17 } : { x: 6, z: 6 }); }
   }
   private model(kind: BuildingKind, variant: number, stage: number): T.Group {
@@ -187,6 +204,7 @@ export class TownScene {
     this.clearTransient(this.roadGroup); this.roadGroup.add(stoneRoads(this.board!,this.evaluation!));
   }
   private buildWalkers(): void {
+    this.placesSignature='';
     const connected = this.evaluation!.connectedRoads;
     const seats:ResidentSeat[]=[];
     for(const b of this.board!.buildings.filter(b=>b.placed&&this.evaluation!.buildings[b.id]?.connected))for(const [seatIndex, anchor] of buildingSeats(b.kind).entries()){const model=this.buildingMeshes.get(b.id)!;model.updateMatrixWorld(true);const p=model.localToWorld(new T.Vector3(...anchor.position)),entry=entrance(b);seats.push({id:`${b.id}:${seatIndex}`,position:{x:p.x,z:p.z},via:{x:entry.x+.5,z:entry.z+.5},y:p.y,yaw:model.rotation.y+anchor.yaw});}
@@ -272,6 +290,8 @@ export class TownScene {
   }
   placeAt(clientX: number, clientY: number): void { const p = this.point({ clientX, clientY }); if (p) this.events.cell(p.x, p.z); }
   private down(e: PointerEvent): void {
+    if(this.streetView){if(e.button===0){this.streetDrag={x:e.clientX,y:e.clientY};this.canvas.setPointerCapture(e.pointerId);}return;}
+    if(this.cleanView)return;
     this.focusTarget = undefined;
     this.pointerDown = { x: e.clientX, y: e.clientY, button: e.button };
     if (e.button !== 0 || e.shiftKey) return;
@@ -283,6 +303,8 @@ export class TownScene {
     if (this.tool === 'road' || this.tool === 'erase') { this.painting = true; this.canvas.setPointerCapture(e.pointerId); const p = this.point(e); if (p) { this.events.cell(p.x, p.z); this.lastCell = p; } }
   }
   private move(e: PointerEvent): void {
+    if(this.streetView){if(this.streetDrag){this.orbitStep=T.MathUtils.clamp(this.orbitStep-(e.clientX-this.streetDrag.x)*.004,-Math.PI,Math.PI);this.pitchStep=T.MathUtils.clamp(this.streetPitch+this.pitchStep-(e.clientY-this.streetDrag.y)*.003,-.65,.65)-this.streetPitch;this.streetDrag={x:e.clientX,y:e.clientY};}return;}
+    if(this.cleanView)return;
     this.lastPointer = { clientX: e.clientX, clientY: e.clientY }; this.pointerInside = true;
     const p = this.point(e); this.cursor.visible = Boolean(p) && this.tool !== 'inspect' && !(this.tool === 'move' && !this.previewKind);
     if (p) { this.cursorCell = p; this.showCursor(p); }
@@ -295,6 +317,8 @@ export class TownScene {
     }
   }
   private up(e: PointerEvent): void {
+    if(this.streetView){this.streetDrag=undefined;return;}
+    if(this.cleanView)return;
     if (this.painting) { this.endStroke(); return; }
     const down = this.pointerDown; this.pointerDown = undefined;
     if (!down || down.button !== 0 || Math.hypot(e.clientX - down.x, e.clientY - down.y) > 6) return;
@@ -313,11 +337,28 @@ export class TownScene {
     if (this.ghost && this.previewKind) { this.ghost.position.set(dims.w / 2, .03, dims.d / 2); const entry = entrance(makeBuilding('preview', this.previewKind, 0, 0, this.previewRotation)); this.outline(this.cursor, entry.x, entry.z, 1, 1, '#a4874f', .11); }
   }
   focus(p?: Cell): void {
+    this.setStreetView(false);
     const c = p || (this.board?.terrain === 'valley' ? { x: 6, z: 17 } : { x: 6, z: 6 }); this.focusTarget = new T.Vector3(c.x, 0, c.z);
-    this.zoomTarget = this.board?.terrain !== 'valley' ? 1.15 : 1.45;
+    this.zoomTarget = this.board?.terrain !== 'valley' ? 1.15 : 1.7;
     this.pitchStep = DEFAULT_ELEVATION - this.elevation(); this.orbitStep = 0; this.panStep.set(0, 0);
   }
-  overview(): void { if (!this.board) return; this.focusTarget = new T.Vector3(this.board.size / 2, 0, this.board.size / 2); this.zoomTarget = this.camera.right / this.camera.top < 1 ? .66 : .92; this.pitchStep = DEFAULT_ELEVATION - this.elevation(); this.orbitStep = 0; this.panStep.set(0, 0); }
+  overview(): void { if (!this.board) return; this.setStreetView(false); this.focusTarget = new T.Vector3(this.board.size / 2, 0, this.board.size / 2); this.zoomTarget = this.camera.right / this.camera.top < 1 ? .66 : .92; this.pitchStep = DEFAULT_ELEVATION - this.elevation(); this.orbitStep = 0; this.panStep.set(0, 0); }
+  setCleanView(clean:boolean):void {this.cleanView=clean;this.cursor.visible=false;this.overlay.visible=!clean;this.residentHalo.visible=false;this.canvas.dataset.cleanView=String(clean);}
+  setStreetView(enabled:boolean):boolean {
+    if(enabled===this.streetView)return enabled;
+    this.stopGesture();this.focusTarget=undefined;this.orbitDirection=0;this.orbitSpeed=0;
+    if(enabled){if(!this.board)return false;const p=streetStart(this.board,this.controls.target);if(!p)return false;
+      this.streetPosition=new T.Vector3(p.x,streetHeight(this.board,p),p.z);this.streetYaw=streetHeading(this.board,p,Math.atan2(this.controls.target.x-this.camera.position.x,this.controls.target.z-this.camera.position.z));this.streetPitch=-.06;this.streetFov=58;this.updateStreetCamera();
+    }else {if(this.streetPosition){const delta=new T.Vector3(this.streetPosition.x,0,this.streetPosition.z).sub(this.controls.target);this.controls.target.add(delta);this.camera.position.add(delta);}this.streetPosition=undefined;}
+    this.controls.enabled=!enabled;this.streetDrag=undefined;this.canvas.style.cursor='grab';this.canvas.dataset.cameraMode=enabled?'street':'town';return enabled;
+  }
+  private updateStreetCamera():void {
+    const p=this.streetPosition!;p.y=streetHeight(this.board!,{x:p.x,z:p.z});this.streetCamera.position.copy(p);
+    this.streetCamera.lookAt(p.x+Math.sin(this.streetYaw)*Math.cos(this.streetPitch),p.y+Math.sin(this.streetPitch),p.z+Math.cos(this.streetYaw)*Math.cos(this.streetPitch));
+  }
+  private walkStreet(x:number,y:number,distance:number):void {
+    const p=this.streetPosition!,next=streetMove(this.board!,{x:p.x,z:p.z},(Math.sin(this.streetYaw)*y-Math.cos(this.streetYaw)*x)*distance,(Math.cos(this.streetYaw)*y+Math.sin(this.streetYaw)*x)*distance);p.x=next.x;p.z=next.z;
+  }
   viewFishing(id: string): void {
     const b=this.board?.buildings.find(b=>b.id===id&&b.placed&&b.kind==='fishinghut'); if(!b)return;
     const view=fishingView(b),offset=this.camera.position.clone().sub(this.controls.target),current=Math.atan2(offset.x,offset.z);
@@ -333,7 +374,7 @@ export class TownScene {
   private keyboardApplied=false;
   holdPan(x: number, y: number): void {
     // Very short taps between animation frames still give a small precise move.
-    if(!x&&!y&&this.keyboardMove.lengthSq()&&!this.keyboardApplied)this.panKeyboard(keyboardPanDistance(1/120,this.camera.zoom));
+    if(!x&&!y&&this.keyboardMove.lengthSq()&&!this.keyboardApplied){if(this.streetView)this.walkStreet(this.keyboardMove.x,this.keyboardMove.y,2.6/120);else this.panKeyboard(keyboardPanDistance(1/120,this.camera.zoom));}
     if(this.keyboardMove.x!==x||this.keyboardMove.y!==y)this.keyboardApplied=false;
     this.keyboardMove.set(x, y); if (x || y) this.focusTarget = undefined;
   }
@@ -342,9 +383,9 @@ export class TownScene {
     const forward=new T.Vector3().crossVectors(this.camera.up,right).normalize(),delta=right.multiplyScalar(this.keyboardMove.x).addScaledVector(forward,this.keyboardMove.y).multiplyScalar(distance);
     this.controls.target.add(delta);this.camera.position.add(delta);this.keyboardApplied=true;
   }
-  zoom(factor: number): void { this.zoomTarget = clampZoom(this.zoomTarget * factor); }
+  zoom(factor: number): void { if(this.streetView)this.streetFov=T.MathUtils.clamp(this.streetFov/factor,35,80);else this.zoomTarget = clampZoom(this.zoomTarget * factor); }
   private elevation(): number { const offset = this.camera.position.clone().sub(this.controls.target); return Math.atan2(offset.y, Math.hypot(offset.x, offset.z)); }
-  private stopGesture(): void { this.orbitStep = 0; this.pitchStep = 0; this.panStep.set(0, 0); this.zoomTarget = this.camera.zoom; }
+  private stopGesture(): void { this.orbitStep = 0; this.pitchStep = 0; this.panStep.set(0, 0); this.zoomTarget = this.camera.zoom;this.streetDrag=undefined;this.pointerDown=undefined; }
   private wheel(e: WheelEvent): void {
     e.preventDefault(); if (this.painting) return;
     this.lastPointer = { clientX: e.clientX, clientY: e.clientY }; this.pointerInside = true; this.focusTarget = undefined;
@@ -353,7 +394,7 @@ export class TownScene {
     else if (gesture.kind === 'pan') this.panStep.add(new T.Vector2(gesture.x, gesture.y));
     else {
       this.orbitStep = T.MathUtils.clamp(this.orbitStep + gesture.x, -.6, .6);
-      this.pitchStep = clampElevation(this.elevation() + this.pitchStep + gesture.y) - this.elevation();
+      this.pitchStep = this.streetView?T.MathUtils.clamp(this.streetPitch+this.pitchStep+gesture.y,-.65,.65)-this.streetPitch:clampElevation(this.elevation() + this.pitchStep + gesture.y) - this.elevation();
     }
   }
   private environment(dt:number,time:number):void {
@@ -377,10 +418,13 @@ export class TownScene {
     const jobs=scheduledJobs(farmJobs,villageJobs);
     this.life?.assignJobs(jobs,(from,to)=>{const roads=this.evaluation!.connectedRoads;if(!roads.size)return [];const start=[...roads].map(k=>{const [x,z]=k.split(',').map(Number);return{x:x+.5,z:z+.5};}).sort((a,b)=>Math.hypot(a.x-from.x,a.z-from.z)-Math.hypot(b.x-from.x,b.z-from.z))[0];return roadRoute(roads,start,to);});
     const celebration=s.village.celebration>0;
+    const placesSignature=this.roadsSignature+String(celebration);
+    if(this.placesSignature!==placesSignature){this.placesSignature=placesSignature;
     const places=this.board!.buildings.filter(b=>b.placed&&this.evaluation!.buildings[b.id]?.connected&&(CATALOG[b.kind].service||b.kind==='park')).map(b=>{const p=entrance(b),d=dimensions(b),position={x:p.x+.5,z:p.z+.5},dx=b.x+d.w/2-position.x,dz=b.z+d.d/2-position.z,l=Math.hypot(dx,dz);return{id:b.id,position,target:{x:position.x+dx/l*.48,z:position.z+dz/l*.48}};});
     const homePlaces = this.board!.buildings.filter(b=>b.placed&&b.kind==='house'&&this.evaluation!.buildings[b.id]?.connected).map(doorstepPlace);
     if(celebration){const hall=this.board!.buildings.find(b=>b.kind==='hall')!,p=entrance(hall),d=dimensions(hall),position={x:p.x+.5,z:p.z+.5},dx=hall.x+d.w/2-position.x,dz=hall.z+d.d/2-position.z,l=Math.hypot(dx,dz);for(let i=0;i<3;i++)places.push({id:`festival-${i}`,position,target:{x:position.x+dx/l*.45-dz/l*(i-1)*.65,z:position.z+dz/l*.45+dx/l*(i-1)*.65}});}
     this.life?.setPlaces([...places,...homePlaces],this.evaluation!.connectedRoads);
+    }
     this.life?.update(dt,clock.sleep);
     for(const chain of this.farms){const run=s.farm.runs[chain.field.id],crop=this.buildingMeshes.get(chain.field.id)?.getObjectByName('crop-patch');if(crop){const growth=run?.phase==='growing'?Math.min(1,run.elapsed/farmDuration(chain,'growing',clock.season)):run?.phase==='sowing'?.12:run?.phase==='harvesting'?1:.06;crop.scale.y=.12+growth*.88;}if(chain.mill){const fan=this.buildingMeshes.get(chain.mill.id)?.getObjectByName('mill-fan');if(fan&&!this.reduced)fan.rotation.z+=dt*(run?.phase==='milling'&&!clock.sleep?1.2:.13);}}
     for(const b of this.board!.buildings.filter(b=>b.placed&&PRODUCTION_KINDS.includes(b.kind))){
@@ -398,9 +442,13 @@ export class TownScene {
       const job=this.life!.jobs.get(index),working=r.mode==='working';const rod=w.group.getObjectByName('fishing-rod')!;rod.visible=working&&job?.harvesting===true&&job.phase==='harvesting'&&jobFishing(job?.fieldId,this.board!)&&!r.path.length;if(rod.visible&&!this.reduced)rod.rotation.x=Math.sin(time*.002)*.035;w.cargo.visible=working&&Boolean(job?.carrying);w.cargo.children.forEach(o=>{if(o instanceof T.Mesh)o.material=material(job?.carrying==='flour'?'#e9dfc1':job?.carrying==='fish'?'#87b8b2':job?.carrying==='carrot'?'#cb925d':job?.carrying==='milk'?'#ebe3cb':'#c8a769');});
       w.limbs.forEach((limb,i)=>{const target=i>=2&&working&&job?.carrying?-.85:i>=2&&working&&job?.harvesting&&!r.path.length&&!this.reduced?-.45+Math.sin(time*.004+index)*.3:(i<2?pose.leg:pose.arm)*(i%2?-1:1);limb.rotation.x+=(target-limb.rotation.x)*(1-Math.exp(-dt*16));});
     }
-    const selected = this.residentSelection === null ? undefined : this.walkers[this.residentSelection]; this.residentHalo.visible = Boolean(selected?.group.visible);
+    const selected = this.residentSelection === null ? undefined : this.walkers[this.residentSelection]; this.residentHalo.visible = !this.cleanView&&!this.streetView&&Boolean(selected?.group.visible);
     if (selected) { const surface = walkSurface(this.board!.buildings, selected.group.position); this.residentHalo.position.set(selected.group.position.x,surface.y+.018,selected.group.position.z); }
-    if(time-this.clockTick>1000){this.clockTick=time;const save=time-this.clockSave>20000;if(save)this.clockSave=time;this.events.clock?.(s.worldSeconds,save);const label=document.getElementById('world-clock');if(label)label.textContent=clock.label;this.updateFarmLabels(clock.sleep);this.events.residentUpdated?.();}
+    if(time-this.clockTick>1000){this.clockTick=time;const save=time-this.clockSave>20000;if(save)this.clockSave=time;this.events.clock?.(s.worldSeconds,save);const label=document.getElementById('world-clock');if(label)label.textContent=clock.label;this.updateFarmLabels(clock.sleep);this.events.residentUpdated?.();this.publishDiagnostics(clock);}
+
+  }
+  private publishDiagnostics(clock: ReturnType<typeof worldTime>):void {
+    const s=this.state!;
     this.canvas.dataset.village=JSON.stringify(s.village);this.canvas.dataset.workers=JSON.stringify([...(this.life?.jobs.entries()||[])].map(([i,j])=>({resident:i,id:j.fieldId,target:j.target,path:this.life!.residents[i].path.length,mode:this.life!.residents[i].mode})));
     this.canvas.dataset.clockHands=JSON.stringify(this.board!.buildings.filter(b=>b.placed&&b.kind==='clock').map(b=>({id:b.id,hour:this.buildingMeshes.get(b.id)?.getObjectByName('clock-hour-0')?.rotation.z,minute:this.buildingMeshes.get(b.id)?.getObjectByName('clock-minute-0')?.rotation.z})));
     this.canvas.dataset.smokeSources=JSON.stringify(this.board!.buildings.filter(b=>b.placed&&['bakery','restaurant'].includes(b.kind)).map(b=>({id:b.id,origin:smokeOrigin(this.buildingMeshes.get(b.id)!)?.toArray()})));
@@ -449,12 +497,23 @@ export class TownScene {
     if (this.state?.settings.muted) return;
     try { this.sounds ||= new AudioContext(); void this.sounds.resume(); const oscillator = this.sounds.createOscillator(), gain = this.sounds.createGain(); oscillator.type = 'sine'; oscillator.frequency.setValueAtTime(frequency, this.sounds.currentTime); gain.gain.setValueAtTime(.035, this.sounds.currentTime); gain.gain.exponentialRampToValueAtTime(.0001, this.sounds.currentTime + .25); oscillator.connect(gain).connect(this.sounds.destination); oscillator.start(); oscillator.stop(this.sounds.currentTime + .26); } catch { /* audio optional */ }
   }
+  private queueFrame():void {if(this.running&&!this.paused&&this.frameHandle===null)this.frameHandle=requestAnimationFrame(t=>{this.frameHandle=null;this.frame(t);});}
   private frame(time: number): void {
-    if (!this.running) return; requestAnimationFrame(t => this.frame(t)); if (this.paused || time - this.lastFrame < 1000 / (this.state?.settings.quality === 'low' ? 30 : 60) - 1) return;
-    const dt = Math.min(.06, (time - (this.lastTime || time)) / 1000); this.lastTime = time; this.lastFrame = time;
+    if (!this.running || this.paused) return; this.queueFrame();
+    const policy=renderPolicy(this.state?.settings.quality||'medium',devicePixelRatio,this.canvas.clientWidth,this.canvas.clientHeight);
+    if(!frameDue(time,this.lastFrame,policy.fps))return;
+    const dt = Math.min(.06, (time - (this.lastTime || time)) / 1000); this.lastTime = time; this.lastFrame = time - Math.max(0,time-this.lastFrame-1000/policy.fps)%(1000/policy.fps);
     this.environment(dt,time);
     const oldPosition = this.camera.position.clone(), oldTarget = this.controls.target.clone(), oldZoom = this.camera.zoom;
     const smooth = smoothFraction(dt, this.reduced);
+    if(this.streetView){
+      if(this.keyboardMove.lengthSq()){this.walkStreet(this.keyboardMove.x,this.keyboardMove.y,dt*2.6);this.keyboardApplied=true;}
+      if(this.orbitDirection)this.orbitSpeed=T.MathUtils.lerp(this.orbitSpeed,this.orbitDirection*.85,1-Math.exp(-dt*12));
+      this.streetYaw-=this.orbitSpeed*dt+this.orbitStep*smooth;this.orbitStep*=1-smooth;
+      this.streetPitch=T.MathUtils.clamp(this.streetPitch+this.pitchStep*smooth,-.65,.65);this.pitchStep*=1-smooth;
+      if(this.panStep.lengthSq()>.0001){const pan=this.panStep.clone().multiplyScalar(smooth*.01);this.panStep.multiplyScalar(1-smooth);this.walkStreet(-pan.x,-pan.y,1);}
+      this.streetCamera.fov+=(this.streetFov-this.streetCamera.fov)*smooth;this.streetCamera.updateProjectionMatrix();this.updateStreetCamera();
+    }else {
     if (this.keyboardMove.lengthSq()) {
       this.panKeyboard(keyboardPanDistance(dt,this.camera.zoom));
     }
@@ -475,6 +534,7 @@ export class TownScene {
     this.controls.dampingFactor = smoothFraction(dt, this.reduced, 12);
     this.controls.update();
     this.camera.updateMatrixWorld();
+    }
     if (this.previewKind && this.pointerInside && this.lastPointer && (oldPosition.distanceToSquared(this.camera.position) > .00000001 || oldTarget.distanceToSquared(this.controls.target) > .00000001 || oldZoom !== this.camera.zoom)) this.previewAt(this.lastPointer.clientX, this.lastPointer.clientY);
     if (!this.reduced) {
       for (const b of this.board?.buildings || []) {
@@ -491,10 +551,14 @@ export class TownScene {
       }
       for (const puff of [...this.smoke.children] as T.Mesh[]) { puff.userData.life += dt; puff.position.y += dt * .26; puff.position.x += dt * .12; puff.scale.setScalar(1 + puff.userData.life * .6); (puff.material as T.MeshBasicMaterial).opacity = Math.max(0, .45 - puff.userData.life * .14); if (puff.userData.life > 3.2) { this.smoke.remove(puff); puff.geometry.dispose(); (puff.material as T.Material).dispose(); } }
     }
-    this.renderer.render(this.scene, this.camera);
-    const rect=this.canvas.getBoundingClientRect(); this.canvas.dataset.residentTargets=JSON.stringify(this.walkers.map((w,id)=>{const p=w.group.position.clone().add(new T.Vector3(0,.4,0)).project(this.camera);return{id,name:residentProfile(id)?.name,visible:w.group.visible,x:+(rect.left+(p.x+1)*rect.width/2).toFixed(1),y:+(rect.top+(1-p.y)*rect.height/2).toFixed(1)};}));
-    this.positionHomeBubbles();
+    if(time-this.shadowFrame>=policy.shadowInterval){this.renderer.shadowMap.needsUpdate=true;this.shadowFrame=time;}
+    this.renderer.render(this.scene, this.viewCamera);
+    if(time-this.debugFrame>250){this.debugFrame=time;
+    const rect=this.canvas.getBoundingClientRect(); this.canvas.dataset.residentTargets=JSON.stringify(this.walkers.map((w,id)=>{const p=w.group.position.clone().add(new T.Vector3(0,.4,0)).project(this.viewCamera);return{id,name:residentProfile(id)?.name,visible:w.group.visible,x:+(rect.left+(p.x+1)*rect.width/2).toFixed(1),y:+(rect.top+(1-p.y)*rect.height/2).toFixed(1)};}));
+    }
+    if(!this.cleanView&&!this.streetView&&(oldPosition.distanceToSquared(this.camera.position)>1e-10||oldTarget.distanceToSquared(this.controls.target)>1e-10||oldZoom!==this.camera.zoom))this.positionHomeBubbles();
     this.events.rendered?.(time);
+    if(this.streetView){this.canvas.dataset.cameraEye=`${this.streetPosition!.x.toFixed(3)},${this.streetPosition!.y.toFixed(3)},${this.streetPosition!.z.toFixed(3)}`;this.canvas.dataset.streetYaw=String(this.streetYaw);this.canvas.dataset.streetPitch=String(this.streetPitch);}
     this.canvas.dataset.cameraAngle = String(Math.round(Math.atan2(this.camera.position.x - this.controls.target.x, this.camera.position.z - this.controls.target.z) * 1800 / Math.PI) / 10);
     this.canvas.dataset.cameraElevation = String(Math.round(this.elevation() * 1800 / Math.PI) / 10); this.canvas.dataset.cameraZoom = this.camera.zoom.toFixed(4);
     this.canvas.dataset.cameraTarget = `${this.controls.target.x.toFixed(3)},${this.controls.target.z.toFixed(3)}`;
@@ -510,7 +574,7 @@ export class TownScene {
   }
   private clearTransient(group: T.Group): void {
     const geometries = new Set<T.BufferGeometry>(), ownedMaterials = new Set<T.Material>();
-    group.traverse(o => { if (o instanceof T.Mesh || o instanceof T.Line) { if (o.geometry !== boxGeometry) geometries.add(o.geometry); for (const m of Array.isArray(o.material) ? o.material : [o.material]) if (!sharedMaterial(m)) ownedMaterials.add(m); } });
+    group.traverse(o => { if (o instanceof T.Mesh || o instanceof T.Line) { if(o instanceof T.InstancedMesh)o.dispose();if (o.geometry !== boxGeometry) geometries.add(o.geometry); for (const m of Array.isArray(o.material) ? o.material : [o.material]) if (!sharedMaterial(m)) ownedMaterials.add(m); } });
     group.clear(); for (const g of geometries) g.dispose(); for (const m of ownedMaterials) m.dispose();
   }
   private buildExtras(): void {
