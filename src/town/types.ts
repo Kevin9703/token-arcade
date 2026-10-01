@@ -1,4 +1,6 @@
-import type { DataMode, ProjectUsage } from '../core/types';
+import type { ProjectUsage } from '../data/types';
+
+export type DataMode = 'live' | 'demo';
 
 export type BuildingKind = 'hall' | 'house' | 'bakery' | 'cafe' | 'market' | 'park' | 'bridge' | 'clock' | 'workshop' | 'tree' | 'bench' | 'lamp' | 'flower' | 'picnic' | 'birdhouse' | 'windmill' | 'statue' | 'gardenlamp' | 'fountain' | 'cart' | 'hedge' | 'barrel' | 'planter' | 'gazebo' | 'grocer' | 'florist' | 'library' | 'greenhouse' | 'granary' | 'boathouse' | 'wheatfield' | 'mill' | 'vegetablefield' | 'cowshed' | 'pigpen' | 'fishinghut' | 'restaurant' | 'apronstand' | 'harvesttable' | 'wheatbanner';
 export type FarmPhase = 'sowing' | 'growing' | 'harvesting' | 'to-mill' | 'milling' | 'to-bakery' | 'baking' | 'returning';

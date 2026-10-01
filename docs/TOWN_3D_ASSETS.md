@@ -97,6 +97,6 @@ blender --background --python scripts/build-curated-town.py
 
 该脚本使用本地源文件，保存独立 `art/kenney-modules.blend`；它会重建自己的输出，因此艺术家编辑应另存。正常 npm 构建使用已保存的派生 GLB，无需联网。
 
-四季录音是独立的 CC BY 4.0 作品，曲目、署名、来源、改动和哈希见 [音乐授权](../public/assets/town/audio/CREDITS.md) 与同目录 `sources.json`。仓库保留字体等兼容资源的原许可和来源说明，不把它们算作当前城镇美术资产。
+四季录音是独立的 CC BY 4.0 作品，曲目、署名、来源、改动和哈希见 [音乐授权](../public/assets/town/audio/CREDITS.md) 与同目录 `sources.json`。旧像素字体与街机素材已移除；当前发布资源全部位于 `public/assets/town/`，各自授权随资源保留。
 
 参考：[Blender 格式支持](https://www.blender.org/features/pipeline/)、[glTF 导出文档](https://docs.blender.org/manual/en/latest/addons/import_export/scene_gltf2.html)。

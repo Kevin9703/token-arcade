@@ -1,0 +1,17 @@
+{
+  "viewport": [
+    1512,
+    828
+  ],
+  "checks": [
+    "Fresh demo sync yields 400 coins, using the current town economy",
+    "Workshop catalog, Q/E placement rotation, WASD during placement and Escape cancellation run without spending",
+    "Live fixture credits 2 coins + 2500 residue once; demo coins and historical save remain separate",
+    "Demo balance and historical storage survive refresh",
+    "Existing showcase fixture reload preserves money, layout, inventory and credited project totals",
+    "Retired entries, bundles, stylesheet and prize assets return 404",
+    "Built local server still serves GET /api/usage as project token summaries"
+  ],
+  "pageErrors": [],
+  "failedGameResources": []
+}

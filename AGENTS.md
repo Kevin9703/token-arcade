@@ -1,6 +1,6 @@
 # Codex Task Brief — Token Town / 河谷小镇
 
-This project is a cozy **3D river valley town game**, built with TypeScript and Three.js. The former pixel arcade has been retired from the main experience. Do not implement new arcade rooms, capsule machines, prize walls, or pixel UI. Historical files and saves may remain for compatibility, but must not guide new work.
+This project is a cozy **3D river valley town game**, built with TypeScript and Three.js. Only the town belongs in the current source, assets, tests and builds. Do not restore retired arcade rooms, capsule machines, prize walls or pixel UI. Historical saves must remain untouched; retired code is available in Git history and its archived branch.
 
 Start with `docs/README.md`; read `docs/TOKEN_TOWN.md` and `docs/TOWN_3D_ASSETS.md` before changing the game. `ARCHITECTURE.md` describes the current implementation, `docs/QA.md` records verification, and `docs/ROADMAP.md` records delivered scope and implementation decisions. Keep those statuses distinct and remove superseded documents instead of maintaining conflicting specifications.
 

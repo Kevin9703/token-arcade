@@ -7,7 +7,7 @@
  * treating it as permission to enter demo mode.
  */
 
-import type { ProjectUsage } from '../core/types';
+import type { ProjectUsage } from './types';
 
 /** Loose shape of a project entry as it arrives over the wire. */
 interface RawProject {

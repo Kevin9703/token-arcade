@@ -1,7 +1,8 @@
 import {freshVillage,validVillage,ORDERS,completeOrder} from './village';
 import {worldTime} from './world-time';
-import { levelFor } from '../domain/levels';
-import type { DataMode, ProjectUsage } from '../core/types';
+import { levelFor } from './levels';
+import type { ProjectUsage } from '../data/types';
+import type { DataMode } from './types';
 import { CATALOG, CHAPTER_COSMETICS } from './catalog';
 import { activeChapter, canPlace, canRoad, evaluate, makeBuilding, starsForChapter, starterBoard, subsidyEntitlement, key, cells, water, fromKey, bridgeSlots, fishingShore } from './world';
 import { PUZZLES, freshPuzzle, puzzleStars } from './puzzles';

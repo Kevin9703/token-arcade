@@ -153,7 +153,7 @@ export function createUsageScanner(options: ScanOptions = { env: process.env }) 
       if (u) {
         // Fresh tokens the model processed. We intentionally exclude
         // cache_read_input_tokens: re-reading cached context every turn would
-        // inflate totals into the billions and max out every cabinet.
+        // inflate totals into the billions and max out every workshop.
         tokens += (u.input_tokens || 0) + (u.output_tokens || 0) + (u.cache_creation_input_tokens || 0);
       }
     }
@@ -249,8 +249,8 @@ export function createUsageScanner(options: ScanOptions = { env: process.env }) 
     for (const file of files) {
       const scan = scanFileCached(file, seen, parseCodexFile);
       if (!scan || scan.tokens <= 0) continue;
-      // Sessions without a recorded cwd all pool into one 'codex-session' cabinet
-      // (matches the old behavior; one cabinet per orphan session would be noise).
+      // Sessions without a recorded cwd all pool into one 'codex-session' project
+      // (matches the old behavior; one project per orphan session would be noise).
       const basis = scan.cwd || 'codex-session';
       const name = (scan.cwd && baseName(scan.cwd)) || 'codex-session';
       addProject(projects, basis, name, 'codex', scan.tokens);

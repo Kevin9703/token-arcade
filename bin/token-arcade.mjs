@@ -6,7 +6,7 @@ import path from 'node:path';
 
 const nodeMajor = Number(process.versions.node.split('.')[0]);
 if (nodeMajor < 22) {
-  console.error('Token Arcade requires Node.js 22 or newer.');
+  console.error('Token Town requires Node.js 22 or newer.');
   process.exit(1);
 }
 

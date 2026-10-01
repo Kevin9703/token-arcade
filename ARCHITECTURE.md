@@ -10,6 +10,7 @@ TypeScript + Three.js 构建原生 3D 城镇，DOM 提供 HUD 和建设面板，
 |---|---|
 | `main.ts` | 启动、明确选择演示模式、图形错误处理 |
 | `types.ts` / `catalog.ts` | 状态与规则契约、建筑价格、占地、距离、容量和解锁 |
+| `levels.ts` / `format.ts` | 项目工坊的 50 级 / 五阶段成长曲线、HUD token 数字格式 |
 | `world.ts` | 旋转占地、入口、桥位、区域开放、BFS 连通、最短路、稳定服务分配和章节目标 |
 | `service-feedback.ts` | 从同一规则结果生成范围、受益住宅和缺服务原因 |
 | `puzzles.ts` | 六张固定库存规划关、星级条件和测试用参考解法 |
@@ -32,6 +33,7 @@ TypeScript + Three.js 构建原生 3D 城镇，DOM 提供 HUD 和建设面板，
 | `asset-preview.ts` | 独立模型陈列与前后方检查 |
 | `server/index.ts` | 静态资源与 `GET /api/usage`，只监听 `127.0.0.1` |
 | `server/usage.ts` / `server/agent-usage.ts` | 四个 agent 的文件发现、增量缓存、调用去重、继承切点和分帧 Zstandard 解码 |
+| `src/data/types.ts` / `src/data/liveSource.ts` | 独立的 token 汇总契约与本地接口读取 |
 
 使用记录 → `syncTown` → 金币和工坊状态 → 布局交易 → `evaluate` → 住宅需求与委托 → DOM 和场景反馈。`world`、`catalog`、`puzzles` 和服务反馈不依赖 WebGL，居民动画不决定住宅服务或金币。
 
@@ -45,7 +47,7 @@ TypeScript + Three.js 构建原生 3D 城镇，DOM 提供 HUD 和建设面板，
 
 `town` 保存永久建筑实例，包括收纳状态和布局。购买通过占地校验后才扣费；搬迁修改原 ID，收纳只切换 `placed`。`puzzleBoards` 使用独立的规定实例，不参与主城交易。
 
-项目等级复用 `src/domain/levels.ts` 的 50 级曲线；城镇不使用其中兼容代码的金币倍率。五阶段门槛和工坊规则统一见 [项目工坊](docs/TOKEN_TOWN.md#项目工坊)。
+项目等级由 `src/town/levels.ts` 的 50 级曲线计算，只影响工坊外观。数值门槛保持不变，模块不包含金币倍率。五阶段门槛和工坊规则统一见 [项目工坊](docs/TOKEN_TOWN.md#项目工坊)。
 
 ## 存档与跨窗口保护
 
@@ -94,7 +96,7 @@ DeepSeek Harness 默认扫描 `~/.dsh/sessions`，支持 `DSH_HOME` 和 `TOKEN_T
 - `npm run build:assets`：从 TypeScript 导出原创 GLB。
 - `npm run build:client` / `npm run watch`：构建或监听城镇前端。
 - `npm run build:server` / `npm run start`：构建或启动本地服务。
-- `npm run build`：完整资源和客户端、服务构建。仓库中的兼容入口仍随构建生成，不参与城镇规则。
+- `npm run build`：仅构建小镇资源、客户端与本地服务。npm 发布包仅包含当前小镇运行文件；模型陈列入口由资源构建生成，保留在仓库用于开发验收。
 - `npm run typecheck` / `npm test`：TypeScript 与 Node 测试；测试经 esbuild 编译，不依赖 WebGL。
 
 浏览器用于验证模型、放置、镜头、音频和居民动作，必须使用独立地址或测试存档，保留用户进度。具体结果与尚未覆盖的范围统一记录在 [QA](docs/QA.md)。

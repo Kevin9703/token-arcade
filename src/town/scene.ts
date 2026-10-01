@@ -8,7 +8,7 @@ import { CATALOG } from './catalog';
 import { landscape } from './landscape';
 import { canPlace, visualVariant, dimensions, entrance, makeBuilding } from './world';
 import { buildingCoverage } from './service-feedback';
-import { levelFor, stageForLevel } from '../domain/levels';
+import { levelFor, stageForLevel } from './levels';
 import { wheelGesture, smoothFraction, clampElevation, clampZoom, DEFAULT_ELEVATION, MIN_ELEVATION, MAX_ELEVATION } from './camera-input';
 import { PedestrianTraffic, walkingPose } from './pedestrians';
 import { stoneRoads } from './roads';
