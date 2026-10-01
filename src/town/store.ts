@@ -15,7 +15,7 @@ export const TOWN_KEYS = { live: 'tokenTown.slot.live.v1', demo: 'tokenTown.slot
 const META = 'tokenTown.mode.v1';
 const progressFingerprint=(s:TownState):string=>{const {revision,worldSeconds,settings,farm,village,...progress}=s;return JSON.stringify({...progress,villageProgress:{completed:village.completed,activeOrder:village.activeOrder,choices:village.choices}});};
 export function freshTown(mode: DataMode): TownState {
-  return { version: 1, mode, revision: 0, coins: 0, tokenCoins: 0, residue: 0, subsidyPaid: 0, chapterStars: [0, 0, 0, 0, 0, 0], puzzleStars: {}, projects: [], town: starterBoard(), puzzleBoards: {}, demoStep: 0, nextId: 20, tutorialDone: false, history: 'unscanned', worldSeconds: 0, farm: freshFarm(), village:freshVillage(), settings: { music: true, musicVolume: .28, clockMode: 'cycle', season: 'cycle', muted: false, lighting: 'day', quality: 'medium', reducedMotion: false, cameraInput: 'trackpad', goalCollapsed: false } };
+  return { version: 1, mode, revision: 0, coins: 0, tokenCoins: 0, residue: 0, subsidyPaid: 0, chapterStars: [0, 0, 0, 0, 0, 0], puzzleStars: {}, projects: [], town: starterBoard(), puzzleBoards: {}, demoStep: 0, nextId: 20, tutorialDone: false, history: 'unscanned', worldSeconds: 0, farm: freshFarm(), village:freshVillage(), settings: { music: true, musicVolume: .28, clockMode: 'cycle', season: 'cycle', muted: false, lighting: 'day', quality: 'medium', reducedMotion: false, cameraInput: 'trackpad', cameraSpeed: 24, goalCollapsed: false } };
 }
 function validBoard(board: Board): boolean {
   if (!board || !Number.isInteger(board.size) || board.size < 8 || board.size > TOWN_SIZE || !['valley', 'meadow', 'river'].includes(board.terrain) || !Array.isArray(board.buildings) || !Array.isArray(board.roads)) return false;
@@ -48,6 +48,8 @@ export function parseTown(raw: string | null, mode: DataMode): TownState | null 
     if (s.subsidyPaid > Math.min(Math.floor(s.tokenCoins / 5), subsidyEntitlement(s)) || s.coins > s.tokenCoins + s.subsidyPaid || !s.settings || typeof s.settings.muted !== 'boolean' || typeof s.settings.reducedMotion !== 'boolean' || !['day', 'sunset', 'night'].includes(s.settings.lighting) || !['high', 'medium', 'low'].includes(s.settings.quality)) return null;
     s.settings.goalCollapsed ??= false; if (typeof s.settings.goalCollapsed !== 'boolean') return null;
     s.settings.cameraInput ??= 'trackpad'; // Preserve existing town saves.
+    s.settings.cameraSpeed ??= 24;
+    if (![12, 24, 36].includes(s.settings.cameraSpeed)) return null;
     s.settings.clockMode ??= 'cycle'; s.settings.season ??= 'cycle'; s.worldSeconds ??= 0;
     if (!['cycle','fixed'].includes(s.settings.clockMode) || !['cycle','spring','summer','autumn','winter'].includes(s.settings.season) || !Number.isFinite(s.worldSeconds) || s.worldSeconds < 0) return null;
     if (!['trackpad', 'mouse'].includes(s.settings.cameraInput)) return null;

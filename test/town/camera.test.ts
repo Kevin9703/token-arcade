@@ -4,17 +4,22 @@ import { wheelGesture, smoothFraction, clampElevation, clampZoom, MIN_ELEVATION,
 import { freshTown, parseTown } from '../../src/town/store';
 import { keyboardPan, keyboardPanDistance } from '../../src/town/keyboard-input';
 
-test('WASD covers twelve tiles per second independent of frame rate, zoom and diagonal input', () => {
+test('WASD speed and Shift boost remain consistent across frame rates, zoom and diagonal input', () => {
   for (const fps of [30, 60, 120]) {
-    for (const zoom of [.52, 1, 1.45, 3.2]) {
-      const pan = keyboardPan(new Set(['w', 'd']));
-      let distance = 0;
-      for (let frame = 0; frame < fps; frame++) distance += Math.hypot(pan.x, pan.y) * keyboardPanDistance(1 / fps, zoom);
-      assert.ok(Math.abs(distance * zoom - 12) < 1e-10);
+    for (const zoom of [.28, 1, 1.7, 3.2, 5.5]) {
+      for (const speed of [12, 24, 36]) for (const boost of [false, true]) {
+        for (const keys of [['w'], ['w', 'd']]) {
+          const pan = keyboardPan(new Set(keys));
+          let distance = 0;
+          for (let frame = 0; frame < fps; frame++) distance += Math.hypot(pan.x, pan.y) * keyboardPanDistance(1 / fps, zoom, speed, boost);
+          assert.ok(Math.abs(distance * zoom - speed * (boost ? 2 : 1)) < 1e-10);
+        }
+      }
     }
   }
   assert.equal(keyboardPanDistance(-1, 1), 0);
-  assert.equal(keyboardPanDistance(1 / 120, 1), .1, 'a short tap stays precise');
+  assert.equal(keyboardPanDistance(1, 1), 24, 'standard speed doubles the former default');
+  assert.equal(keyboardPanDistance(1 / 120, 1), .2, 'a short tap stays precise');
 });
 
 const wheel = (extra = {}) => ({ deltaX: 0, deltaY: 0, deltaMode: 0, ctrlKey: false, metaKey: false, shiftKey: false, ...extra });
@@ -52,9 +57,18 @@ test('gesture smoothing settles promptly and has the same response across frame 
   assert.equal(smoothFraction(-1), 0);
 });
 test('camera preferences migrate existing saves without changing coins, inventory or layout', () => {
-  const old = freshTown('demo'); const raw = JSON.parse(JSON.stringify(old)); delete raw.settings.cameraInput;
+  const old = freshTown('demo'); const raw = JSON.parse(JSON.stringify(old)); delete raw.settings.cameraInput; delete raw.settings.cameraSpeed;
   const parsed = parseTown(JSON.stringify(raw), 'demo')!;
   assert.equal(parsed.settings.cameraInput, 'trackpad'); assert.deepEqual(parsed.town, old.town); assert.equal(parsed.coins, old.coins);
+  assert.equal(parsed.settings.cameraSpeed, 24);
   parsed.settings.cameraInput = 'mouse'; assert.equal(parseTown(JSON.stringify(parsed), 'demo')!.settings.cameraInput, 'mouse');
+  for (const speed of [12, 24, 36] as const) {
+    parsed.settings.cameraSpeed = speed;
+    assert.equal(parseTown(JSON.stringify(parsed), 'demo')!.settings.cameraSpeed, speed);
+  }
+  for (const invalid of [0, 48, '24']) {
+    const bad = JSON.parse(JSON.stringify(parsed)); bad.settings.cameraSpeed = invalid;
+    assert.equal(parseTown(JSON.stringify(bad), 'demo'), null);
+  }
   raw.settings.cameraInput = 'auto-guess'; assert.equal(parseTown(JSON.stringify(raw), 'demo'), null);
 });

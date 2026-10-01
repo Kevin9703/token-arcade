@@ -10,7 +10,9 @@ export function keyboardPan(keys: Set<string>): { x: number; y: number } {
   const length = Math.hypot(x, y) || 1; return { x: x / length, y: y / length };
 }
 
+export const DEFAULT_CAMERA_SPEED = 24;
+export const STREET_WALK_SPEED = 3.6;
 // Scale world distance with zoom to keep screen travel consistent.
-export function keyboardPanDistance(seconds: number, zoom: number): number {
-  return Math.max(0, seconds) * 12 / zoom;
+export function keyboardPanDistance(seconds: number, zoom: number, speed = DEFAULT_CAMERA_SPEED, boost = false): number {
+  return Math.max(0, seconds) * speed * (boost ? 2 : 1) / zoom;
 }

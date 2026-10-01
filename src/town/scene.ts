@@ -19,7 +19,7 @@ import { interiorSpot } from './doorways';
 import { ResidentLife, homeForBuilding, doorstepPlace, type ResidentSeat } from './resident-life';
 import { farmChains, farmDuration, tickFarm, roadRoute, FARM_LABELS, bakeryMaterialLabel, type FarmChain } from './farming';
 import { SeasonalMusic } from './music';
-import { keyboardPanDistance } from './keyboard-input';
+import { DEFAULT_CAMERA_SPEED, STREET_WALK_SPEED, keyboardPanDistance } from './keyboard-input';
 import { walkSurface, BUILDING_GROUND_Y } from './walk-surface';
 import { updateClockHands, smokeOrigin } from './building-effects';
 import { describeResident, residentProfile, RESIDENT_COLORS, type ResidentInfo } from './resident-info';
@@ -377,12 +377,15 @@ export class TownScene {
   }
   holdRotate(direction: number): void { this.orbitDirection = direction; this.orbitStep = 0; if (!direction) this.orbitSpeed = 0; }
   private keyboardMove = new T.Vector2();
+  private keyboardBoost = false;
   private keyboardApplied=false;
-  holdPan(x: number, y: number): void {
+  private cameraSpeed(): number { return this.state?.settings.cameraSpeed ?? DEFAULT_CAMERA_SPEED; }
+  private streetSpeed(): number { return STREET_WALK_SPEED * this.cameraSpeed() / DEFAULT_CAMERA_SPEED * (this.keyboardBoost ? 2 : 1); }
+  holdPan(x: number, y: number, boost = false): void {
     // Very short taps between animation frames still give a small precise move.
-    if(!x&&!y&&this.keyboardMove.lengthSq()&&!this.keyboardApplied){if(this.streetView)this.walkStreet(this.keyboardMove.x,this.keyboardMove.y,2.6/120);else this.panKeyboard(keyboardPanDistance(1/120,this.camera.zoom));}
+    if(!x&&!y&&this.keyboardMove.lengthSq()&&!this.keyboardApplied){if(this.streetView)this.walkStreet(this.keyboardMove.x,this.keyboardMove.y,this.streetSpeed()/120);else this.panKeyboard(keyboardPanDistance(1/120,this.camera.zoom,this.cameraSpeed(),this.keyboardBoost));}
     if(this.keyboardMove.x!==x||this.keyboardMove.y!==y)this.keyboardApplied=false;
-    this.keyboardMove.set(x, y); if (x || y) this.focusTarget = undefined;
+    this.keyboardMove.set(x, y); this.keyboardBoost = boost; if (x || y) this.focusTarget = undefined;
   }
   private panKeyboard(distance:number):void {
     const right=new T.Vector3().setFromMatrixColumn(this.camera.matrix,0);right.y=0;right.normalize();
@@ -514,7 +517,7 @@ export class TownScene {
     const oldPosition = this.camera.position.clone(), oldTarget = this.controls.target.clone(), oldZoom = this.camera.zoom;
     const smooth = smoothFraction(dt, this.reduced);
     if(this.streetView){
-      if(this.keyboardMove.lengthSq()){this.walkStreet(this.keyboardMove.x,this.keyboardMove.y,dt*2.6);this.keyboardApplied=true;}
+      if(this.keyboardMove.lengthSq()){this.walkStreet(this.keyboardMove.x,this.keyboardMove.y,dt*this.streetSpeed());this.keyboardApplied=true;}
       if(this.orbitDirection)this.orbitSpeed=T.MathUtils.lerp(this.orbitSpeed,this.orbitDirection*.85,1-Math.exp(-dt*12));
       this.streetYaw-=this.orbitSpeed*dt+this.orbitStep*smooth;this.orbitStep*=1-smooth;
       this.streetPitch=T.MathUtils.clamp(this.streetPitch+this.pitchStep*smooth,-.65,.65);this.pitchStep*=1-smooth;
@@ -522,7 +525,7 @@ export class TownScene {
       this.streetCamera.fov+=(this.streetFov-this.streetCamera.fov)*smooth;this.streetCamera.updateProjectionMatrix();this.updateStreetCamera();
     }else {
     if (this.keyboardMove.lengthSq()) {
-      this.panKeyboard(keyboardPanDistance(dt,this.camera.zoom));
+      this.panKeyboard(keyboardPanDistance(dt,this.camera.zoom,this.cameraSpeed(),this.keyboardBoost));
     }
     if (this.focusTarget) { const delta = this.focusTarget.clone().sub(this.controls.target).multiplyScalar(smoothFraction(dt, this.reduced, 10)); this.controls.target.add(delta); this.camera.position.add(delta); if (this.focusTarget.distanceToSquared(this.controls.target) < .00000025) this.focusTarget = undefined; }
     if (this.orbitDirection) this.orbitSpeed = T.MathUtils.lerp(this.orbitSpeed, this.orbitDirection * .85, 1 - Math.exp(-dt * 12));

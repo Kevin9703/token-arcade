@@ -19,7 +19,7 @@ export interface TownState {
   worldSeconds: number;
   farm: FarmState;
   village: import('./village').VillageState;
-  settings: { music: boolean; musicVolume: number; muted: boolean; lighting: 'day' | 'sunset' | 'night'; clockMode: 'cycle' | 'fixed'; season: 'cycle' | 'spring' | 'summer' | 'autumn' | 'winter'; quality: 'high' | 'medium' | 'low'; reducedMotion: boolean; cameraInput: 'trackpad' | 'mouse'; goalCollapsed?: boolean };
+  settings: { music: boolean; musicVolume: number; muted: boolean; lighting: 'day' | 'sunset' | 'night'; clockMode: 'cycle' | 'fixed'; season: 'cycle' | 'spring' | 'summer' | 'autumn' | 'winter'; quality: 'high' | 'medium' | 'low'; reducedMotion: boolean; cameraInput: 'trackpad' | 'mouse'; cameraSpeed?: 12 | 24 | 36; goalCollapsed?: boolean };
 }
 export interface BuildingDefinition {
   kind: BuildingKind; name: string; description: string; cost: number; w: number; d: number;
