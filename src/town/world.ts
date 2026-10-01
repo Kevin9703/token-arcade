@@ -1,9 +1,10 @@
 import { CATALOG, CHAPTERS } from './catalog';
+import { TOWN_SIZE, foundationHeight, starterWidth, westernWidth, expandedValley } from './terrain';
+export { STARTER_WIDTH } from './terrain';
 import type { Board, Building, BuildingKind, Cell, Evaluation, Goal, TownState } from './types';
 
 export const visualVariant = (b: Building,s:TownState):number => (b.variant+(b.kind==='workshop'?Math.max(0,s.projects.findIndex(p=>p.id===b.projectId)):0))%4;
 export const key = (x: number, z: number): string => `${x},${z}`;
-export const STARTER_WIDTH = 18;
 export const parkRange = (board: Board): number => board.terrain === 'valley' ? 6 : 3;
 export const serviceDefinition = (board: Board, kind: BuildingKind) => kind === 'cafe' && board.terrain !== 'valley' ? {...CATALOG[kind],range:10,capacity:4} : CATALOG[kind];
 export const fromKey = (s: string): Cell => { const [x, z] = s.split(',').map(Number); return { x, z }; };
@@ -24,13 +25,13 @@ export function entrance(b: Building): Cell {
 export function water(board: Board, x: number, z: number): boolean {
   return x >= 0 && x < board.size && (board.terrain === 'valley' ? z === 11 || z === 12 : board.terrain === 'river' ? z === 5 || z === 6 : false);
 }
-export const bridgeSlots = (board: Board): number[] => board.terrain === 'valley' ? [4, 10, 16, 20] : board.terrain === 'river' ? [6] : [];
+export const bridgeSlots = (board: Board): number[] => board.terrain === 'valley' ? (expandedValley(board) ? [4, 10, 16, 20, 28, 34] : [4, 10, 16, 20]) : board.terrain === 'river' ? [6] : [];
 export function unlocked(s: TownState, board: Board, x: number, z: number): boolean {
   if (x < 0 || z < 0 || x >= board.size || z >= board.size) return false;
   if (board.terrain !== 'valley') return true;
-  if (z >= 13) return x < STARTER_WIDTH || s.chapterStars[1] > 0;
+  if (z >= 13) return x < starterWidth(board) || s.chapterStars[1] > 0;
   if (z >= 11) return s.chapterStars[2] > 0;
-  return s.chapterStars[5] > 0 || (x < 12 && (s.chapterStars[3] > 0 || s.chapterStars[2] > 0 && z >= 3));
+  return s.chapterStars[5] > 0 || (x < westernWidth(board) && (s.chapterStars[3] > 0 || s.chapterStars[2] > 0 && z >= 3));
 }
 export function fishingShore(board:Board,b:Building):boolean {
   const door=entrance(b);
@@ -50,6 +51,7 @@ export function canPlace(s: TownState, board: Board, b: Building): string | null
     if (occupied.has(key(p.x, p.z))) return '这里已经有建筑了，试试另一块空地';
     if (board.roads.includes(key(p.x, p.z))) return '先擦除这里的道路，再放置建筑';
   }
+  if (b.kind !== 'bridge' && foundationHeight(board,b) === null) return '这里是连接台地的缓坡，请在坡顶或坡脚的平地建设；缓坡可以铺路';
   return null;
 }
 export function canRoad(s: TownState, board: Board, x: number, z: number): boolean {
@@ -102,10 +104,10 @@ export function evaluate(board: Board): Evaluation {
   for (const h of homes) {
     const status = e.buildings[h.id]; status.green = parks.some(p => edgeDistance(h, p) <= parkRange(board));
     e.houses++; e.population += 10;
-    if (status.food) { e.food++; h.z < board.size / 2 ? e.northFood++ : e.southFood++; }
+    if (status.food) { e.food++; h.z < (board.terrain === 'valley' ? 11 : board.terrain === 'river' ? 5 : board.size / 2) ? e.northFood++ : e.southFood++; }
     if (status.leisure) e.leisure++;
     if (status.green) e.green++;
-    if (status.food && status.leisure && status.green) { e.satisfied++; h.z < board.size / 2 ? e.northSatisfied++ : e.southSatisfied++; }
+    if (status.food && status.leisure && status.green) { e.satisfied++; h.z < (board.terrain === 'valley' ? 11 : board.terrain === 'river' ? 5 : board.size / 2) ? e.northSatisfied++ : e.southSatisfied++; }
   }
   e.bridge = placed.some(b => b.kind === 'bridge' && cells(b).some(p => connected.has(key(p.x, p.z))));
   e.clock = placed.some(b => b.kind === 'clock' && e.buildings[b.id].connected);
@@ -128,6 +130,6 @@ export function starsForChapter(chapter: number, e: Evaluation): number {
 export function makeBuilding(id: string, kind: BuildingKind, x: number, z: number, rotation = 0): Building { return { id, kind, x, z, rotation, placed: true, variant: 0 }; }
 export function starterBoard(): Board {
   const buildings = [makeBuilding('hall', 'hall', 5, 19, 2), ...[1, 3, 8].map((x, i) => ({ ...makeBuilding(`home-${i + 1}`, 'house', x, 14), variant: i })), { ...makeBuilding('home-4', 'house', 9, 18, 2), variant: 3 }, makeBuilding('bakery-1', 'bakery', 6, 14), makeBuilding('park-1', 'park', 1, 18, 2)];
-  return { size: 24, terrain: 'valley', buildings, roads: [...Array.from({ length: 11 }, (_, i) => key(i + 1, 16)), key(1, 17), key(9, 17), key(6, 18)] };
+  return { size: TOWN_SIZE, terrain: 'valley', buildings, roads: [...Array.from({ length: 11 }, (_, i) => key(i + 1, 16)), key(1, 17), key(9, 17), key(6, 18)] };
 }
 export function subsidyEntitlement(s: TownState): number { return CHAPTERS.reduce((sum, c, i) => sum + (s.chapterStars[i] > 0 ? c.subsidy : 0), 0); }

@@ -25,4 +25,4 @@ export function streetMove(board: Board, from: Cell, dx: number, dz: number): Ce
   }
   return p;
 }
-export function streetHeight(board: Board, p: Cell): number { return walkSurface(board.buildings,p).y + STREET_EYE_HEIGHT; }
+export function streetHeight(board: Board, p: Cell): number { return walkSurface(board.buildings,p,board).y + STREET_EYE_HEIGHT; }

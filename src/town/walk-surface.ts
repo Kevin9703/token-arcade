@@ -1,4 +1,5 @@
-import type { Building, Cell } from './types';
+import { groundHeight } from './terrain';
+import type { Board, Building, Cell } from './types';
 
 export const BUILDING_GROUND_Y = .04;
 export const ROAD_WALK_Y = .105;
@@ -10,14 +11,15 @@ export const BRIDGE_STONES = Array.from({ length: 9 }, (_, i) => ({
  * Residents keep their simulation route; only the narrow crossing's foot position
  * is fitted between its parapets. Both walking lanes remain distinct.
  */
-export function walkSurface(buildings: readonly Building[], point: Cell): Cell & { y: number } {
+export function walkSurface(buildings: readonly Building[], point: Cell, board?: Board): Cell & { y: number } {
+  const ground = board ? groundHeight(board, point.x, point.z) : 0;
   for(const b of buildings){
     if(!b.placed||b.kind!=='fishinghut')continue;
     const angle=b.rotation*Math.PI/2,c=Math.cos(angle),s=Math.sin(angle),dx=point.x-b.x-1,dz=point.z-b.z-1;
     const x=dx*c-dz*s,z=dx*s+dz*c;
     if(x<-.725||x>.025||z< -1.80||z>-.5)continue;
     const t=Math.max(0,Math.min(1,(-z-.5)/.20)),blend=t*t*(3-2*t);
-    return {...point,y:ROAD_WALK_Y+(.16-ROAD_WALK_Y)*blend};
+    return {...point,y:ground+ROAD_WALK_Y+(.16-ROAD_WALK_Y)*blend};
   }
   for (const bridge of buildings) {
     if (!bridge.placed || bridge.kind !== 'bridge') continue;
@@ -35,7 +37,7 @@ export function walkSurface(buildings: readonly Building[], point: Cell): Cell &
     const deck = BUILDING_GROUND_Y + .225 + .075 * Math.cos(supportZ / .96 * Math.PI / 2);
     return { x: bridge.x + (swapped ? 1 : .5) + fittedX * c + localZ * s,
       z: bridge.z + (swapped ? .5 : 1) - fittedX * s + localZ * c,
-      y: ROAD_WALK_Y + (deck + .006 - ROAD_WALK_Y) * blend };
+      y: ground + ROAD_WALK_Y + (deck + .006 - ROAD_WALK_Y) * blend };
   }
-  return { ...point, y: ROAD_WALK_Y };
+  return { ...point, y: ground + ROAD_WALK_Y };
 }

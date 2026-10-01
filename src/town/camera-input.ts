@@ -8,7 +8,7 @@ export const MIN_ELEVATION = Math.PI * 12 / 180;
 export const MAX_ELEVATION = Math.PI * 72 / 180;
 export const DEFAULT_ELEVATION = Math.PI * 40 / 180;
 export const clampElevation = (angle: number) => Math.max(MIN_ELEVATION, Math.min(MAX_ELEVATION, angle));
-export const clampZoom = (zoom: number) => Math.max(.52, Math.min(5.5, zoom));
+export const clampZoom = (zoom: number) => Math.max(.28, Math.min(5.5, zoom));
 
 // WheelEvent cannot reliably distinguish a precision mouse from a trackpad.
 // Use an explicit preference; Ctrl-wheel is also the browser's pinch signal.
@@ -28,4 +28,11 @@ export function wheelGesture(input: WheelInput, mode: CameraInput, height: numbe
 // A short settling tail follows input without adding free-running momentum.
 export function smoothFraction(dt: number, reduced = false, rate = 18): number {
   return reduced ? 1 : 1 - Math.exp(-Math.max(0, dt) * rate);
+}
+
+/** Fit the complete valley at any aspect ratio / azimuth without shrinking the town view. */
+export function overviewZoom(size:number,halfWidth:number,halfHeight:number,azimuth:number,elevation:number):number {
+  const diagonal=Math.abs(Math.sin(azimuth))+Math.abs(Math.cos(azimuth));
+  const horizontal=(size+12)*.5*diagonal,vertical=(size+12)*.5*diagonal*Math.sin(elevation)+5*Math.cos(elevation);
+  return clampZoom(.88*Math.min(halfWidth/horizontal,halfHeight/vertical));
 }

@@ -1,3 +1,4 @@
+import { TOWN_SIZE, LEGACY_TOWN_SIZE, foundationHeight } from './terrain';
 import {freshVillage,validVillage,ORDERS,completeOrder} from './village';
 import {worldTime} from './world-time';
 import { levelFor } from './levels';
@@ -17,12 +18,13 @@ export function freshTown(mode: DataMode): TownState {
   return { version: 1, mode, revision: 0, coins: 0, tokenCoins: 0, residue: 0, subsidyPaid: 0, chapterStars: [0, 0, 0, 0, 0, 0], puzzleStars: {}, projects: [], town: starterBoard(), puzzleBoards: {}, demoStep: 0, nextId: 20, tutorialDone: false, history: 'unscanned', worldSeconds: 0, farm: freshFarm(), village:freshVillage(), settings: { music: true, musicVolume: .28, clockMode: 'cycle', season: 'cycle', muted: false, lighting: 'day', quality: 'medium', reducedMotion: false, cameraInput: 'trackpad', goalCollapsed: false } };
 }
 function validBoard(board: Board): boolean {
-  if (!board || !Number.isInteger(board.size) || board.size < 8 || board.size > 24 || !['valley', 'meadow', 'river'].includes(board.terrain) || !Array.isArray(board.buildings) || !Array.isArray(board.roads)) return false;
+  if (!board || !Number.isInteger(board.size) || board.size < 8 || board.size > TOWN_SIZE || !['valley', 'meadow', 'river'].includes(board.terrain) || !Array.isArray(board.buildings) || !Array.isArray(board.roads)) return false;
   const ids = new Set<string>(), occupied = new Set<string>();
   for (const b of board.buildings) {
     if (!b || typeof b.id !== 'string' || ids.has(b.id) || !CATALOG[b.kind] || !Number.isInteger(b.rotation) || b.rotation < 0 || b.rotation > 3 || !Number.isInteger(b.x) || !Number.isInteger(b.z) || typeof b.placed !== 'boolean' || !Number.isInteger(b.variant) || b.variant < 0 || b.variant > 4) return false;
     ids.add(b.id);
     if (b.placed && b.kind === 'bridge' && (board.terrain === 'meadow' || b.rotation !== 0 || b.z !== (board.terrain === 'valley' ? 11 : 5) || !bridgeSlots(board).includes(b.x))) return false;
+    if (b.placed && b.kind !== 'bridge' && foundationHeight(board,b) === null) return false;
     if (b.placed&&b.kind==='fishinghut'&&!fishingShore(board,b))return false;
     if (b.placed) for (const p of cells(b)) { const k = key(p.x, p.z); if (p.x < 0 || p.z < 0 || p.x >= board.size || p.z >= board.size || occupied.has(k) || water(board, p.x, p.z) !== (b.kind === 'bridge')) return false; occupied.add(k); }
   }
@@ -33,7 +35,7 @@ export function parseTown(raw: string | null, mode: DataMode): TownState | null 
   if (!raw) return null;
   try {
     const s = JSON.parse(raw) as TownState;
-    if (!s || s.version !== 1 || s.mode !== mode || !validBoard(s.town) || s.town.size !== 24 || s.town.terrain !== 'valley') return null;
+    if (!s || s.version !== 1 || s.mode !== mode || !validBoard(s.town) || ![LEGACY_TOWN_SIZE,TOWN_SIZE].includes(s.town.size) || s.town.terrain !== 'valley') return null;
     for (const n of [s.coins, s.tokenCoins, s.residue, s.subsidyPaid, s.nextId, s.demoStep, s.revision]) if (!Number.isSafeInteger(n) || n < 0) return null;
     if (s.residue >= 10000 || !Array.isArray(s.chapterStars) || s.chapterStars.length !== 6 || s.chapterStars.some(n => !Number.isInteger(n) || n < 0 || n > 3)) return null;
     const firstUnfinished = s.chapterStars.indexOf(0); if (firstUnfinished >= 0 && s.chapterStars.slice(firstUnfinished).some(n => n > 0)) return null;
@@ -56,6 +58,8 @@ export function parseTown(raw: string | null, mode: DataMode): TownState | null 
     if(!Number.isFinite(s.farm.activeSeconds)||s.farm.activeSeconds<0)return null;
     if (Object.values(s.farm.runs).some(r=>!r||!FARM_PHASES.includes(r.phase)||!Number.isFinite(r.elapsed)||r.elapsed<0||typeof r.millId!=='string'||typeof r.bakeryId!=='string'||!Number.isSafeInteger(r.batches)||r.batches<0)) return null;
     s.village ??= freshVillage();if(!validVillage(s.village))return null;
+    // An additive map migration: preserve every layout, inventory, ledger and unlock.
+    s.town.size = TOWN_SIZE;
     return s;
   } catch { return null; }
 }

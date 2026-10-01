@@ -5,11 +5,12 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { buildingModel, buildingSeats, packModel, material, residentModel, box, boxGeometry, sharedMaterial } from './models';
 import { CATALOG } from './catalog';
+import { groundHeight, groundNormal, foundationHeight } from './terrain';
 import { landscape } from './landscape';
 import { canPlace, visualVariant, dimensions, entrance, makeBuilding } from './world';
 import { buildingCoverage } from './service-feedback';
 import { levelFor, stageForLevel } from './levels';
-import { wheelGesture, smoothFraction, clampElevation, clampZoom, DEFAULT_ELEVATION, MIN_ELEVATION, MAX_ELEVATION } from './camera-input';
+import { wheelGesture, smoothFraction, clampElevation, clampZoom, DEFAULT_ELEVATION, MIN_ELEVATION, MAX_ELEVATION, overviewZoom } from './camera-input';
 import { PedestrianTraffic, walkingPose } from './pedestrians';
 import { stoneRoads } from './roads';
 import { worldTime } from './world-time';
@@ -65,6 +66,7 @@ export class TownScene {
   private cursor = new T.Group(); private ghost?: T.Group; private cursorCell?: Cell;
   private previewKind: BuildingKind | null = null; private previewRotation = 0; private previewStage=0; private previewVariant=0;
   private tool: Tool = 'inspect'; private grid?: T.LineSegments; private lastTime = 0; private lastFrame = 0;
+  private pickSurface?:T.Mesh; private syncLandscape?:(board:Board)=>void;
   private animateLandscape?: (time: number) => void; private orbitDirection = 0; private orbitSpeed = 0; private orbitStep = 0; private focusTarget?: T.Vector3; private initialFocus = true; private reduced = false;
   private pitchStep = 0; private panStep = new T.Vector2(); private zoomTarget = 1;
   private lastPointer?: { clientX: number; clientY: number }; private pointerInside = false;
@@ -87,7 +89,7 @@ export class TownScene {
     this.controls.enableRotate = false; this.controls.enableDamping = true; this.controls.dampingFactor = .12;
     this.controls.enableZoom = false; // One wheel handler owns orbit, pan and pinch.
     this.controls.minPolarAngle = Math.PI / 2 - MAX_ELEVATION; this.controls.maxPolarAngle = Math.PI / 2 - MIN_ELEVATION;
-    this.controls.minZoom = .52; this.controls.maxZoom = 5.5; this.controls.screenSpacePanning = false;
+    this.controls.minZoom = .28; this.controls.maxZoom = 5.5; this.controls.screenSpacePanning = false;
     this.controls.mouseButtons.LEFT = T.MOUSE.PAN; this.controls.mouseButtons.RIGHT = T.MOUSE.PAN;
     this.controls.update();
     this.resizeObserver = new ResizeObserver(() => this.resize()); this.resizeObserver.observe(canvas);
@@ -143,14 +145,14 @@ export class TownScene {
       for (const b of board.buildings.filter(b => b.placed)) {
         const project = state.projects.find(p => p.id === b.projectId); const stage = project ? stageForLevel(levelFor(project.tokens)).index : 0;
         const model = this.model(b.kind, visualVariant(b,state), stage).clone(); const dims = dimensions(b);
-        model.position.set(b.x + dims.w / 2, BUILDING_GROUND_Y, b.z + dims.d / 2); model.rotation.y = -b.rotation * Math.PI / 2; model.userData.buildingId = b.id;
+        model.position.set(b.x + dims.w / 2, (foundationHeight(board,b) ?? groundHeight(board,b.x+dims.w/2,b.z+dims.d/2)) + BUILDING_GROUND_Y, b.z + dims.d / 2); model.rotation.y = -b.rotation * Math.PI / 2; model.userData.buildingId = b.id;
         model.traverse(o => { o.userData.buildingId = b.id; }); this.buildings.add(model); this.buildingMeshes.set(b.id, model);
         if(b.kind==='house'&&this.porchLights.length<3){const light=new T.PointLight('#ffc47c',0,2.7,2);light.position.set(.52,.87,1.04);model.add(light);this.porchLights.push(light);}
       }
       this.seasons.install(this.buildings); this.buildExtras();
     }
     const roadSignature = state.mode+board.terrain+JSON.stringify(board.buildings.map(b=>[b.id,b.kind,b.x,b.z,b.rotation,b.placed]))+board.roads.join('|') + Array.from(e.connectedRoads).join('|');
-    if (roadSignature !== this.roadsSignature) { this.roadsSignature = roadSignature; this.buildRoads(); this.buildWalkers(); }
+    if (roadSignature !== this.roadsSignature) { this.roadsSignature = roadSignature; this.buildRoads(); this.buildWalkers(); this.syncLandscape?.(board); }
     this.drawSelection();
     this.applyQuality();
     if(this.streetPosition&&!streetOpen(board,{x:this.streetPosition.x,z:this.streetPosition.z})){const safe=streetStart(board,this.streetPosition);if(safe)this.streetPosition.set(safe.x,streetHeight(board,safe),safe.z);else this.setStreetView(false);}
@@ -191,14 +193,14 @@ export class TownScene {
   private buildTerrain(): void {
     const board = this.board!, n = board.size;
     this.clearTransient(this.world); this.clearTransient(this.forest);
-    const terrain = landscape(board, this.state!,this.sceneryModels); this.world.add(terrain.world); this.forest.add(terrain.forest); this.animateLandscape = terrain.update;
+    const terrain = landscape(board, this.state!,this.sceneryModels); this.world.add(terrain.world); this.forest.add(terrain.forest); this.animateLandscape = terrain.update; this.pickSurface=terrain.pick; this.syncLandscape=terrain.sync; this.canvas.dataset.mapSize=String(n);
     this.seasons.install(this.world); this.seasons.install(this.forest);
     if(this.snow){this.scene.remove(this.snow);this.snow.geometry.dispose();(this.snow.material as T.Material).dispose();}
     const flakes:number[]=[];for(let i=0;i<160;i++)flakes.push((i*7.319)%n,(i*1.771)%8,(i*11.931)%n);
     this.snow=new T.Points(new T.BufferGeometry().setAttribute('position',new T.Float32BufferAttribute(flakes,3)),new T.PointsMaterial({color:'#e6edf1',size:.045,transparent:true,opacity:0,depthWrite:false}));this.scene.add(this.snow);
     const vertices: number[] = [];
-    for (let z = 0; z <= n; z++) vertices.push(0, .037, z, n, .037, z);
-    for (let x = 0; x <= n; x++) vertices.push(x, .037, 0, x, .037, n);
+    for (let z = 0; z <= n; z++) for(let x=0;x<n;x+=.5) vertices.push(x,groundHeight(board,x,z)+.037,z,x+.5,groundHeight(board,x+.5,z)+.037,z);
+    for (let x = 0; x <= n; x++) for(let z=0;z<n;z+=.5) vertices.push(x,groundHeight(board,x,z)+.037,z,x,groundHeight(board,x,z+.5)+.037,z+.5);
     this.grid = new T.LineSegments(new T.BufferGeometry().setAttribute('position', new T.Float32BufferAttribute(vertices, 3)), new T.LineBasicMaterial({ color: '#536c51', transparent: true, opacity: .16 })); this.grid.visible = this.tool !== 'inspect'; this.world.add(this.grid);
   }
   private buildRoads(): void {
@@ -221,7 +223,7 @@ export class TownScene {
     this.life.setBuildings(this.board!.buildings);
     for (const [i, person] of this.traffic.people.entries()) {
       const body = residentModel(RESIDENT_COLORS[i % RESIDENT_COLORS.length], i),group=new T.Group();group.add(body);
-      const surface = walkSurface(this.board!.buildings, person);
+      const surface = walkSurface(this.board!.buildings, person, this.board!);
       group.position.set(surface.x, surface.y, surface.z); group.rotation.y = person.angle; this.scene.add(group);
       const limbs = ['leg-left', 'leg-right', 'arm-left', 'arm-right'].map(name => body.getObjectByName(name)!);
       const rod=new T.Group();rod.name='fishing-rod';rod.visible=false;group.add(rod);rod.position.set(.12,.33,.16);box(rod,0,.48,0,.015,.95,.015,'#987751');rod.rotation.x=0;const line=new T.Line(new T.BufferGeometry().setFromPoints([new T.Vector3(0,.94,0),new T.Vector3(.16,-.68,.75)]),new T.LineBasicMaterial({color:'#e1d9ba'}));rod.add(line);box(rod,.16,-.68,.75,.045,.06,.045,'#c68f75');
@@ -263,7 +265,7 @@ export class TownScene {
       if (coverage.cells.length) {
         const color = b.kind === 'park' ? '#82b659' : definition.service === 'food' ? '#edce87' : '#81bcb3';
         const squares = new T.InstancedMesh(new T.PlaneGeometry(.88, .88), new T.MeshBasicMaterial({ color, transparent: true, opacity: .38, depthWrite: false }), coverage.cells.length);
-        coverage.cells.forEach((c, i) => { tempObject.position.set(c.x + .5, .14, c.z + .5); tempObject.rotation.set(-Math.PI / 2, 0, 0); tempObject.updateMatrix(); squares.setMatrixAt(i, tempObject.matrix); });
+        coverage.cells.forEach((c, i) => { tempObject.position.set(c.x + .5, groundHeight(this.board!,c.x+.5,c.z+.5)+.14, c.z + .5); const normal=groundNormal(this.board!,c.x+.5,c.z+.5);tempObject.quaternion.setFromUnitVectors(new T.Vector3(0,0,1),new T.Vector3(normal.x,normal.y,normal.z));tempObject.updateMatrix(); squares.setMatrixAt(i, tempObject.matrix); });
         tempObject.rotation.set(0, 0, 0); this.overlay.add(squares);
       }
       const served = new Set(coverage.homes.filter(h => h.served).map(h => h.home.id));
@@ -275,12 +277,14 @@ export class TownScene {
     }
   }
   private outline(parent: T.Group, x: number, z: number, w: number, d: number, color: string, y = .08, inset = .05): void {
-    const points = [new T.Vector3(x + inset, y, z + inset), new T.Vector3(x + w - inset, y, z + inset), new T.Vector3(x + w - inset, y, z + d - inset), new T.Vector3(x + inset, y, z + d - inset)];
+    const ox=parent===this.cursor?parent.position.x:0,oz=parent===this.cursor?parent.position.z:0;
+    const points = [[x+inset,z+inset],[x+w-inset,z+inset],[x+w-inset,z+d-inset],[x+inset,z+d-inset]].map(([xx,zz])=>new T.Vector3(xx,y+(this.board?groundHeight(this.board,xx+ox,zz+oz):0)-(parent===this.cursor?parent.position.y:0),zz));
     parent.add(new T.LineLoop(new T.BufferGeometry().setFromPoints(points), new T.LineBasicMaterial({ color })));
   }
   private point(e: Pick<PointerEvent, 'clientX' | 'clientY'>): Cell | null {
     const r = this.canvas.getBoundingClientRect(); this.pointer.set((e.clientX - r.left) / r.width * 2 - 1, -(e.clientY - r.top) / r.height * 2 + 1); this.raycaster.setFromCamera(this.pointer, this.camera);
-    const p = new T.Vector3(); if (!this.raycaster.ray.intersectPlane(this.plane, p)) return null;
+    const hit=this.pickSurface?this.raycaster.intersectObject(this.pickSurface)[0]:undefined;
+    const p = hit?.point || new T.Vector3(); if (!hit && !this.raycaster.ray.intersectPlane(this.plane, p)) return null;
     const x = Math.floor(p.x), z = Math.floor(p.z); return this.board && x >= 0 && z >= 0 && x < this.board.size && z < this.board.size ? { x, z } : null;
   }
   previewAt(clientX: number, clientY: number): void {
@@ -335,16 +339,16 @@ export class TownScene {
   private showCursor(p: Cell): void {
     for (const child of this.cursor.children.filter(c => c !== this.ghost)) { this.cursor.remove(child); if (child instanceof T.Line) { child.geometry.dispose(); (child.material as T.Material).dispose(); } }
     const dims = this.previewKind ? dimensions({ kind: this.previewKind, rotation: this.previewRotation }) : { w: 1, d: 1 };
-    this.cursor.position.set(p.x, .03, p.z); this.outline(this.cursor, 0, 0, dims.w, dims.d, '#4e805e', .1);
-    if (this.ghost && this.previewKind) { this.ghost.position.set(dims.w / 2, .03, dims.d / 2); const entry = entrance(makeBuilding('preview', this.previewKind, 0, 0, this.previewRotation)); this.outline(this.cursor, entry.x, entry.z, 1, 1, '#a4874f', .11); }
+    this.cursor.position.set(p.x, 0, p.z); this.outline(this.cursor, 0, 0, dims.w, dims.d, '#4e805e', .1);
+    if (this.ghost && this.previewKind) { const candidate=makeBuilding('preview',this.previewKind,p.x,p.z,this.previewRotation); this.ghost.position.set(dims.w / 2, (foundationHeight(this.board!,candidate)??groundHeight(this.board!,p.x+dims.w/2,p.z+dims.d/2))+BUILDING_GROUND_Y, dims.d / 2); const entry = entrance(makeBuilding('preview', this.previewKind, 0, 0, this.previewRotation)); this.outline(this.cursor, entry.x, entry.z, 1, 1, '#a4874f', .11); }
   }
   focus(p?: Cell): void {
     this.setStreetView(false);
-    const c = p || (this.board?.terrain === 'valley' ? { x: 6, z: 17 } : { x: 6, z: 6 }); this.focusTarget = new T.Vector3(c.x, 0, c.z);
+    const c = p || (this.board?.terrain === 'valley' ? { x: 6, z: 17 } : { x: 6, z: 6 }); this.focusTarget = new T.Vector3(c.x, this.board?groundHeight(this.board,c.x,c.z):0, c.z);
     this.zoomTarget = this.board?.terrain !== 'valley' ? 1.15 : 1.7;
     this.pitchStep = DEFAULT_ELEVATION - this.elevation(); this.orbitStep = 0; this.panStep.set(0, 0);
   }
-  overview(): void { if (!this.board) return; this.setStreetView(false); this.focusTarget = new T.Vector3(this.board.size / 2, 0, this.board.size / 2); this.zoomTarget = this.camera.right / this.camera.top < 1 ? .66 : .92; this.pitchStep = DEFAULT_ELEVATION - this.elevation(); this.orbitStep = 0; this.panStep.set(0, 0); }
+  overview(): void { if (!this.board) return; this.setStreetView(false); this.focusTarget = new T.Vector3(this.board.size / 2, .6, this.board.size / 2-2); this.zoomTarget = overviewZoom(this.board.size,this.camera.right,this.camera.top,Math.atan2(this.camera.position.x-this.controls.target.x,this.camera.position.z-this.controls.target.z),DEFAULT_ELEVATION); this.pitchStep = DEFAULT_ELEVATION - this.elevation(); this.orbitStep = 0; this.panStep.set(0, 0); }
   setCleanView(clean:boolean):void {this.cleanView=clean;this.cursor.visible=false;this.overlay.visible=!clean;this.residentHalo.visible=false;this.canvas.dataset.cleanView=String(clean);}
   setStreetView(enabled:boolean):boolean {
     if(enabled===this.streetView)return enabled;
@@ -438,15 +442,15 @@ export class TownScene {
     for(const [index,w]of this.walkers.entries()){
       const person=this.traffic!.people[index],r=this.life!.residents[index],pose=walkingPose(r.travelled,w.phase,!this.reduced&&r.travelled>.0001);w.phase=pose.phase;
       w.group.visible=r.visible;w.body.visible=!r.seated;if(w.seated)w.seated.visible=r.seated;
-      const surface=walkSurface(this.board!.buildings,person);
-      let height=surface.y+pose.bob;const portal=this.life!.portals.get(r.insideBuilding||r.path.find(p=>p.gate)?.gate?.id||'');if(portal){const t=Math.min(1,Math.hypot(person.x-portal.outside.x,person.z-portal.outside.z)/.45);height=Math.max(height,surface.y+(portal.floor-surface.y)*t+pose.bob);}
+      const surface=walkSurface(this.board!.buildings,person,this.board!);
+      let height=surface.y+pose.bob;const portal=this.life!.portals.get(r.insideBuilding||r.path.find(p=>p.gate)?.gate?.id||'');if(portal){const t=Math.min(1,Math.hypot(person.x-portal.outside.x,person.z-portal.outside.z)/.45);height=Math.max(height,surface.y+(portal.floor+groundHeight(this.board!,person.x,person.z)-surface.y)*t+pose.bob);}
       const h=this.life!.doors[r.home];if(h&&['entering','leaving','opening-out'].includes(r.mode))height+=.12*Math.min(1,Math.hypot(person.x-h.outside.x,person.z-h.outside.z)/.50);
       w.group.position.set(r.seated?person.x:surface.x,r.seated?r.seat!.y:height,r.seated?person.z:surface.z);w.group.rotation.y=person.angle;
       const job=this.life!.jobs.get(index),working=r.mode==='working';const rod=w.group.getObjectByName('fishing-rod')!;rod.visible=working&&job?.harvesting===true&&job.phase==='harvesting'&&jobFishing(job?.fieldId,this.board!)&&!r.path.length;if(rod.visible&&!this.reduced)rod.rotation.x=Math.sin(time*.002)*.035;w.cargo.visible=working&&Boolean(job?.carrying);w.cargo.children.forEach(o=>{if(o instanceof T.Mesh)o.material=material(job?.carrying==='flour'?'#e9dfc1':job?.carrying==='fish'?'#87b8b2':job?.carrying==='carrot'?'#cb925d':job?.carrying==='milk'?'#ebe3cb':'#c8a769');});
       w.limbs.forEach((limb,i)=>{const target=i>=2&&working&&job?.carrying?-.85:i>=2&&working&&job?.harvesting&&!r.path.length&&!this.reduced?-.45+Math.sin(time*.004+index)*.3:(i<2?pose.leg:pose.arm)*(i%2?-1:1);limb.rotation.x+=(target-limb.rotation.x)*(1-Math.exp(-dt*16));});
     }
     const selected = this.residentSelection === null ? undefined : this.walkers[this.residentSelection]; this.residentHalo.visible = !this.cleanView&&!this.streetView&&Boolean(selected?.group.visible);
-    if (selected) { const surface = walkSurface(this.board!.buildings, selected.group.position); this.residentHalo.position.set(selected.group.position.x,surface.y+.018,selected.group.position.z); }
+    if (selected) { const surface = walkSurface(this.board!.buildings, selected.group.position,this.board!); this.residentHalo.position.set(selected.group.position.x,surface.y+.018,selected.group.position.z); }
     if(time-this.clockTick>1000){this.clockTick=time;const save=time-this.clockSave>20000;if(save)this.clockSave=time;this.events.clock?.(s.worldSeconds,save);const label=document.getElementById('world-clock');if(label)label.textContent=clock.label;this.updateFarmLabels(clock.sleep);this.events.residentUpdated?.();this.publishDiagnostics(clock);}
 
   }
@@ -491,7 +495,7 @@ export class TownScene {
     if (type === 'chapter') this.zoom(.88);
     for (let i = 0; i < (type === 'chapter' ? 50 : type === 'coin' ? 24 : 14); i++) {
       const geometry = type === 'coin' ? new T.CylinderGeometry(.09, .09, .04, 8) : new T.BoxGeometry(.065, .065, .065);
-      const mesh = new T.Mesh(geometry, material(type === 'coin' ? '#e7be59' : type === 'chapter' ? ['#ddbc77', '#8ca579', '#b98973'][i % 3] : '#c7bd9c')); mesh.position.set(p.x + (Math.random() - .5) * 1.5, type === 'coin' ? 3.5 + Math.random() * 2 : .3, p.z + (Math.random() - .5)); mesh.castShadow = true; this.scene.add(mesh);
+      const mesh = new T.Mesh(geometry, material(type === 'coin' ? '#e7be59' : type === 'chapter' ? ['#ddbc77', '#8ca579', '#b98973'][i % 3] : '#c7bd9c')); mesh.position.set(p.x + (Math.random() - .5) * 1.5, groundHeight(this.board,p.x,p.z)+(type === 'coin' ? 3.5 + Math.random() * 2 : .3), p.z + (Math.random() - .5)); mesh.castShadow = true; this.scene.add(mesh);
       this.particles.push({ mesh, velocity: new T.Vector3((Math.random() - .5) * 1.5, type === 'coin' ? -.8 : 1 + Math.random() * 3, (Math.random() - .5) * 1.5), life: 0, duration: 1.7 + Math.random() * .7 });
     }
     this.sound(type === 'coin' ? 740 : 520);
@@ -534,6 +538,7 @@ export class TownScene {
     } else this.panStep.set(0, 0);
     if (Math.abs(Math.log(this.zoomTarget / this.camera.zoom)) > .00001) this.camera.zoom *= Math.exp(Math.log(this.zoomTarget / this.camera.zoom) * smooth); else this.camera.zoom = this.zoomTarget;
     if (oldZoom !== this.camera.zoom) this.camera.updateProjectionMatrix();
+    if(this.board&&!this.focusTarget){const targetY=groundHeight(this.board,this.controls.target.x,this.controls.target.z),dy=(targetY-this.controls.target.y)*smooth;this.controls.target.y+=dy;this.camera.position.y+=dy;}
     this.controls.dampingFactor = smoothFraction(dt, this.reduced, 12);
     this.controls.update();
     this.camera.updateMatrixWorld();
@@ -544,7 +549,7 @@ export class TownScene {
         const mesh = this.buildingMeshes.get(b.id); if (!mesh) continue;
         if (b.kind === 'tree') mesh.rotation.z = Math.sin(time * .0008 + b.x) * .012;
         if (b.kind === 'workshop') mesh.scale.setScalar(time < this.pulseUntil ? 1 + Math.sin((this.pulseUntil - time) * .012) * .025 : 1);
-        const start = this.landings.get(b.id); if (start !== undefined) { const t = Math.min(1, (time - start) / 550); mesh.position.y = .04 + .4 * (1 - t) ** 2; mesh.scale.y = 1 - .08 * Math.sin(t * Math.PI); if (t === 1) { this.landings.delete(b.id); mesh.scale.y = 1; } }
+        const start = this.landings.get(b.id); if (start !== undefined) { const t = Math.min(1, (time - start) / 550); mesh.position.y = (foundationHeight(this.board!,b)??0)+BUILDING_GROUND_Y + .4 * (1 - t) ** 2; mesh.scale.y = 1 - .08 * Math.sin(t * Math.PI); if (t === 1) { this.landings.delete(b.id); mesh.scale.y = 1; } }
       }
       this.animateLandscape?.(time);
       for (const p of this.particles) { p.life += dt; p.velocity.y -= dt * 2.4; p.mesh.position.addScaledVector(p.velocity, dt); p.mesh.rotation.x += dt * 3; p.mesh.rotation.z += dt * 2; p.mesh.scale.setScalar(Math.max(0, 1 - Math.max(0, p.life / p.duration - .6) * 2.5)); }
@@ -554,7 +559,7 @@ export class TownScene {
       }
       for (const puff of [...this.smoke.children] as T.Mesh[]) { puff.userData.life += dt; puff.position.y += dt * .26; puff.position.x += dt * .12; puff.scale.setScalar(1 + puff.userData.life * .6); (puff.material as T.MeshBasicMaterial).opacity = Math.max(0, .45 - puff.userData.life * .14); if (puff.userData.life > 3.2) { this.smoke.remove(puff); puff.geometry.dispose(); (puff.material as T.Material).dispose(); } }
     }
-    if(time-this.shadowFrame>=policy.shadowInterval){this.renderer.shadowMap.needsUpdate=true;this.shadowFrame=time;}
+    if(time-this.shadowFrame>=policy.shadowInterval){const target=this.streetPosition||this.controls.target;this.sun.target.position.set(target.x,target.y,target.z);this.sun.position.copy(this.sun.target.position).add(new T.Vector3(-18,28,14));this.sun.target.updateMatrixWorld();this.renderer.shadowMap.needsUpdate=true;this.shadowFrame=time;}
     this.renderer.render(this.scene, this.viewCamera);
     if(time-this.debugFrame>250){this.debugFrame=time;
     const rect=this.canvas.getBoundingClientRect(); this.canvas.dataset.residentTargets=JSON.stringify(this.walkers.map((w,id)=>{const p=w.group.position.clone().add(new T.Vector3(0,.4,0)).project(this.viewCamera);return{id,name:residentProfile(id)?.name,visible:w.group.visible,x:+(rect.left+(p.x+1)*rect.width/2).toFixed(1),y:+(rect.top+(1-p.y)*rect.height/2).toFixed(1)};}));

@@ -107,7 +107,7 @@ test('newer saves from another tab are retained instead of being overwritten', (
 function southSolution(): Board {
   const buildings = [makeBuilding('hall', 'hall', 15, 16, 1), ...[1, 3, 5, 7, 9, 11].flatMap((x, i) => [makeBuilding(`h-top-${i}`, 'house', x, 13), makeBuilding(`h-bottom-${i}`, 'house', x, 18)]), makeBuilding('h-extra-a', 'house', 15, 21, 2), makeBuilding('h-extra-b', 'house', 17, 21, 2), makeBuilding('food-top', 'bakery', 5, 16, 2), makeBuilding('food-bottom', 'bakery', 3, 21, 2), makeBuilding('market', 'market', 18, 17), makeBuilding('cafe-top-a', 'cafe', 3, 16, 2), makeBuilding('cafe-top-b', 'cafe', 13, 13), makeBuilding('cafe-bottom-a', 'cafe', 7, 21, 2), makeBuilding('cafe-bottom-b', 'cafe', 11, 21, 2), ...[1, 7, 9, 11].map((x, i) => makeBuilding(`park-top-${i}`, 'park', x, 16, 2)), ...[1, 5, 9].map((x, i) => makeBuilding(`park-bottom-${i}`, 'park', x, 21, 2)), makeBuilding('park-extra', 'park', 19, 21, 2)];
   const roads = [...Array.from({ length: 14 }, (_, i) => key(i + 1, 15)), ...Array.from({ length: 18 }, (_, i) => key(i + 2, 20)), ...[16, 17, 18, 19].map(z => key(14, z))];
-  return { size: 24, terrain: 'valley', buildings, roads };
+  return { size: 40, terrain: 'valley', buildings, roads };
 }
 function fullSolution(): Board {
   const board = southSolution();
@@ -128,7 +128,7 @@ test('authored main-town layouts demonstrate a solvable progression through all 
 test('the first opposite-bank district opens before the crossing goal is required', () => {
   const s = freshTown('demo'); assert.equal(unlocked(s, s.town, 5, 4), false);
   s.chapterStars = [1, 1, 1, 0, 0, 0]; assert.equal(unlocked(s, s.town, 5, 4), true); assert.equal(unlocked(s, s.town, 5, 1), false);
-  s.chapterStars[3] = 1; assert.equal(unlocked(s, s.town, 5, 1), true); assert.equal(unlocked(s, s.town, 18, 4), false);
+  s.chapterStars[3] = 1; assert.equal(unlocked(s, s.town, 5, 1), true); assert.equal(unlocked(s, s.town, 20, 4), false);
 });
 test('all chapter three-star goals can be reached using only content available in that chapter', () => {
   const first = freshTown('demo').town; first.roads.push(key(6, 17)); Object.assign(first.buildings.find(b => b.kind === 'park')!, { x: 3, z: 17 });

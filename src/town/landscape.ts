@@ -1,125 +1,192 @@
 import * as T from 'three';
 import { box, material, packModel, treeModel } from './models';
-import { bridgeSlots, unlocked, water, STARTER_WIDTH } from './world';
+import { bridgeSlots, unlocked } from './world';
+import { groundHeight, groundNormal, landscapeHeight, inLandscape, scenicRiver, sceneryClear, starterWidth } from './terrain';
 import { sceneryBatch } from './scenery-batch';
 import type { Board, TownState } from './types';
 
-// The decorative landscape never occupies gameplay cells. Its seeded groves,
-// cliffs and shoreline are authored around the same flat, readable town grid.
+type Point = {x:number;z:number};
+type Placement = Point & {matrix:T.Matrix4;clearance:number};
+
+/** A continuous valley, with buildable terraces, soft shoreline and seeded woodland. */
 export function landscape(board: Board, state: TownState, assets = new Map<string,T.Group>()) {
-  const n = board.size, world = new T.Group(), forest = new T.Group(), stonework = new T.Group();
-  let seed = 4703 + n; const random = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296; };
-  const river = board.terrain === 'meadow' ? -1 : board.terrain === 'valley' ? 11 : 5;
-  box(stonework, n / 2, -1.37, n / 2, n + .1, .5, n + .1, '#756b54');
-  box(stonework, n / 2, -.91, n / 2, n + .08, .46, n + .08, '#9b8767');
-  box(stonework, n / 2, -.61, n / 2, n + .12, .17, n + .12, '#b1a080');
-  const bank = (z: number, depth: number) => box(stonework, n / 2, -.29, z, n + .06, .55, depth, '#b8a887');
-  if (river < 0) bank(n / 2, n); else { bank(river / 2, river); bank((river + 2 + n) / 2, n - river - 2); }
-  for (let x = 0; x < n; x++) for (const z of [0, n]) {
-    if (x % 3 === 0) box(stonework, x + .5, -.78, z, .85, .17 + random() * .12, .035, '#88775d');
-    if (x % 2 === 0) box(stonework, x + .7, -1.14, z, .48, .11, .04, '#ab9474');
-  }
-  for (let z = 0; z < n; z++) for (const x of [0, n]) if (!water(board, .5, z)) box(stonework, x, -.83, z + .4, .04, .2, .68 + random() * .2, '#8e7c62');
-  const positions: number[] = [], colors: number[] = [], color = new T.Color();
-  const grassColor = (x: number, z: number) => {
-    const light = .94 + Math.sin(x * .34 + z * .12) * .035 + Math.cos(z * .43 - x * .17) * .025;
-    const open = unlocked(state, board, Math.min(n - 1, Math.floor(x)), Math.min(n - 1, Math.floor(z)));
-    color.set(open ? '#91b474' : '#729b71');
-    if (river >= 0) color.lerp(new T.Color('#8fa581'), Math.max(0, 1 - Math.min(Math.abs(z - river), Math.abs(z - river - 2)) / 1.6) * .3);
-    return color.multiplyScalar(light);
+  const n = board.size, world = new T.Group(), forest = new T.Group(), details = new T.Group();
+  world.name='river-valley-landform';
+  let seed=4703+n;
+  const random=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;};
+  const river=board.terrain==='meadow'?-1:board.terrain==='valley'?11:5;
+  const edge=(x:number,side:number)=>{const p=scenicRiver(board,x);return p.center+side*p.width/2;};
+  const height=(x:number,z:number)=>landscapeHeight(board,x,z);
+  const grassPositions:number[]=[],grassColors:number[]=[],soilPositions:number[]=[],soilColors:number[]=[];
+  const base=new T.Color(),soil=new T.Color();
+  const grassColor=(x:number,z:number)=> {
+    const open=unlocked(state,board,Math.max(0,Math.min(n-1,Math.floor(x))),Math.max(0,Math.min(n-1,Math.floor(z))));
+    base.set(open?'#849f6a':'#748e66');
+    const patch=(Math.sin(x*.27+z*.12)+Math.sin(z*.32-x*.17))*.025;
+    const normal=groundNormal(board,x,z),slope=1-normal.y;
+    base.lerp(new T.Color('#aeab7f'),Math.min(.4,slope*2));
+    return base.multiplyScalar(.97+patch+Math.sin(x*1.7+z*1.3)*.012);
   };
-  for (let z = 0; z < n; z++) for (let x = 0; x < n; x++) if (!water(board, x, z)) {
-    for (const [xx, zz] of [[x, z], [x, z + 1], [x + 1, z], [x + 1, z], [x, z + 1], [x + 1, z + 1]]) { positions.push(xx, .026, zz); const c = grassColor(xx, zz); colors.push(c.r, c.g, c.b); }
-  }
-  const grassGeometry = new T.BufferGeometry().setAttribute('position', new T.Float32BufferAttribute(positions, 3)).setAttribute('color', new T.Float32BufferAttribute(colors, 3)); grassGeometry.computeVertexNormals();
-  const grass = new T.Mesh(grassGeometry, new T.MeshStandardMaterial({ vertexColors: true, roughness: .95 })); grass.material.userData.seasonRole='ground'; grass.receiveShadow = true; world.add(grass);
-  const floorMaterial=material('#d6decf').clone();floorMaterial.userData.seasonRole='ground';const floor = new T.Mesh(new T.PlaneGeometry(240, 240), floorMaterial); floor.rotation.x = -Math.PI / 2; floor.position.set(n / 2, -1.65, n / 2); floor.receiveShadow = true; world.add(floor);
-  const waterTime = { value: 0 }, ducks: T.Group[] = [];
-  const props = new Map<string,T.Matrix4[]>();
-  const prop = (name: string,x:number,y:number,z:number,scale=1,rotation=0) => {if(!assets.has(name))return;const placement=new T.Object3D();placement.position.set(x,y,z);placement.scale.setScalar(scale);placement.rotation.y=rotation;placement.updateMatrix();const list=props.get(name)||[];list.push(placement.matrix.clone());props.set(name,list);};
-  const ribbon = (edge:(x:number)=>number,inside:(x:number)=>number,y:number,color:string) => {
-    const vertices:number[]=[];for(let i=0;i<n*4;i++){const a=i/4,b=(i+1)/4;for(const [x,z] of [[a,edge(a)],[a,inside(a)],[b,edge(b)],[b,edge(b)],[a,inside(a)],[b,inside(b)]])vertices.push(x,y,z);}
-    const geo=new T.BufferGeometry().setAttribute('position',new T.Float32BufferAttribute(vertices,3));geo.computeVertexNormals();const mesh=new T.Mesh(geo,material(color));mesh.receiveShadow=true;world.add(mesh);
-  };
-  if (river >= 0) {
-    box(stonework, n / 2, -.43, river + 1, n + .17, .12, 2.05, '#457b7c');
-    const waterMaterial = new T.MeshStandardMaterial({ color: '#499a9e', roughness: .23, metalness: .06, transparent: false, opacity: 1 });
-    waterMaterial.onBeforeCompile = shader => {
-      shader.uniforms.townTime = waterTime;
-      shader.vertexShader = 'uniform float townTime; varying vec3 townPosition;\n' + shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\ntransformed.z += sin(position.x * 2.1 - townTime * .65) * .006 + sin(position.x * .72 + position.y * 8.3 - townTime * .38) * .003;').replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\ntownPosition = (modelMatrix * vec4(transformed, 1.0)).xyz;');
-      shader.fragmentShader = 'uniform float townTime; varying vec3 townPosition;\n' + shader.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
-        float depth = min(abs(townPosition.z - ${river.toFixed(1)}), abs(townPosition.z - ${(river+2).toFixed(1)}));
-        float flow = sin(townPosition.x * .9 - townTime * .38 + sin(townPosition.z * 5.0)) * .035;
-        float ripple = pow(max(0.0, sin(townPosition.x * 3.2 - townTime * .65 + sin(townPosition.z * 12.0) * .4)), 32.0);
-        diffuseColor.rgb *= .95 + flow;
-        diffuseColor.rgb += vec3(.10,.19,.13) * (1.0 - smoothstep(.1,.48,depth));
-        diffuseColor.rgb += vec3(.17,.20,.18) * ripple * .13;`);
-    };
-    const surface = new T.Mesh(new T.PlaneGeometry(n + .15, 2,n*6,10), waterMaterial); surface.rotation.x = -Math.PI / 2; surface.position.set(n / 2, -.19, river + 1); world.add(surface);
-    const bridges = bridgeSlots(board);
-    for(const side of [-1,1]) {
-      const z=side<0?river:river+2, into=-side;
-      ribbon(x=>z+into*(.06+Math.sin(x*.78)*.035),x=>z+into*(.25+Math.sin(x*.78)*.06+Math.sin(x*1.9)*.04),-.16,'#92b6a4');
-      ribbon(()=>z,x=>z+into*(.14+Math.sin(x*.78)*.035),-.045,'#b0b29a');
+  const triangle=(points:Point[])=>{for(const p of points){grassPositions.push(p.x,height(p.x,p.z)+.026,p.z);const c=grassColor(p.x,p.z);grassColors.push(c.r,c.g,c.b);}};
+  // Clip every surface cell to the bank curve, rather than exposing a stair-step shore.
+  const clip=(poly:Point[],side:number):Point[]=>{
+    const out:Point[]=[];
+    for(let i=0;i<poly.length;i++){
+      const a=poly[i],b=poly[(i+1)%poly.length],da=side*(a.z-edge(a.x,side)),db=side*(b.z-edge(b.x,side));
+      if(da>=0)out.push(a);
+      if((da>=0)!==(db>=0)){const t=da/(da-db);out.push({x:a.x+(b.x-a.x)*t,z:a.z+(b.z-a.z)*t});}
     }
-    for (let x = 0; x < n; x++) for (const side of [-1, 1]) {
-      const z = side < 0 ? river : river + 2, bend = Math.sin(x * .85) * .05;
-      if (!bridges.includes(x) && x % 3 !== 1) {
-        for (let j = 0; j < 4; j++) { const xx=x+.08+random()*.82,zz=z-side*(.06+random()*.14)+bend;if(assets.has('rock'))prop('rock',xx,-.15,zz,.35+random()*.35,random()*6);else{const rock=new T.Mesh(new T.DodecahedronGeometry(.12+random()*.06,0),material(j%2?'#a5b2a0':'#bec2ab'));rock.position.set(xx,-.12,zz);rock.scale.y=.55;stonework.add(rock);} }
-        for (let j = 0; j < 6; j++) {const reed=box(stonework,x+.18+j*.07,.055+j%2*.025,z-side*.08,.018,.21+random()*.15,.018,'#657f56');reed.rotation.z=(random()-.5)*.3;if(j%2===0)box(stonework,reed.position.x,.22,z-side*.08,.033,.075,.033,'#927b4e');}
+    return out;
+  };
+  const extent=board.terrain==='valley'?{left:-10,right:n+10,top:-14,bottom:n+8}:{left:-2,right:n+2,top:-2,bottom:n+2};
+  for(let z=extent.top;z<extent.bottom;z+=.5)for(let x=extent.left;x<extent.right;x+=.5){
+    if(!inLandscape(board,x+.25,z+.25))continue;
+    const quad=[{x,z},{x,z:z+.5},{x:x+.5,z:z+.5},{x:x+.5,z}];
+    for(const poly of river<0?[quad]:[clip(quad,-1),clip(quad,1)])for(let i=1;i<poly.length-1;i++)triangle([poly[0],poly[i],poly[i+1]]);
+    for(const [dx,dz,a,b]of [[-.5,0,quad[0],quad[1]],[.5,0,quad[2],quad[3]],[0,-.5,quad[3],quad[0]],[0,.5,quad[1],quad[2]]] as [number,number,Point,Point][]){
+      if(inLandscape(board,x+.25+dx,z+.25+dz))continue;
+      for(let layer=0;layer<3;layer++){
+        const top=(p:Point)=>T.MathUtils.lerp(height(p.x,p.z)+.024,-2.68,layer/3),low=(p:Point)=>T.MathUtils.lerp(height(p.x,p.z)+.024,-2.68,(layer+1)/3);
+        for(const [p,y]of [[a,top(a)],[b,top(b)],[b,low(b)],[a,top(a)],[b,low(b)],[a,low(a)]] as [Point,number][]){soilPositions.push(p.x,y,p.z);soil.set(['#a19574','#8f846c','#756e5d'][layer]);soilColors.push(soil.r,soil.g,soil.b);}
       }
     }
-    for (const x of bridges) {
-      const marker = new T.Mesh(new T.PlaneGeometry(.65, 1.65), new T.MeshBasicMaterial({ color: '#e2dbc0', transparent: true, opacity: .2, side: T.DoubleSide })); marker.rotation.x = -Math.PI / 2; marker.position.set(x + .5, -.18, river + 1); world.add(marker);
-    }
-    // A quiet landing sits outside the playable grid, leaving every bridge free.
-    for (let i = 0; i < 5; i++) box(stonework, -.36, -.1, river + .1 + i * .13, .6, .05, .115, '#a7895c');
-    for (const z of [river + .08, river + .69]) box(stonework, -.63, -.21, z, .09, .47, .09, '#806d51');
-    const boat = new T.Group(); boat.name = 'river-boat'; boat.position.set(n - 5.4, -.15, river + 1.14);
-    box(boat, 0, 0, 0, .68, .1, .34, '#9d7550'); for (const x of [-.33, .33]) box(boat, x, .07, 0, .06, .12, .36, '#b48a5c'); for (const z of [-.16, .16]) box(boat, 0, .08, z, .65, .13, .05, '#ac8055'); box(boat, 0, .09, 0, .12, .045, .3, '#d0ac75'); world.add(packModel(boat));
-    for(let i=0;i<3;i++) {const duck=new T.Group();const body=new T.Mesh(new T.SphereGeometry(.08,10,6),material(i?'#e2d7b5':'#eee4c9'));body.scale.set(1.6,.8,1);duck.add(body);const head=new T.Mesh(new T.SphereGeometry(.047,8,6),material('#ece1c2'));head.position.set(.095,.068,0);duck.add(head);box(duck,.14,.064,0,.055,.022,.035,'#c49a56');world.add(duck);ducks.push(duck);}
-    for(let i=0;i<8;i++){const pad=new T.Mesh(new T.CircleGeometry(.045+random()*.035,8),material('#6a976d'));pad.rotation.x=-Math.PI/2;pad.position.set(2+random()*(n-4),-.178,river+(i%2?.29:1.7));world.add(pad);}
   }
-  const trees: { x: number; y: number; z: number; scale: number; variant: number }[] = [];
-  if (board.terrain === 'valley') {
-    const hillHeight = (x: number, z: number) => {
-      const a = Math.max(0, 1 - Math.hypot((x - 3) / 8, (z + 7) / 7)), b = Math.max(0, 1 - Math.hypot((x - 20) / 10, (z + 8) / 7));
-      return -1.64 + Math.max(a * a * 4.2, b * b * 5.5);
+  const coloredMesh=(positions:number[],colors:number[],name:string)=>{
+    const geo=new T.BufferGeometry().setAttribute('position',new T.Float32BufferAttribute(positions,3)).setAttribute('color',new T.Float32BufferAttribute(colors,3));geo.computeVertexNormals();
+    if(name==='sculpted-grass'){
+      const normals:number[]=[];for(let i=0;i<positions.length;i+=3){const x=positions[i],z=positions[i+2],d=.025,dx=(height(x+d,z)-height(x-d,z))/(2*d),dz=(height(x,z+d)-height(x,z-d))/(2*d),length=Math.hypot(dx,1,dz);normals.push(-dx/length,1/length,-dz/length);}geo.setAttribute('normal',new T.Float32BufferAttribute(normals,3));
+    }
+    const mesh=new T.Mesh(geo,new T.MeshStandardMaterial({vertexColors:true,roughness:.96}));mesh.name=name;mesh.receiveShadow=true;world.add(mesh);return mesh;
+  };
+  const grass=coloredMesh(grassPositions,grassColors,'sculpted-grass');(grass.material as T.Material).userData.seasonRole='ground';
+  coloredMesh(soilPositions,soilColors,'natural-soil-edge');
+  const floor=new T.Mesh(new T.PlaneGeometry(240,240),material('#cad3bc').clone());(floor.material as T.Material).userData.seasonRole='ground';floor.rotation.x=-Math.PI/2;floor.position.set(n/2,-2.7,n/2);floor.receiveShadow=true;world.add(floor);
+  // An invisible terrain surface includes water cells for accurate grid picking at every elevation.
+  const pickPositions:number[]=[];
+  for(let z=0;z<n;z+=.5)for(let x=0;x<n;x+=.5)for(const [xx,zz]of [[x,z],[x,z+.5],[x+.5,z],[x+.5,z],[x,z+.5],[x+.5,z+.5]])pickPositions.push(xx,groundHeight(board,xx,zz),zz);
+  const pick=new T.Mesh(new T.BufferGeometry().setAttribute('position',new T.Float32BufferAttribute(pickPositions,3)),new T.MeshBasicMaterial());pick.visible=false;pick.name='terrain-picking';world.add(pick);
+  const props=new Map<string,Placement[]>(),templates=new Map(assets),transform=new T.Object3D();
+  const prop=(name:string,x:number,z:number,scale=1,rotation=0,y=height(x,z)+.03,clearance=.55)=>{
+    if(!templates.has(name))return;
+    transform.position.set(x,y,z);transform.rotation.set(0,rotation,0);transform.scale.setScalar(scale);transform.updateMatrix();
+    const points=props.get(name)||[];points.push({x,z,matrix:transform.matrix.clone(),clearance});props.set(name,points);
+  };
+  for(let i=0;i<3;i++)if(!templates.has(['tree-0','pine','birch'][i]))templates.set(['tree-0','pine','birch'][i],packModel(treeModel(i)));
+  if(!templates.has('rock')){const g=new T.Group(),rock=new T.Mesh(new T.DodecahedronGeometry(.26,0),material('#a3ab94'));rock.scale.set(1,.65,.85);rock.position.y=.13;g.add(rock);templates.set('rock',g);}
+  if(!templates.has('boulder'))templates.set('boulder',templates.get('rock')!);
+  const flower=new T.Group();
+  for(let j=0;j<5;j++){
+    const a=j*2.4,x=Math.sin(a)*.22,z=Math.cos(a)*.19;
+    box(flower,x,.065,z,.016,.13,.016,'#6e8056');
+    for(let k=0;k<4;k++){const petal=new T.Mesh(new T.SphereGeometry(.026,5,3),material(j%2?'#ddd3a8':'#cc9b9a'));petal.scale.set(1,.45,1);petal.position.set(x+Math.cos(k*Math.PI/2)*.022,.135,z+Math.sin(k*Math.PI/2)*.022);flower.add(petal);}
+    box(flower,x,.145,z,.022,.012,.022,'#bba05d');
+  }
+  templates.set('wildflowers',packModel(flower));
+  const mushroom=new T.Group();
+  for(let i=0;i<3;i++){box(mushroom,i*.11,.04,i%2*.1,.025,.08,.025,'#c9bca0');const cap=new T.Mesh(new T.SphereGeometry(.065,7,4,0,Math.PI*2,0,Math.PI/2),material('#ad7860'));cap.position.set(i*.11,.08,i%2*.1);cap.scale.y=.7;mushroom.add(cap);}
+  templates.set('mushrooms',packModel(mushroom));
+  const log=new T.Group();box(log,0,.18,0,.9,.24,.24,'#7d735b');box(log,-.45,.18,0,.016,.20,.20,'#b39a75');box(log,.45,.18,0,.016,.20,.20,'#b39a75');box(log,-.1,.29,.06,.2,.04,.22,'#829765');templates.set('fallen-log',packModel(log));
+  const reeds=new T.Group();for(let j=0;j<5;j++){const stem=box(reeds,j*.045,.10,0,.012,.26+j%2*.07,.012,'#718363');stem.rotation.z=(j-2)*.055;if(j%2===0)box(reeds,j*.045,.28,0,.026,.07,.026,'#8b7756');}templates.set('reeds',packModel(reeds));
+  const bridges=bridgeSlots(board),ducks:T.Group[]=[],waterTime={value:0};
+  if(river>=0){
+    const positions:number[]=[],shore:number[]=[];
+    for(let x=-8;x<n+8;x+=.25)for(const t of [0,.25,.5,.75]){
+      const point=(xx:number,tt:number)=>{const p=scenicRiver(board,xx);return [xx,-.19,p.center+(tt-.5)*p.width];};
+      for(const [xx,tt]of [[x,t],[x,t+.25],[x+.25,t],[x+.25,t],[x,t+.25],[x+.25,t+.25]]){positions.push(...point(xx,tt));shore.push(Math.min(tt,1-tt)*2);}
+    }
+    const geo=new T.BufferGeometry().setAttribute('position',new T.Float32BufferAttribute(positions,3)).setAttribute('shore',new T.Float32BufferAttribute(shore,1));geo.computeVertexNormals();
+    const waterMaterial=new T.MeshStandardMaterial({color:'#4b9696',roughness:.27,metalness:.04,transparent:false});
+    waterMaterial.onBeforeCompile=shader=>{
+      shader.uniforms.townTime=waterTime;
+      shader.vertexShader='uniform float townTime; attribute float shore; varying float bankDistance; varying vec3 riverPosition;\n'+shader.vertexShader.replace('#include <begin_vertex>','#include <begin_vertex>\ntransformed.y += sin(position.x*1.6-townTime*.6)*.002; bankDistance=shore; riverPosition=position;');
+      shader.fragmentShader='uniform float townTime; varying float bankDistance; varying vec3 riverPosition;\n'+shader.fragmentShader.replace('#include <color_fragment>',`#include <color_fragment>
+        float shallow=1.0-smoothstep(0.0,.45,bankDistance);
+        float ripple=pow(max(0.0,sin(riverPosition.x*3.0-townTime*.65+sin(riverPosition.z*8.0)*.5)),28.0);
+        diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.48,.65,.55),shallow*.46);
+        diffuseColor.rgb+=vec3(.13,.18,.15)*ripple*.23;
+        diffuseColor.rgb*=.98+sin(riverPosition.x*.7-townTime*.32)*.025;`);
     };
-    const hillPositions:number[]=[],hillColors:number[]=[];
-    for(let z=-14;z<-1;z++)for(let x=-6;x<n+7;x++)for(const [xx,zz] of [[x,z],[x,z+1],[x+1,z],[x+1,z],[x,z+1],[x+1,z+1]]){const h=hillHeight(xx,zz);hillPositions.push(xx,h,zz);const c=new T.Color('#879e75').multiplyScalar(.9+Math.max(0,h+1.64)*.035);hillColors.push(c.r,c.g,c.b);}
-    const hillGeometry=new T.BufferGeometry().setAttribute('position',new T.Float32BufferAttribute(hillPositions,3)).setAttribute('color',new T.Float32BufferAttribute(hillColors,3));hillGeometry.computeVertexNormals();const hills=new T.Mesh(hillGeometry,new T.MeshStandardMaterial({vertexColors:true,roughness:.95}));hills.material.userData.seasonRole='ground';hills.receiveShadow=true;world.add(hills);
-    for (let z = -13; z < -1; z += 2) for (let x = -5; x < n + 7; x += 2) {
-      const h = hillHeight(x + 1, z + 1); if (h <= -1.6) continue;
-      if (random() > .39) {const xx=x+.5+random(),zz=z+.4+random();trees.push({ x:xx,y:hillHeight(xx,zz)+.035,z:zz,scale:.75+random()*.65,variant:(x+z+100)%3 });}
-      if(random()>.73)prop('boulder',x+.8,hillHeight(x+.8,z+.8),z+.8,.8,random()*6);
+    const surface=new T.Mesh(geo,waterMaterial);surface.name='flowing-river';world.add(surface);
+    for(const side of [-1,1]){
+      const vertices:number[]=[],colors:number[]=[];
+      for(let x=-8;x<n+8;x+=.25){
+        const p=(xx:number,inset:number)=>({x:xx,z:edge(xx,side)+side*inset});
+        for(const [v,y]of [[p(x,0),-.11],[p(x,.23),.018],[p(x+.25,0),-.11],[p(x+.25,0),-.11],[p(x,.23),.018],[p(x+.25,.23),.018]] as [Point,number][]){vertices.push(v.x,y,v.z);const c=new T.Color('#b1b39a').multiplyScalar(.95+Math.sin(v.x*.8)*.035);colors.push(c.r,c.g,c.b);}
+      }
+      coloredMesh(vertices,colors,'soft-river-bank');
     }
-    // Grove shapes, a meadow opening, and a clear riverside replace random dots.
-    for (const center of [{ x: 5, z: 4 }, { x: 18, z: 4 }, { x: 19, z: 19 }]) for (let i = 0; i < 22; i++) {
-      const a = random() * Math.PI * 2, r = Math.sqrt(random()) * 4.3, x = center.x + Math.cos(a) * r, z = center.z + Math.sin(a) * r;
-      if (x < .7 || z < .7 || x > n - .7 || z > n - .7 || water(board, Math.floor(x), Math.floor(z)) || Math.abs(z - 12) < 2.5 || unlocked(state, board, x, z)) continue;
-      trees.push({ x, y: .03, z, scale: .64 + random() * .65, variant: i % 3 });
+    for(let x=-6;x<n+6;x+=.65)for(const side of [-1,1]){
+      if(x>=0&&x<n&&bridges.some(b=>Math.abs(b+.5-x)<.85))continue;
+      const z=edge(x,side),xx=x+(random()-.5)*.3;
+      if(random()>.32)prop('rock',xx,z-side*.07,.25+random()*.40,random()*6,-.13,.16);
+      if(random()>.52)prop('reeds',xx,z+side*.12,.7+random()*.35,random()*.6,-.02,.25);
     }
-  } else for (const x of [-1.1, n + 1.1]) for (let i = 0; i < 5; i++) trees.push({ x, y: -1.62, z: 1 + i * 2.2, scale: .75, variant: i % 3 });
-  const transform = new T.Object3D();
-  for (let variant = 0; variant < 3; variant++) {
-    const curated = assets.get(['tree-0','pine','birch'][variant]); const template = packModel(curated || treeModel(variant)), points = trees.filter(p => p.variant === variant);
-    for (const mesh of template.children as T.Mesh[]) {
-      const mat=(mesh.material as T.MeshStandardMaterial).clone();mat.userData.seasonRole='grove';const batch = new T.InstancedMesh(mesh.geometry, mat, points.length); batch.name='curated-grove';
-      points.forEach((p, i) => { transform.position.set(p.x, p.y, p.z); transform.scale.setScalar(p.scale); transform.rotation.y = i * 1.73; transform.updateMatrix(); batch.setMatrixAt(i, transform.matrix); }); batch.castShadow = true; batch.receiveShadow = true; forest.add(batch);
+    for(const x of bridges){const marker=new T.Mesh(new T.PlaneGeometry(.65,1.65),new T.MeshBasicMaterial({color:'#e2dbc0',transparent:true,opacity:.17,side:T.DoubleSide,depthWrite:false}));marker.rotation.x=-Math.PI/2;marker.position.set(x+.5,-.18,river+1);world.add(marker);}
+    // A small landing on the woodland pool and a moored skiff give the river a destination.
+    const dockX=-4.7,dockZ=edge(dockX,1)+.10;
+    for(let i=0;i<9;i++)box(details,dockX,-.06,dockZ-i*.105,.72,.055,.092,'#aa926c');
+    for(const z of [dockZ,dockZ-.84])for(const x of [dockX-.3,dockX+.3])box(details,x,-.18,z,.065,.50,.065,'#8e7c5d');
+    const boat=new T.Group();box(boat,0,0,0,.75,.09,.34,'#956e50');for(const x of [-.36,.36])box(boat,x,.06,0,.055,.12,.36,'#b3956b');for(const z of [-.16,.16])box(boat,0,.07,z,.74,.10,.045,'#b18d64');box(boat,0,.085,0,.12,.035,.3,'#c7aa7c');box(boat,.1,.14,0,.46,.026,.025,'#d8c298');boat.position.set(dockX+.9,-.13,dockZ-.72);boat.rotation.y=.35;world.add(packModel(boat));
+    for(let i=0;i<4;i++){const duck=new T.Group();const body=new T.Mesh(new T.SphereGeometry(.075,9,6),material('#e8dfc5'));body.scale.set(1.6,.8,1);duck.add(body);const head=new T.Mesh(new T.SphereGeometry(.046,8,5),material('#ece3ca'));head.position.set(.09,.064,0);duck.add(head);box(duck,.14,.062,0,.05,.018,.027,'#c29958');world.add(duck);ducks.push(duck);}
+    for(let i=0;i<14;i++){const x=-4+random()*(n+8),p=scenicRiver(board,x),pad=new T.Mesh(new T.CircleGeometry(.055+random()*.04,9),material('#759973'));pad.rotation.x=-Math.PI/2;pad.position.set(x,-.177,p.center+(i%2?1:-1)*(p.width/2-.28));world.add(pad);}
+  }
+  if(board.terrain==='valley'){
+    // Dense peripheral woods frame clear meadows. Interior groves clear only where roads/buildings land.
+    for(let z=-12;z<n+6;z+=1.7)for(let x=-6;x<n+6;x+=1.7){
+      const xx=x+(random()-.5)*1.45,zz=z+(random()-.5)*1.45;
+      if(!inLandscape(board,xx,zz)||height(xx,zz)<-1.1)continue;
+      const p=scenicRiver(board,xx);if(Math.abs(zz-p.center)<p.width/2+.75)continue;
+      const inside=xx>0&&xx<n&&zz>0&&zz<n;
+      const grove=inside?(Math.hypot((xx-7)/7,(zz-3)/4)<1 || Math.hypot((xx-34)/7,(zz-5)/5)<1 || Math.hypot((xx-34)/6,(zz-32)/9)<1 || Math.hypot((xx-5)/5,(zz-35)/4)<1):true;
+      if(!grove||random()<(inside?.38:.27))continue;
+      const scale=.80+random()*.78,variant=Math.floor(random()*3);
+      prop(['tree-0','pine','birch'][variant],xx,zz,scale,random()*6,height(xx,zz)+.03,.75);
+      if(random()>.82)prop('mushrooms',xx+.35,zz+.3,.8,random()*6,undefined,.25);
     }
+    // Low outcrops pick out the terrace edges; road painting clears them like other scenery.
+    for(let x=1;x<n-1;x+=.85)if(random()>.34)prop('rock',x,25.3+Math.sin(x*.5)*.25,.28+random()*.4,random()*6,undefined,.55);
+    for(let z=18;z<n-1;z+=1.1)if(random()>.40)prop('rock',27.3+Math.sin(z*.4)*.25,z,.32+random()*.45,random()*6,undefined,.55);
+    for(let i=0;i<65;i++){
+      const x=-5+random()*(n+10),z=-9+random()*(n+15);
+      if(!inLandscape(board,x,z)||x>=0&&x<n&&z>=0&&z<n)continue;
+      const p=scenicRiver(board,x);if(Math.abs(z-p.center)<p.width/2+.4)continue;
+      prop(i%6===0?'fallen-log':'boulder',x,z,i%6===0?.8:.45+random()*.75,random()*6,undefined,.7);
+    }
+    // The expansion boundary is a low fence, never an impenetrable scene wall.
+    if(!state.chapterStars[1])for(let z=14;z<n-1;z+=2){const x=starterWidth(board)+.05,y=groundHeight(board,x,z);for(const zz of [z,z+1.8])box(details,x,groundHeight(board,x,zz)+.26,zz,.06,.5,.06,'#a28d6b');for(const h of [.21,.40]){const rail=box(details,x,y+h,z+.9,.04,.05,1.8,'#b9a47d');rail.rotation.x=-Math.atan2(groundHeight(board,x,z+1.8)-y,1.8);}}
+  }else for(const x of [-1.1,n+1.1])for(let i=0;i<5;i++)prop(['tree-0','pine','birch'][i%3],x,1+i*2.2,.75);
+  for(let i=0;i<n*6;i++){
+    const x=-2+random()*(n+4),z=-2+random()*(n+4),p=scenicRiver(board,x);
+    if(!inLandscape(board,x,z)||river>=0&&Math.abs(z-p.center)<p.width/2+.25)continue;
+    prop('wildflowers',x,z,.55+random()*.6,random()*6,undefined,.25);
   }
-  // Wildflower patches are small enough to remain scenery when a foundation lands.
-  for (let i = 0; i < n * 3; i++) {
-    const x = .3 + random() * (n - .6), z = .3 + random() * (n - .6); if (water(board, Math.floor(x), Math.floor(z)) || board.roads.includes(`${Math.floor(x)},${Math.floor(z)}`) || board.buildings.some(b => b.placed && Math.abs(b.x + 1 - x) < 1.6 && Math.abs(b.z + 1 - z) < 1.6)) continue;
-    for (let j = 0; j < 3; j++) { const xx = x + (random() - .5) * .35, zz = z + (random() - .5) * .35; box(stonework, xx, .08, zz, .018, .1, .018, '#74865a'); box(stonework, xx, .145, zz, .05, .025, .05, i % 3 ? '#decb91' : '#c894a0'); }
+  // A modest timber lookout tucked beyond the east build boundary, with stone steps and railing.
+  if(board.terrain==='valley'){
+    const x=n+1.4,z=21,y=height(x,z)+.10;
+    for(let i=0;i<9;i++)box(details,x,y,z-.54+i*.13,1.45,.08,.11,'#aa916b');
+    for(const xx of [x-.67,x+.67])for(const zz of [z-.56,z+.56])box(details,xx,y+.27,zz,.065,.65,.065,'#887657');
+    for(const zz of [z-.56,z+.56])box(details,x,y+.48,zz,1.4,.045,.045,'#baa781');
+    box(details,x+.67,y+.48,z,.045,.045,1.15,'#baa781');
+    for(let i=0;i<3;i++)box(details,x-.95-i*.18,y-.08-i*.085,z,.24,.095,.55,'#b5ae96');
   }
-  if (board.terrain === 'valley') {
-    // Low rural fences explain the first expansion boundary without a UI overlay.
-    if (!state.chapterStars[1]) for (let z = 14; z < 24; z += 2) { for (const zz of [z, z + 1.85]) box(stonework, STARTER_WIDTH + .05, .3, zz, .075, .58, .075, '#9a8767'); for (const y of [.23, .46]) box(stonework, STARTER_WIDTH + .05, y, z + .93, .045, .055, 1.8, '#b4a280'); }
-    if (!state.chapterStars[2]) for (let x = 1; x < 24; x += 2) { if (bridgeSlots(board).includes(x) || bridgeSlots(board).includes(x - 1)) continue; for (const xx of [x, x + 1.8]) box(stonework, xx, .29, 10.65, .075, .56, .075, '#9a8767'); for (const y of [.23, .43]) box(stonework, x + .9, y, 10.65, 1.7, .055, .04, '#b4a280'); }
+  const clearing:{batch:T.InstancedMesh;points:Placement[];matrices:T.Matrix4[];shown:boolean[]}[]=[];
+  for(const [name,points]of props){
+    const batch=sceneryBatch(templates.get(name)!,points.map(p=>p.matrix));
+    batch.name=name;
+    batch.traverse(o=>{if(!(o instanceof T.InstancedMesh))return;
+      const matrices=points.map((_,i)=>{const m=new T.Matrix4();o.getMatrixAt(i,m);return m;});
+      if(['wildflowers','reeds'].includes(name))for(const m of Array.isArray(o.material)?o.material:[o.material])m.userData.seasonRole='ground';
+      if(['tree-0','pine','birch'].includes(name)){for(const m of Array.isArray(o.material)?o.material:[o.material])m.userData.seasonRole='grove';o.castShadow=true;}
+      o.receiveShadow=true;clearing.push({batch:o,points,matrices,shown:points.map(()=>true)});
+    });
+    (['tree-0','pine','birch'].includes(name)?forest:world).add(batch);
   }
-  for(const [name, placements] of props) world.add(sceneryBatch(assets.get(name)!,placements));
-  world.add(packModel(stonework));
-  return { world, forest, update(time: number) { waterTime.value = time / 1000; ducks.forEach((duck,i)=>{const t=time*.000065;duck.position.set(n*.28+Math.sin(t)*n*.19-i*.25,-.12+Math.sin(time*.002+i)*.007,river+1+Math.sin(t*1.3)*.28+i*.09);duck.rotation.y=Math.cos(t)>0?0:Math.PI;}); } };
+  world.add(packModel(details));
+  const hidden=new T.Matrix4().makeScale(0,0,0);
+  const sync=(current:Board)=>{
+    const visibility=new Map<Placement,boolean>();
+    for(const entry of clearing){let changed=false;entry.points.forEach((p,i)=>{const visible=visibility.get(p)??sceneryClear(current,p,p.clearance);visibility.set(p,visible);if(visible!==entry.shown[i]){entry.shown[i]=visible;entry.batch.setMatrixAt(i,visible?entry.matrices[i]:hidden);changed=true;}});if(changed){entry.batch.instanceMatrix.needsUpdate=true;entry.batch.computeBoundingSphere();}}
+  };
+  sync(board);
+  return {world,forest,pick,sync,update(time:number){waterTime.value=time/1000;ducks.forEach((duck,i)=>{const t=time*.000055,x=n*.32+Math.sin(t)*n*.18-i*.23,p=scenicRiver(board,x);duck.position.set(x,-.12+Math.sin(time*.002+i)*.006,p.center+Math.sin(t*1.3)*.25+i*.07);duck.rotation.y=Math.cos(t)>0?0:Math.PI;});}};
 }
