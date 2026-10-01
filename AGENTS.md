@@ -26,6 +26,7 @@ During active development, read local `docs/feedback.md` when present at the sta
 - At most three workers share all production; road outages pause their chain. Production waits for the worker to reach the job, pauses at night, and resumes without duplicating goods. Show missing-material and disconnected-route explanations.
 - Six minutes per day; seasons cycle every three days. Persist time without offline progress. Villagers open doors, enter homes, sleep inside and rejoin safe walking lanes in the morning.
 - Road edits must preserve resident objects, positions, gait, seats and bedtime state. Recalculate routes smoothly; never recreate the whole crowd for every painted tile.
+- Clicking a visible villager in browse mode opens a stable name, biography and live activity card. Derive destinations and actions from actual resident / production states; never invent jobs, change routes or reward coins for viewing. Names remain stable across work changes and refreshes. Respect building occlusion and preserve placement / road input.
 - Time/farm/village-only checkpoints must not masquerade as gameplay conflicts or alter token rewards.
 
 ## Controls and presentation

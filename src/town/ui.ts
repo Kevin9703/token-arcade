@@ -18,7 +18,7 @@ import type { Building, BuildingKind, Cell, Evaluation, Goal } from './types';
 import { TownScene } from './scene';
 import type { Tool } from './scene';
 
-type Panel = 'build' | 'inventory' | 'quests' | 'puzzles' | 'book' | 'settings' | 'detail' | 'history' | 'production' | 'orders' | null;
+type Panel = 'build' | 'inventory' | 'quests' | 'puzzles' | 'book' | 'settings' | 'detail' | 'resident' | 'history' | 'production' | 'orders' | null;
 const iconNodes: Record<string, IconNode> = { Coins, RefreshCw, House, Route, Move, ClipboardList, Puzzle, BookOpen, Settings, X, ArrowLeft, ArrowRight, RotateCw, ZoomIn, ZoomOut, Focus, Check, Lock, Star, TreeDeciduous, Coffee, Wheat, ArrowUpRight, Volume2, VolumeX, Sun, Moon, Sunset, Sunrise, Download, Upload, Archive, MousePointer2, Eraser, Flag, Hammer, ChevronRight, Sparkles, MapPin, Info };
 const iconCache = new Map<string, string>();
 function icon(name: string): string { if (!iconCache.has(name)) iconCache.set(name, createElement(iconNodes[name], { width: 20, height: 20, 'stroke-width': 1.65, 'aria-hidden': 'true' }).outerHTML); return iconCache.get(name)!; }
@@ -28,6 +28,7 @@ const button = (action: string, label: string, symbol = '', cls = '', attrs = ''
 export class TownUI {
   readonly scene: TownScene;
   private panel: Panel = null; private category = 'homes'; private selectedId: string | null = null;
+  private selectedResident: number | null = null;
   private tool: Tool = 'inspect'; private pendingKind: BuildingKind | null = null; private pendingId: string | undefined; private rotation = 0;
   private hoverCell: Cell = { x: 6, z: 17 }; private busy = false; private toastTimer = 0; private coordinateOpen = false;
   private toastMessage = ''; private toastUntil = 0;
@@ -35,7 +36,7 @@ export class TownUI {
   private heldKeys = new Set<string>(); private heldCameraButton = false; private ignoreCameraClickUntil = 0;
   constructor(private root: HTMLElement, readonly store: TownStore, canvas: HTMLCanvasElement) {
     this.e = evaluate(store.board);
-    this.scene = new TownScene(canvas, { select: id => this.select(id), cell: (x, z) => this.onCell(x, z), hover: p => this.onHover(p), strokeEnd: () => this.scene.sound(390), cancel: () => { this.resetTool(); this.panel = null; this.render(); }, assetsReady: () => this.render(), clock: (seconds,save) => this.store.clock(seconds,save) });
+    this.scene = new TownScene(canvas, { select: id => this.select(id), selectResident: index => this.selectResident(index), residentUpdated: () => this.updateResidentCard(), cell: (x, z) => this.onCell(x, z), hover: p => this.onHover(p), strokeEnd: () => this.scene.sound(390), cancel: () => { this.resetTool(); this.panel = null; this.render(); }, assetsReady: () => this.render(), clock: (seconds,save) => this.store.clock(seconds,save) });
     store.subscribe(() => { this.e = evaluate(store.board); if (store.conflict) { this.notice = '已载入另一个窗口保存的最新进度，请重新选择操作'; store.conflict = false; this.resetTool(); } this.render(); });
     root.addEventListener('click', e => { const el = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-action]'); if (el && !el.disabled) void this.action(el.dataset.action!, el); });
     root.addEventListener('focusin', e=>{if((e.target as HTMLElement).closest('input,select,textarea,[contenteditable]')){this.heldKeys.clear();this.syncCameraKeys();}});
@@ -60,7 +61,7 @@ export class TownUI {
     this.render();
   }
   private thumbnail(b: BuildingKind, variant = 0, stage = 0): string { return `<img class="model-preview" src="${this.scene.thumbnail(b, variant, stage)}" alt="${CATALOG[b].name}" draggable="false"/>`; }
-  private resetTool(): void { this.tool = 'inspect'; this.pendingKind = null; this.pendingId = undefined; this.rotation = 0; this.coordinateOpen = false; this.syncCameraKeys(); this.scene.setTool('inspect', null, 0); }
+  private resetTool(): void { this.selectedResident = null; this.tool = 'inspect'; this.pendingKind = null; this.pendingId = undefined; this.rotation = 0; this.coordinateOpen = false; this.syncCameraKeys(); this.scene.setTool('inspect', null, 0); }
   private setTool(tool: Tool, kind: BuildingKind | null = null, id?: string): void {
     this.tool = tool; this.pendingKind = kind; this.pendingId = id; this.syncCameraKeys();
     const b = id ? this.store.board.buildings.find(b => b.id === id) : undefined; this.rotation = b?.rotation || 0;
@@ -70,11 +71,38 @@ export class TownUI {
     this.render();
   }
   private select(id: string | null): void {
-    if (!id) { this.selectedId = null; this.scene.select(null); if (this.panel === 'detail') this.panel = null; this.render(); return; }
+    this.selectedResident = null;
+    if (!id) { this.selectedId = null; this.scene.select(null); if (this.panel === 'detail' || this.panel === 'resident') this.panel = null; this.render(); return; }
     this.selectedId = id; this.scene.select(id);
     if (this.tool === 'move') { const b = this.store.board.buildings.find(b => b.id === id)!; this.setTool('move', b.kind, id); this.panel = null; }
     else { this.resetTool(); this.panel = 'detail'; }
     this.render();
+  }
+  private selectResident(index: number): void {
+    if (!this.scene.residentInfo(index)) return;
+    this.resetTool(); this.selectedId = null; this.selectedResident = index; this.panel = 'resident'; this.render();
+  }
+  private residentPanel(): string {
+    const info = this.selectedResident === null ? null : this.scene.residentInfo(this.selectedResident);
+    if (!info) return '<p>点击街道上的一位村民，认识这位邻居。</p>';
+    return `<section class="resident-card" data-resident-id="${info.id}"><div class="resident-identity"><img src="${this.scene.residentPortrait(info.index)}" alt="${info.name}的肖像"/><div><h3>${info.name}</h3><span>${info.trait}</span></div></div><p class="resident-bio">${info.bio}</p><div class="resident-now"><span class="small-label">${icon('Sun')} 此刻</span><strong data-resident-status>${escapeHTML(info.status)}</strong><p data-resident-intention ${info.intention === info.status ? 'hidden' : ''}>${escapeHTML(info.intention)}</p></div><dl class="resident-places"><div><dt>${icon('MapPin')} 去向</dt><dd data-resident-destination>${escapeHTML(info.destination)}</dd></div><div><dt>${icon('House')} 住处</dt><dd data-resident-home>${escapeHTML(info.home)}</dd></div></dl>${info.homeId ? button(`resident-home:${info.homeId}`, '看看他的家', 'House', 'secondary') : ''}<p class="panel-note">行动随村民的实际行程更新。你可以继续浏览小镇。</p></section>`;
+  }
+  private updateResidentCard(): void {
+    if (this.panel === 'orders') for (const info of this.scene.residentInfos()) {
+      const el=this.root.querySelector(`[data-roster-resident="${info.index}"]`); if (el && el.textContent !== info.status) el.textContent=info.status;
+    }
+    if (this.panel !== 'resident' || this.selectedResident === null) return;
+    const info = this.scene.residentInfo(this.selectedResident); if (!info) return;
+    for (const [key,value] of Object.entries({status:info.status,intention:info.intention,destination:info.destination,home:info.home})) {
+      const el = this.root.querySelector(`[data-resident-${key}]`); if (el && el.textContent !== value) el.textContent = value;
+    }
+    const intention = this.root.querySelector<HTMLElement>('[data-resident-intention]'); if (intention) intention.hidden = info.intention === info.status;
+    const home = this.root.querySelector<HTMLButtonElement>('.resident-card [data-action^="resident-home:"]');
+    if (home) { home.hidden = !info.homeId; if (info.homeId) home.dataset.action = `resident-home:${info.homeId}`; }
+  }
+  private residentRoster(): string {
+    const neighbors=this.scene.residentInfos();
+    return `<h3>认识街坊</h3><p class="panel-note">点击街上的村民，也可以从这里认识邻居。晚上仍能查看他们的名片。</p><div class="resident-roster">${neighbors.map(info=>`<button data-action="resident:${info.index}" aria-label="认识${info.name}"><img src="${this.scene.residentPortrait(info.index)}" alt=""/><span><b>${info.name}</b><small data-roster-resident="${info.index}">${escapeHTML(info.status)}</small></span>${icon('ChevronRight')}</button>`).join('')}</div>`;
   }
   private onHover(cell: Cell | null): void {
     if (cell) this.hoverCell = cell;
@@ -131,6 +159,7 @@ export class TownUI {
     this.root.innerHTML = `${this.header()}${this.homeBubbles()}${this.currentGoal()}${this.onboarding()}${this.toolbar()}${this.toolRibbon()}${this.cameraControls()}${this.panel ? this.panelHTML() : ''}<div id="town-toast" class="${Date.now() < this.toastUntil ? 'visible' : ''}" role="status" aria-live="polite">${Date.now() < this.toastUntil ? `${icon('Sparkles')}<span>${escapeHTML(this.toastMessage)}</span>` : ''}</div>${this.store.persistenceError || this.notice ? `<div class="save-notice" role="alert">${escapeHTML(this.store.persistenceError || this.notice)}</div>` : ''}`;
     this.scene.positionHomeBubbles(this.root);
     this.scene.select(this.selectedId); this.onHover(this.hoverCell);
+    this.scene.selectResident(this.panel === 'resident' ? this.selectedResident : null);
     const nextPanel=this.root.querySelector('.town-panel');if(nextPanel&&nextPanel.getAttribute('aria-label')===panelName){const content=nextPanel.querySelector('.panel-content');if(content)content.scrollTop=scroll;if(focusSetting)this.root.querySelector<HTMLElement>(`[data-setting="${focusSetting}"]`)?.focus({preventScroll:true});}
   }
   private homeBubbles():string {
@@ -139,7 +168,7 @@ export class TownUI {
     return `<div class="home-needs-layer" aria-label="住宅缺失需求">${missingHomeNeeds(this.store.board,this.e,chapter,!this.store.puzzle||this.store.puzzle.leisureGoal>0).map(({home,needs})=>`<button class="home-need-bubble" data-home-need="${escapeHTML(home.id)}" data-action="find:${escapeHTML(home.id)}" title="${escapeHTML(buildingLabel(home))}：缺少${needs.join('、')}" aria-label="${escapeHTML(buildingLabel(home))}：缺少${needs.join('、')}">${needs.map(n=>icon(symbols[n])).join('')}</button>`).join('')}</div>`;
   }
   private panelHTML(): string {
-    const titles: Record<Exclude<Panel, null>, string> = { build: '建一点新生活', inventory: '已经属于你的', quests: '河谷委托', puzzles: '河谷规划桌', book: '小镇图鉴', production: '从田野到餐桌', orders:'邻里心愿', settings: '小镇设置', detail: '建筑详情', history: '让工作点亮河谷' };
+    const titles: Record<Exclude<Panel, null>, string> = { build: '建一点新生活', inventory: '已经属于你的', quests: '河谷委托', puzzles: '河谷规划桌', book: '小镇图鉴', production: '从田野到餐桌', orders:'邻里心愿', settings: '小镇设置', detail: '建筑详情', resident: '村民名片', history: '让工作点亮河谷' };
     let content = '';
     if (this.panel === 'build') content = this.buildPanel();
     else if (this.panel === 'inventory') content = this.inventoryPanel();
@@ -147,9 +176,10 @@ export class TownUI {
     else if (this.panel === 'puzzles') content = this.puzzlePanel();
     else if (this.panel === 'book') content = this.bookPanel();
     else if (this.panel === 'production') content = this.productionPanel()+this.villagePanel();
-    else if(this.panel==='orders')content=this.orderPanel();
+    else if(this.panel==='orders')content=this.orderPanel()+this.residentRoster();
     else if (this.panel === 'settings') content = this.settingsPanel();
     else if (this.panel === 'detail') content = this.detailPanel();
+    else if (this.panel === 'resident') content = this.residentPanel();
     else content = `<div class="empty-records">${icon('RefreshCw')}<h3>${this.notice ? '这次还没有读到记录' : '还没找到本地 token 历史'}</h3><p>起步建筑和规划关都能继续玩。有 Claude Code、Codex、Kimi Code 或 DeepSeek Harness 的本地使用记录时，再同步到这座城镇。</p>${button('sync', '重新读取本地记录', 'RefreshCw', 'primary')}${button('demo', '进入独立演示城镇', 'Puzzle', 'secondary')}<small>演示金币与真实存档分开保存。</small></div>`;
     return `<aside class="town-panel ${this.panel === 'settings' ? 'settings-panel' : ''}" aria-label="${titles[this.panel!]}"><div class="panel-heading"><div><span class="small-label">${this.store.activePuzzle ? '规划关' : '河谷小镇'}</span><h2>${titles[this.panel!]}</h2></div>${button('close-panel', '关闭面板', 'X', 'icon-only')}</div><div class="panel-content">${content}</div></aside>`;
   }
@@ -249,6 +279,8 @@ export class TownUI {
       case 'production': this.panel = 'production'; break;
       case 'build-farms': this.category = 'production'; this.panel = 'build'; break;
       case 'close-panel': this.panel = null; break;
+      case 'resident-home': { const b = this.store.board.buildings.find(b => b.id === value && b.placed); if (b) { const d=dimensions(b); this.scene.focus({x:b.x+d.w/2,z:b.z+d.d/2}); } return; }
+      case 'resident': this.selectResident(Number(value)); return;
       case 'category': this.category = value; break;
       case 'buy': this.selectedId = null; this.panel = null; this.setTool('place', value as BuildingKind); return;
       case 'place-owned': case 'move-building': {
