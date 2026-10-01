@@ -4,6 +4,7 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import type { BuildingKind } from './types';
 import { BRIDGE_STONES } from './walk-surface';
+import { DOOR_SPECS } from './doorways';
 
 // Original modular 3D prefabs. Shared geometry and materials also back the
 // exported GLB library; these are real meshes, never a flattened room image.
@@ -22,6 +23,42 @@ export function box(g: T.Object3D, x: number, y: number, z: number, w: number, h
 }
 export function cylinder(g: T.Object3D, x: number, y: number, z: number, r: number, h: number, color: string, top = r): T.Mesh {
   const m = new T.Mesh(new T.CylinderGeometry(top, r, h, 8), material(color)); m.position.set(x, y, z); m.castShadow = true; m.receiveShadow = true; g.add(m); return m;
+}
+function articulateDoor(g:T.Group,kind:BuildingKind):void {
+  const s=DOOR_SPECS[kind];if(!s)return;
+  g.getObjectByName('door-hinge')?.removeFromParent();
+  // Subtract a real doorway from solid wall blocks, glass and fence rails.
+  // Keep the original materials and geometry detail outside the opening.
+  const low=[s.x-s.width/2,s.floor+.008,s.z-1.22],high=[s.x+s.width/2,s.floor+s.height,s.z+.13];
+  g.updateMatrixWorld(true);const meshes:T.Mesh[]=[];g.traverse(node=>{if(node instanceof T.Mesh)meshes.push(node);});
+  for(const mesh of meshes){
+    const position=new T.Vector3(),scale=new T.Vector3(),rotation=new T.Quaternion();mesh.matrixWorld.decompose(position,rotation,scale);
+    let moving=false;for(let parent=mesh.parent;parent&&parent!==g;parent=parent.parent)if(parent.userData.movingPart)moving=true;
+    if(moving||mesh.geometry!==boxGeometry||Math.abs(rotation.x)+Math.abs(rotation.y)+Math.abs(rotation.z)>.00001)continue;
+    const a=position.toArray().map((p,i)=>p-scale.getComponent(i)/2),b=position.toArray().map((p,i)=>p+scale.getComponent(i)/2);
+    if(a.some((n,i)=>n>=high[i])||b.some((n,i)=>n<=low[i]))continue;
+    mesh.removeFromParent();const lo=[...a],hi=[...b];
+    for(let axis=0;axis<3;axis++){
+      const piece=(p:number[],q:number[])=>{if(q.some((n,i)=>n-p[i]<.00001))return;const part=mesh.clone();part.position.fromArray(p.map((n,i)=>(n+q[i])/2));part.scale.fromArray(p.map((n,i)=>q[i]-n));g.add(part);};
+      if(lo[axis]<low[axis]){const edge=[...hi];edge[axis]=low[axis];piece(lo,edge);lo[axis]=low[axis];}
+      if(hi[axis]>high[axis]){const edge=[...lo];edge[axis]=high[axis];piece(edge,hi);hi[axis]=high[axis];}
+    }
+  }
+  const hinge=new T.Group();hinge.name='door-hinge';hinge.userData.movingPart=true;
+  hinge.position.set(s.x-s.width/2,s.floor+s.height/2,s.z);g.add(hinge);
+  const color=s.glass?'#708e7e':'#69543e',w=s.width-.04,h=s.height-.03;
+  if(s.glass||s.gate){
+    for(const x of [.025,w-.025])box(hinge,x,0,0,.045,h,.055,color);
+    for(const y of [-h/2+.025,h/2-.025])box(hinge,w/2,y,0,w,.05,.055,color);
+    box(hinge,w/2,-h*.15,0,w,.035,.055,color);
+    if(s.glass){const glass=material('#b5d4c4').clone();Object.assign(glass,{transparent:true,opacity:.38,roughness:.28,depthWrite:false,side:T.DoubleSide});box(hinge,w/2,0,0,w-.08,h-.09,.02,color).material=glass;}
+    else for(const x of [w*.3,w*.7])box(hinge,x,0,0,.035,h,.04,color);
+  }else{
+    box(hinge,w/2,0,0,w,h,.055,color);
+    for(const y of [-h*.29,h*.29])box(hinge,w/2,y,.032,w-.06,.045,.025,'#8f7655');
+  }
+  box(hinge,w-.09,0,.047,.045,.045,.032,'#ccb36c');
+  if(!s.gate){for(const x of [s.x-s.width/2-.025,s.x+s.width/2+.025])box(g,x,s.floor+s.height/2,s.z,.045,s.height+.06,.08,color);box(g,s.x,s.floor+s.height+.025,s.z,s.width+.10,.055,.08,color);}
 }
 const palette = { wood: '#69543e', beam: '#544536', stone: '#ada58d', cream: '#ead6b0', window: '#f6d590', roof: '#9f533b', green: '#526b51', iron: '#535e55' };
 export const BENCH_SEAT_TOP = .2135;
@@ -265,8 +302,9 @@ function farmBuilding(g:T.Group,kind:'wheatfield'|'mill',variant:number):void {
     return;
   }
   box(g,0,.09,0,2.86,.18,2.86,'#b9b09a');
-  const tower=new T.Mesh(new T.CylinderGeometry(.56,.81,1.90,16),material('#ddccb0'));tower.position.set(-.18,1.03,-.22);tower.castShadow=true;tower.receiveShadow=true;g.add(tower);
-  for(let row=0;row<8;row++)for(let j=0;j<16;j++){const a=j*Math.PI/8+(row%2)*Math.PI/16,r=.81-row*.026;const stone=box(g,-.18+Math.sin(a)*r,.25+row*.2,-.22+Math.cos(a)*r,Math.PI*r/8*.87,.17,.055,row%2?'#c6b79d':'#bcae96');stone.rotation.y=a;}
+  // Open the lower front sector so the mill door is a passage, not a sticker.
+  for(const [top,bottom,height,y,start,span] of [[.68,.81,1.02,.59,.46,Math.PI*2-.92],[.56,.68,.88,1.54,0,Math.PI*2]]){const tower=new T.Mesh(new T.CylinderGeometry(top,bottom,height,32,1,true,start,span),material('#ddccb0'));tower.position.set(-.18,y,-.22);tower.castShadow=true;tower.receiveShadow=true;g.add(tower);}
+  for(let row=0;row<8;row++)for(let j=0;j<16;j++){const a=j*Math.PI/8+(row%2)*Math.PI/16,r=.81-row*.026;if(row<5&&Math.min(a,Math.PI*2-a)<.46)continue;const stone=box(g,-.18+Math.sin(a)*r,.25+row*.2,-.22+Math.cos(a)*r,Math.PI*r/8*.87,.17,.055,row%2?'#c6b79d':'#bcae96');stone.rotation.y=a;}
   const cap=new T.Mesh(new T.ConeGeometry(.84,.85,8),seasonalMaterial(['#8f6550','#778771','#6b8290','#a48a62'][variant%4],'roof'));cap.position.set(-.18,2.4,-.22);cap.castShadow=true;g.add(cap);
   box(g,-.18,.57,.55,.40,.81,.065,palette.wood);box(g,-.18,.16,.74,.65,.11,.36,'#a79c87');archedWindow(g,-.18,1.14,.49,.36,.47);
   const fan=new T.Group();fan.name='mill-fan';fan.userData.movingPart=true;fan.position.set(-.18,2.20,.71);g.add(fan);
@@ -361,6 +399,7 @@ export function buildingModel(kind: BuildingKind, variant = 0, stage = 0): T.Gro
     const crops=new T.Group();crops.name='vegetable-crops';crops.userData.movingPart=true;crops.position.y=.70;g.add(crops);
     for(const x of [-.85,.85])for(const z of [-.45,-.15,.15,.45]){box(crops,x,.12,z,.05,.24,.05,'#7f9e61');box(crops,x+.06,.24,z,.16,.07,.11,'#8ead72');}
   }
+  articulateDoor(g,kind);
   return g;
 }
 export function residentModel(color: string, variant = 0, seated = false): T.Group {

@@ -4,6 +4,7 @@ import type {Building,BuildingKind,Evaluation,TownState} from './types';
 import type {FarmJob} from './farming';
 import type {WalkPoint} from './pedestrians';
 import type {Season} from './world-time';
+import { interiorSpot, fishingAccess, DOOR_SPECS } from './doorways';
 export type Good='flour'|'bread'|'carrot'|'potato'|'milk'|'cheese'|'truffle'|'fish'|'meal';
 export type Basket=Partial<Record<Good,number>>;
 export interface StationRun {phase:'work'|'deliver'|'return';elapsed:number;destination:string;cargo:Basket;cycles:number;choice:string;recipe?:string;nextChoice?:string}
@@ -34,12 +35,13 @@ export function stationRun(v:VillageState,b:Building):StationRun {
 const entry=(b:Building):WalkPoint=>{const p=entrance(b);return{x:p.x+.5,z:p.z+.5};};
 export function stationSpot(b:Building):WalkPoint {
  const d=dimensions(b),yaw=-b.rotation*Math.PI/2;
+ const inside=interiorSpot(b);if(inside&&b.kind!=='fishinghut')return inside;
  if(b.kind==='fishinghut')return{x:b.x+d.w/2-.35*Math.cos(yaw)-1.38*Math.sin(yaw),z:b.z+d.d/2+.35*Math.sin(yaw)-1.38*Math.cos(yaw)};
  if(b.kind==='restaurant'||b.kind==='mill'){const p=entry(b),dx=b.x+d.w/2-p.x,dz=b.z+d.d/2-p.z,l=Math.hypot(dx,dz);return{x:p.x+dx/l*.48,z:p.z+dz/l*.48};}
  return{x:b.x+d.w/2,z:b.z+d.d/2};
 }
 export function loadingSpot(b:Building,id:string):WalkPoint {
- const p=stationSpot(b),a=entry(b),d=dimensions(b),dx=b.x+d.w/2-a.x,dz=b.z+d.d/2-a.z,l=Math.hypot(dx,dz);let hash=0;for(const c of id)hash=(hash*31+c.charCodeAt(0))>>>0;const side=(hash%2?1:-1)*.56;
+ const p=stationSpot(b),a=entry(b),d=dimensions(b),dx=b.x+d.w/2-a.x,dz=b.z+d.d/2-a.z,l=Math.hypot(dx,dz);let hash=0;for(const c of id)hash=(hash*31+c.charCodeAt(0))>>>0;const side=(hash%2?1:-1)*.14;
  return{x:p.x-dz/l*side,z:p.z+dx/l*side};
 }
 export function availableGoods(s:TownState,e:Evaluation):Basket {
@@ -125,7 +127,8 @@ export function tickVillage(s:TownState,e:Evaluation,dt:number,sleep:boolean,sea
     }
    }
   }
-  jobs.push({fieldId:`village-${b.id}-${r.phase}`,cycles:r.cycles,phase:r.phase==='deliver'?'to-bakery':r.phase==='return'?'returning':'harvesting',target:r.phase==='deliver'?loadingSpot(s.town.buildings.find(b=>b.id===r.destination)!,b.id):stationSpot(b),entrance:r.phase==='deliver'?entry(s.town.buildings.find(b=>b.id===r.destination)!):entry(b),carrying:r.phase==='deliver'?Object.keys(r.cargo)[0] as Good:null,harvesting:r.phase==='work'&&!storedFish});
+  const destination=r.phase==='deliver'?s.town.buildings.find(d=>d.id===r.destination)!:b;
+  jobs.push({buildingId:destination.kind==='fishinghut'?undefined:DOOR_SPECS[destination.kind]?destination.id:undefined,access:destination.kind==='fishinghut'?fishingAccess(destination):undefined,accessId:destination.kind==='fishinghut'?destination.id:undefined,fieldId:`village-${b.id}-${r.phase}`,cycles:r.cycles,phase:r.phase==='deliver'?'to-bakery':r.phase==='return'?'returning':'harvesting',target:r.phase==='deliver'?loadingSpot(s.town.buildings.find(b=>b.id===r.destination)!,b.id):stationSpot(b),entrance:r.phase==='deliver'?entry(s.town.buildings.find(b=>b.id===r.destination)!):entry(b),carrying:r.phase==='deliver'?Object.keys(r.cargo)[0] as Good:null,harvesting:r.phase==='work'&&!storedFish});
  }
  // Flour left over after the two units reserved for each bakery batch is transported to restaurants.
  for(const restaurant of stations.filter(b=>b.kind==='restaurant'&&e.buildings[b.id]?.connected)){
@@ -135,7 +138,7 @@ export function tickVillage(s:TownState,e:Evaluation,dt:number,sleep:boolean,sea
   if(r.phase==='work'&&(s.farm.flour<=reserved||(stock.flour||0)>=6))continue;
   const jobId=`village-${id}-${r.phase}`;
   if(ready.has(jobId)){advanced=true;r.elapsed+=Math.min(dt,1);if(r.elapsed>=1){r.elapsed=0;if(r.phase==='work'){s.farm.flour--;s.farm.activeSeconds+=.001;r.cargo={flour:1};r.phase='deliver';}else{stock.flour=(stock.flour||0)+1;r.cargo={};r.phase='work';r.cycles++;if(r.nextChoice){r.choice=r.nextChoice;delete r.nextChoice;}}}}
-  jobs.push({fieldId:`village-${id}-${r.phase}`,cycles:r.cycles,phase:r.phase==='deliver'?'to-bakery':'milling',target:loadingSpot(r.phase==='deliver'?restaurant:mill,id),entrance:entry(r.phase==='deliver'?restaurant:mill),carrying:r.phase==='deliver'?'flour':null,harvesting:false});
+  jobs.push({buildingId:r.phase==='deliver'?restaurant.id:mill.id,fieldId:`village-${id}-${r.phase}`,cycles:r.cycles,phase:r.phase==='deliver'?'to-bakery':'milling',target:loadingSpot(r.phase==='deliver'?restaurant:mill,id),entrance:entry(r.phase==='deliver'?restaurant:mill),carrying:r.phase==='deliver'?'flour':null,harvesting:false});
  }
  if(advanced)v.activeSeconds+=Math.min(dt,1);
  return jobs;

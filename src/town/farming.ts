@@ -2,12 +2,13 @@ import { dimensions, entrance, fromKey, key, pathDistances } from './world';
 import type { Board, Building, Evaluation, FarmPhase, FarmRun, FarmState } from './types';
 import type { Season } from './world-time';
 import type { WalkPoint } from './pedestrians';
+import { interiorSpot } from './doorways';
 
 export const FARM_PHASES: FarmPhase[] = ['sowing', 'growing', 'harvesting', 'to-mill', 'milling', 'to-bakery', 'baking', 'returning'];
 export const FARM_LABELS: Record<FarmPhase, string> = { sowing: '播种', growing: '麦苗生长', harvesting: '收割小麦', 'to-mill': '把麦子送往磨坊', milling: '风车磨面', 'to-bakery': '把面粉送往面包店', baking: '烘焙面包', returning: '回麦田准备下一季' };
 export const freshFarm = (): FarmState => ({ runs: {}, wheat: 0, flour: 0, bread: 0, batches: 0, activeSeconds:0 });
 export interface FarmChain { field: Building; mill?: Building; bakery?: Building; toMill: WalkPoint[]; toBakery: WalkPoint[]; returning: WalkPoint[]; problem: string }
-export interface FarmJob {cycles?:number; fieldId: string; phase: FarmPhase; target: WalkPoint; entrance: WalkPoint; carrying: 'wheat' | import('./village').Good | null; harvesting: boolean }
+export interface FarmJob {cycles?:number; fieldId: string; phase: FarmPhase; target: WalkPoint; entrance: WalkPoint; buildingId?:string; access?:WalkPoint[]; accessId?:string; carrying: 'wheat' | import('./village').Good | null; harvesting: boolean }
 export function bakeryMaterialLabel(id:string,chains:FarmChain[],farm:FarmState,sleep:boolean):string {
   if(sleep)return '夜间休息中';
   const runs=chains.filter(c=>c.bakery?.id===id&&!c.problem).map(c=>farm.runs[c.field.id]).filter(Boolean);
@@ -84,12 +85,12 @@ export function tickFarm(chains: FarmChain[], farm: FarmState, dt: number, sleep
     const target = path.length ? sampleRoute(path, run.elapsed / farmDuration(chain, run.phase, season)) : ['milling'].includes(run.phase) ? entry(chain.mill) : run.phase === 'baking' ? entry(chain.bakery) : workSpot(chain.field);
     // Distinct loading spots prevent multiple farmers standing in the same doorway.
     if(run.phase==='milling'||run.phase==='baking'){
-      const station=run.phase==='milling'?chain.mill:chain.bakery,yaw=-station.rotation*Math.PI/2,dx=-Math.sin(yaw),dz=-Math.cos(yaw),slot=[-.38,0,.38][chains.indexOf(chain)%3];
-      target.x+=dx*.52-dz*slot;target.z+=dz*.52+dx*slot;
+      const station=run.phase==='milling'?chain.mill:chain.bakery,slot=[-.14,0,.14][chains.indexOf(chain)%3];
+      Object.assign(target,interiorSpot(station,slot));
     }
     const fieldSpot=workSpot(chain.field);
     const approach=run.phase==='milling'?entry(chain.mill):run.phase==='baking'?entry(chain.bakery):path.length?[...path].filter(p=>Math.hypot(p.x-fieldSpot.x,p.z-fieldSpot.z)>.001).sort((a,b)=>Math.hypot(a.x-target.x,a.z-target.z)-Math.hypot(b.x-target.x,b.z-target.z))[0]||entry(chain.field):entry(chain.field);
-    jobs.push({ cycles:run.batches, fieldId: chain.field.id, phase: run.phase, target, entrance: approach, carrying: run.phase === 'to-mill' ? 'wheat' : run.phase === 'to-bakery' ? 'flour' : null, harvesting: run.phase === 'harvesting' || run.phase === 'sowing' });
+    jobs.push({ cycles:run.batches, fieldId: chain.field.id, phase: run.phase, target, entrance: approach, buildingId:run.phase==='milling'?chain.mill.id:run.phase==='baking'?chain.bakery.id:undefined, carrying: run.phase === 'to-mill' ? 'wheat' : run.phase === 'to-bakery' ? 'flour' : null, harvesting: run.phase === 'harvesting' || run.phase === 'sowing' });
   }
   if(jobs.some(job=>!ready||ready.has(job.fieldId)))farm.activeSeconds+=Math.min(dt,1);
   return jobs;

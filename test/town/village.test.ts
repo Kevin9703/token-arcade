@@ -50,7 +50,7 @@ test('distinct full models retain animated livestock, crops, piers and bounded f
  for(const kind of [...PRODUCTION_KINDS,'apronstand','harvesttable','wheatbanner'] as const){const model=packModel(buildingModel(kind));assert.ok(model.children.length,kind);const bounds=new T.Box3().setFromObject(model);assert.ok(bounds.min.y>=-.5&&bounds.max.y<3,kind);assert.ok(Number.isFinite(bounds.max.x));if(kind==='cowshed')assert.ok(model.getObjectByName('cow-0')?.children.length);if(kind==='pigpen')assert.ok(model.getObjectByName('pig-0')?.children.length);if(kind==='vegetablefield')assert.ok(model.getObjectByName('vegetable-crops')?.children.length);}
 });
 test('three physical workers complete a farm and delivered meal cycle, retain actors, and go home at night',()=>{
- const s=villageFixture(),e=evaluate(s.town),traffic=new PedestrianTraffic(e.connectedRoads,9),life=new ResidentLife(traffic,s.town.buildings.filter(b=>b.kind==='house').map(homeForBuilding));life.setPlaces([],e.connectedRoads);const actors=[...traffic.people],chains=farmChains(s.town,e,s.farm);
+ const s=villageFixture(),e=evaluate(s.town),traffic=new PedestrianTraffic(e.connectedRoads,9),life=new ResidentLife(traffic,s.town.buildings.filter(b=>b.kind==='house').map(homeForBuilding));life.setBuildings(s.town.buildings);life.setPlaces([],e.connectedRoads);const actors=[...traffic.people],chains=farmChains(s.town,e,s.farm);
  const nearest=(p:any)=>[...e.connectedRoads].map(k=>{const [x,z]=k.split(',').map(Number);return {x:x+.5,z:z+.5};}).sort((a,b)=>Math.hypot(a.x-p.x,a.z-p.z)-Math.hypot(b.x-p.x,b.z-p.z))[0];let fishingSeconds=0;
  for(let frame=0;frame<20*1200;frame++){const ready=new Set<string>();for(const [i,j]of life.jobs){const p=traffic.people[i];if(life.residents[i].mode==='working'&&!life.residents[i].path.length&&Math.hypot(p.x-j.target.x,p.z-j.target.z)<.15)ready.add(j.fieldId);}
   if(ready.has('village-fish-work'))fishingSeconds+=.05;
@@ -58,7 +58,7 @@ test('three physical workers complete a farm and delivered meal cycle, retain ac
  }
  assert.ok(s.farm.bread>=4,JSON.stringify({farm:s.farm,jobs:[...life.jobs],residents:life.residents.map((r,i)=>({mode:r.mode,path:r.path,p:traffic.people[i]}))}));assert.ok((s.village.stock.food.meal||0)>=2,JSON.stringify({village:s.village,jobs:[...life.jobs],residents:life.residents.map((r,i)=>({mode:r.mode,path:r.path,p:traffic.people[i]}))}));assert.ok(traffic.people.every((p,i)=>p===actors[i]));
  assert.ok(fishingSeconds>=12,'a real resident reaches the pier and completes a fishing batch');assert.ok((s.village.stock.food.fish||0)>=2,'the fish is physically delivered to the restaurant');
- life.assignJobs([],()=>[]);for(let frame=0;frame<20*150;frame++)life.update(.05,true);assert.ok(life.residents.every(r=>r.mode==='sleeping'),JSON.stringify(life.residents.map((r,i)=>({r,p:traffic.people[i]}))));
+ life.assignJobs([],(p,to)=>roadRoute(e.connectedRoads,nearest(p),to));for(let frame=0;frame<20*150;frame++)life.update(.05,true);assert.ok(life.residents.every(r=>r.mode==='sleeping'),JSON.stringify(life.residents.map((r,i)=>({r,p:traffic.people[i]}))));assert.ok([...life.portals.values()].every(d=>d.occupant===undefined&&d.busy===null&&d.open===0));
 });
 
 test('recipe batches debit their own ingredients exactly once, including a queued recipe change',()=>{
