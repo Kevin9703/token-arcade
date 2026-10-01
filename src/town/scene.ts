@@ -372,6 +372,18 @@ export class TownScene {
       el.textContent=!sleep&&label.startsWith('烘焙中')&&(!worker||this.life!.residents[worker[0]].path.length)?'等待邻居到炉边 · 烘焙耗时 3 秒':label;
     });
   }
+  // Position freshly rendered HUD bubbles before their first paint as well as during camera motion.
+  positionHomeBubbles(root: ParentNode = document): void {
+    this.camera.updateMatrixWorld();
+    root.querySelectorAll<HTMLElement>('[data-home-need]').forEach(el => {
+      const b = this.board?.buildings.find(b => b.id === el.dataset.homeNeed);
+      if (!b?.placed) { el.style.visibility = 'hidden'; return; }
+      const d = dimensions(b), p = new T.Vector3(b.x + d.w / 2, 2.5, b.z + d.d / 2).project(this.camera);
+      const x = (p.x + 1) * this.canvas.clientWidth / 2, y = (1 - p.y) * this.canvas.clientHeight / 2;
+      el.style.transform = `translate(${x}px,${y}px) translate(-50%,-100%)`;
+      el.style.visibility = p.z > 1 || x < 10 || x > this.canvas.clientWidth - 10 || y < 90 || y > this.canvas.clientHeight - 100 ? 'hidden' : 'visible';
+    });
+  }
   celebrate(type: 'coin' | 'building' | 'chapter', cell?: Cell): void {
     if (!this.board || this.reduced) return;
     const hall = this.board.buildings.find(b => b.kind === 'hall')!; const p = cell || { x: hall.x + 1.5, z: hall.z + 1.5 };
@@ -432,13 +444,7 @@ export class TownScene {
       for (const puff of [...this.smoke.children] as T.Mesh[]) { puff.userData.life += dt; puff.position.y += dt * .26; puff.position.x += dt * .12; puff.scale.setScalar(1 + puff.userData.life * .6); (puff.material as T.MeshBasicMaterial).opacity = Math.max(0, .45 - puff.userData.life * .14); if (puff.userData.life > 3.2) { this.smoke.remove(puff); puff.geometry.dispose(); (puff.material as T.Material).dispose(); } }
     }
     this.renderer.render(this.scene, this.camera);
-    document.querySelectorAll<HTMLElement>('[data-home-need]').forEach(el=>{
-      const b=this.board?.buildings.find(b=>b.id===el.dataset.homeNeed);if(!b)return;
-      const d=dimensions(b),p=new T.Vector3(b.x+d.w/2,2.5,b.z+d.d/2).project(this.camera);
-      const x=(p.x+1)*this.canvas.clientWidth/2,y=(1-p.y)*this.canvas.clientHeight/2;
-      el.style.transform=`translate(${x}px,${y}px) translate(-50%,-100%)`;
-      el.style.visibility=p.z>1||x<10||x>this.canvas.clientWidth-10||y<90||y>this.canvas.clientHeight-100?'hidden':'visible';
-    });
+    this.positionHomeBubbles();
     this.events.rendered?.(time);
     this.canvas.dataset.cameraAngle = String(Math.round(Math.atan2(this.camera.position.x - this.controls.target.x, this.camera.position.z - this.controls.target.z) * 1800 / Math.PI) / 10);
     this.canvas.dataset.cameraElevation = String(Math.round(this.elevation() * 1800 / Math.PI) / 10); this.canvas.dataset.cameraZoom = this.camera.zoom.toFixed(4);

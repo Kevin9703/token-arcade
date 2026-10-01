@@ -111,3 +111,12 @@ GitHub 的 main README 已检查：动图加载、完整视频播放器可展开
 | [新增建筑前面](../art/qa/village-assets-front.png) / [后面](../art/qa/village-assets-back.png) | 饭馆、菜地、温室、牛棚、猪圈和钓鱼小屋结构 |
 | [桥面脚底](../art/qa/bridge-contact-check.png) | 实际桥上脚底接触 |
 | [项目工坊说明](../art/qa/project-workshops-explained.png) | 四款外观与项目用途 |
+
+
+## 2026-10-01：屋顶气泡不再重复飞入
+
+原因是气泡继承全局按钮的 150 ms `transform` 过渡；界面重建后从默认位置滑向屋顶。气泡现在只过渡背景和颜色，未定位前隐藏；HUD 更新后同步投影，镜头动画帧复用同一定位函数。
+
+在独立 `127.0.0.1:4180` 虚构城镇、1512 × 828 CSS 视口验证：连续点击委托、农事、邻里、图鉴、铺路、浏览，四栋住宅气泡最大位移为 0；建设目录打开后坐标也保持。缩放和平移后，实际屏幕坐标与屋顶投影误差小于 0.001 CSS 像素，没有 CSS 位移插值。屏幕外气泡保持隐藏，需求图标仍可点击。800 金币与用户原存档保持；浏览器错误和警告日志为空。
+
+`npm run typecheck`、`npm test`（240 通过 / 0 失败）、`npm run build` 全部通过。[屋顶气泡验收图](../art/qa/roof-bubbles-stable.png)。

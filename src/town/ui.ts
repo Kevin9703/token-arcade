@@ -127,6 +127,7 @@ export class TownUI {
     const focusSetting=(document.activeElement as HTMLElement|null)?.dataset.setting;
     const board = this.store.board; this.scene.setWorld(this.store.state, board, this.e);
     this.root.innerHTML = `${this.header()}${this.homeBubbles()}${this.currentGoal()}${this.onboarding()}${this.toolbar()}${this.toolRibbon()}${this.cameraControls()}${this.panel ? this.panelHTML() : ''}<div id="town-toast" class="${Date.now() < this.toastUntil ? 'visible' : ''}" role="status" aria-live="polite">${Date.now() < this.toastUntil ? `${icon('Sparkles')}<span>${escapeHTML(this.toastMessage)}</span>` : ''}</div>${this.store.persistenceError || this.notice ? `<div class="save-notice" role="alert">${escapeHTML(this.store.persistenceError || this.notice)}</div>` : ''}`;
+    this.scene.positionHomeBubbles(this.root);
     this.scene.select(this.selectedId); this.onHover(this.hoverCell);
     const nextPanel=this.root.querySelector('.town-panel');if(nextPanel&&nextPanel.getAttribute('aria-label')===panelName){const content=nextPanel.querySelector('.panel-content');if(content)content.scrollTop=scroll;if(focusSetting)this.root.querySelector<HTMLElement>(`[data-setting="${focusSetting}"]`)?.focus({preventScroll:true});}
   }
