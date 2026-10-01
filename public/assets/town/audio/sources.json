@@ -10,12 +10,22 @@
   },
   {
     "season": "summer",
+    "title": "Clear Air",
+    "artist": "Kevin MacLeod",
+    "license": "CC BY 4.0",
+    "source": "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Clear%20Air.mp3",
+    "sha256": "670811ea9df5186d89161075dd20567c420fdea1cec3f28766dda575accdec8a",
+    "changes": "Normalized to -20 LUFS, two-second fade-in, transcoded to MP3 96kbps"
+  },
+  {
+    "season": "archived",
     "title": "Carefree",
     "artist": "Kevin MacLeod",
     "license": "CC BY 4.0",
     "source": "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Carefree.mp3",
     "sha256": "1f22eb0ce18bc1c2b147095ac3a55fa88c9fd7b7a52584353832fcc7a69f00f6",
-    "changes": "Normalized to -20 LUFS, two-second fade-in, transcoded to MP3 96kbps"
+    "changes": "Normalized to -20 LUFS, two-second fade-in, transcoded to MP3 96kbps",
+    "purpose": "Previous summer theme retained for reproducible historical promo editing"
   },
   {
     "season": "autumn",

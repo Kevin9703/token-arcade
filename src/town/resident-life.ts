@@ -1,6 +1,6 @@
 import { PedestrianTraffic, samplePatrol, type WalkPoint, type PatrolTrack } from './pedestrians';
 import type { Building } from './types';
-import { dimensions } from './world';
+import { dimensions, entrance } from './world';
 import type { FarmJob } from './farming';
 export interface Home {id:string; outside:WalkPoint; inside:WalkPoint; yaw:number}
 export function homeForBuilding(b:Building):Home {
@@ -9,7 +9,13 @@ export function homeForBuilding(b:Building):Home {
   return {id:b.id,outside:point(hall?0:.18,hall?1.78:1.32),inside:point(hall?0:.18,hall?.91:.65),yaw};
 }
 export interface ResidentSeat {id?:string; position:WalkPoint; via:WalkPoint; yaw:number; y:number}
-export interface VisitPlace {id:string; position:WalkPoint; target?:WalkPoint}
+export interface VisitPlace {id:string; position:WalkPoint; target?:WalkPoint; homeId?:string}
+export function doorstepPlace(b: Building): VisitPlace {
+  const h = homeForBuilding(b), p = entrance(b), yaw = h.yaw;
+  // Stand beside the doorway, off the walking lane and the overnight entrance.
+  return { id:`doorstep-${b.id}`, homeId:b.id, position:{x:p.x+.5,z:p.z+.5},
+    target:{x:h.outside.x-.80*Math.cos(yaw)-.24*Math.sin(yaw),z:h.outside.z+.80*Math.sin(yaw)-.24*Math.cos(yaw)} };
+}
 type Activity='visiting'|'lingering'|'walking'|'working'|'going-home'|'approaching'|'entering'|'sleeping'|'opening-out'|'leaving'|'joining'|'seated'|'standing'|'going-seat'|'sitting';
 export interface ResidentActivity {mode:Activity; visible:boolean; home:number; seat?:ResidentSeat; path:WalkPoint[]; wait:number; travelled:number; seated:boolean; joinArc?:number; nextVisit:number; visitId?:string}
 interface HouseDoor extends Home {exit:number; open:number; busy:number|null}
@@ -31,8 +37,9 @@ export class ResidentLife {
   private random():number {this.randomSeed=(Math.imul(this.randomSeed,1664525)+1013904223)>>>0;return this.randomSeed/4294967296;}
   setPlaces(places:VisitPlace[],pavement:Set<string>):void {
     const roadsChanged=this.pavement.size!==pavement.size||[...this.pavement].some(p=>!pavement.has(p));
+    const moved = new Set(places.filter(p=>{const old=this.places.find(v=>v.id===p.id);return old&&(distance(old.position,p.position)>.01||distance(old.target||old.position,p.target||p.position)>.01);}).map(p=>p.id));
     const festival=places.filter(p=>p.id.startsWith('festival-'));if(festival.length&&!this.places.some(p=>p.id.startsWith('festival-')))for(const r of this.residents)r.nextVisit=Math.min(r.nextVisit,3);this.places=festival.length?festival:places;this.pavement=pavement;
-    for(const r of this.residents)if(r.visitId&&(roadsChanged||!places.some(p=>p.id===r.visitId))){r.mode='joining';r.path=[];r.joinArc=undefined;r.visitId=undefined;}
+    for(const r of this.residents)if(r.visitId&&(roadsChanged||moved.has(r.visitId)||!places.some(p=>p.id===r.visitId))){r.mode='joining';r.path=[];r.joinArc=undefined;r.visitId=undefined;}
   }
   private workRoute?: (from:WalkPoint,to:WalkPoint)=>WalkPoint[];
   assignJobs(jobs:FarmJob[], route:(from:WalkPoint,to:WalkPoint)=>WalkPoint[]):void {
@@ -79,8 +86,9 @@ export class ResidentLife {
       if(['visiting','lingering'].includes(r.mode)&&sleep){r.mode='joining';r.path=[];r.joinArc=undefined;r.visitId=undefined;}
       if(r.mode==='walking'&&!sleep&&!r.seat&&!this.jobs.has(i)&&!r.nextVisit&&this.workRoute){
         const taken=new Set(this.residents.map(v=>v.visitId).filter(Boolean));
-        const candidates=this.places.filter(v=>!taken.has(v.id)&&distance(p,v.position)>.8);
-        if(candidates.length&&taken.size<3&&!this.residents.some(v=>v.mode==='visiting')){const place=candidates[Math.floor(this.random()*candidates.length)],path=this.workRoute(p,place.position);
+        const candidates=this.places.filter(v=>!taken.has(v.id)&&distance(p,v.position)>.8&&(!v.homeId||this.doors.find(d=>d.id===v.homeId)?.busy===null));
+        const ownPorch = h ? candidates.find(v=>v.homeId===h.id) : undefined;
+        if(candidates.length&&taken.size<3&&!this.residents.some(v=>v.mode==='visiting')){const place=ownPorch&&this.random()<.65?ownPorch:candidates[Math.floor(this.random()*candidates.length)],path=this.workRoute(p,place.position);
           if(path.length){r.visitId=place.id;r.mode='visiting';r.path=[...path,place.target||place.position];p.active=false;p.speed=0;}}
         r.nextVisit=20+this.random()*35;
       }
@@ -132,7 +140,7 @@ export class ResidentLife {
         if(distance(p,target)<=((r.mode==='working'||r.mode==='visiting'||r.mode==='approaching'&&r.path.length>1)?(r.path.length>1?.20:.12):.00011))r.path.shift();
       }
       if(r.path.length)return;
-      if(r.mode==='visiting'){r.mode='lingering';r.wait=r.visitId?.startsWith('festival-')?20+this.random()*8:4+this.random()*8;}
+      if(r.mode==='visiting'){r.mode='lingering';r.wait=r.visitId?.startsWith('festival-')?20+this.random()*8:r.visitId?.startsWith('doorstep-')?10+this.random()*14:4+this.random()*8;}
       else if(r.mode==='lingering'&&!r.wait){r.mode='joining';r.visitId=undefined;r.joinArc=undefined;}
 
       if(r.mode==='approaching'&&h.open>=.99){r.mode='entering';r.path=[h.inside];}

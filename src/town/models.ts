@@ -163,6 +163,7 @@ function retailBuilding(g:T.Group,kind:'bakery'|'cafe'|'grocer'|'florist',varian
     roof(g,1.62,1.35,1.3,['#ad6448','#967b58','#737f72','#aa8259'][variant%4]);
     // A brick oven wing and broad chimney make the bakery squat and asymmetric.
     box(g,.70,.56,-.26,.37,.82,1.01,'#b68a6b');box(g,.68,1.38,-.46,.28,1.22,.29,'#a78066');for(let y=.9;y<1.9;y+=.14)box(g,.68,y,-.612,.29,.022,.027,'#d6b394');box(g,.68,2.04,-.46,.38,.12,.37,'#7c7062');
+    const smoke = new T.Group(); smoke.name = 'smoke-emitter'; smoke.userData.movingPart = true; smoke.position.set(.68, 2.12, -.46); g.add(smoke);
     for(let i=0;i<6;i++){const m=box(g,-.22+(i-2.5)*.20,1.06,.79,.194,.07,.53,i%2?'#ede0c0':'#bb874c');m.rotation.x=.17;box(g,-.22+(i-2.5)*.2,.98,1.06,.19,.12,.035,i%2?'#ede0c0':'#bb874c');}
     box(g,-.36,.43,.88,.85,.07,.32,'#95744e');for(let i=0;i<4;i++){const loaf=cylinder(g,-.65+i*.18,.52,.88,.082,.10,'#c99a60');loaf.scale.z=.65;box(g,-.65+i*.18,.576,.88,.018,.012,.08,'#ead2a2');}
     const back=new T.Group();back.rotation.y=Math.PI;g.add(back);archedWindow(back,.28,.43,.775,.55,.52);box(back,-.50,.29,.79,.32,.24,.24,'#927956');for(let i=0;i<3;i++)box(back,-.51+i*.085,.39,.79,.04,.035,.22,'#bea779');
@@ -330,7 +331,17 @@ export function buildingModel(kind: BuildingKind, variant = 0, stage = 0): T.Gro
     for (let i = 0; i < 3; i++) box(g, 0, .23 + i * .12, .1, 2.1 - i * .25, .15, 2.1 - i * .25, '#b9b099');
     box(g, 0, 1.75, 0, 1.17, 2.8, 1.17, '#d4c6a5');
     for (let y = .6; y < 3; y += .28) box(g, 0, y, .592, 1.19, .025, .04, '#c1b495');
-    for (let i = 0; i < 4; i++) { const f = new T.Group(); f.rotation.y = i * Math.PI / 2; g.add(f); cylinder(f, 0, 2.64, .64, .37, .07, '#f2e4b9').rotation.x = Math.PI / 2; box(f, 0, 2.72, .7, .035, .2, .035, palette.iron); box(f, .1, 2.64, .7, .23, .035, .03, palette.iron); }
+    for (let i = 0; i < 4; i++) {
+      const f = new T.Group(); f.rotation.y = i * Math.PI / 2; g.add(f);
+      cylinder(f, 0, 2.64, .64, .37, .07, '#f2e4b9').rotation.x = Math.PI / 2;
+      for (const hand of ['hour', 'minute'] as const) {
+        const pivot = new T.Group(); pivot.name = `clock-${hand}-${i}`; pivot.userData.movingPart = true;
+        pivot.position.set(0, 2.64, hand === 'hour' ? .7 : .73); f.add(pivot);
+        const length = hand === 'hour' ? .22 : .31;
+        box(pivot, 0, length / 2, 0, hand === 'hour' ? .045 : .027, length, .028, palette.iron);
+      }
+      cylinder(f, 0, 2.64, .76, .045, .025, '#a9894e').rotation.x = Math.PI / 2;
+    }
     roof(g, 1.6, 1.5, 3.23, ['#687b63', '#8a6867', '#728999', '#ba965c'][variant % 4]); cylinder(g, 0, 3.94, 0, .045, .5, '#bda262');
   } else if (kind === 'tree') g.add(treeModel(variant));
   else if (kind === 'bench') bench(g, ['#ab8352', '#869b7c', '#99a9b1', '#c5bca4'][variant % 4]);

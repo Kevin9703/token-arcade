@@ -2,7 +2,7 @@ import test from 'node:test';
 import {roadRoute} from '../../src/town/farming';
 import assert from 'node:assert/strict';
 import * as T from 'three';
-import { ResidentLife,homeForBuilding } from '../../src/town/resident-life';
+import { ResidentLife,homeForBuilding,doorstepPlace } from '../../src/town/resident-life';
 import { PedestrianTraffic,PERSONAL_SPACE } from '../../src/town/pedestrians';
 import { starterBoard,evaluate,dimensions,makeBuilding,entrance } from '../../src/town/world';
 import { buildingModel,packModel } from '../../src/town/models';
@@ -41,4 +41,17 @@ test('individual outings use different destinations, linger, survive road edits 
   assert.deepEqual(life.traffic.people.map(p=>({x:p.x,z:p.z})),before);
   for(let frame=0;frame<60*200;frame++)life.update(1/60,true);
   assert.ok(life.residents.every(r=>r.mode==='sleeping'),JSON.stringify(life.residents.map((r,i)=>({r,p:life.traffic.people[i],door:life.doors[r.home]}))));
+});
+
+test('neighbors rest beside home entrances, reserve distinct places, and return indoors at night',()=>{
+ const board=starterBoard();board.roads.push('6,17');const roads=evaluate(board).connectedRoads,life=fixture(),places=board.buildings.filter(b=>b.kind==='house').map(doorstepPlace);
+ life.setPlaces(places,roads);life.assignJobs([], (a,b)=>roadRoute(roads,a,b));let rested=0;
+ for(let frame=0;frame<60*180;frame++){
+  life.update(1/60,false);const staying=life.residents.filter(r=>r.mode==='lingering'&&r.visitId?.startsWith('doorstep-'));
+  assert.equal(new Set(staying.map(r=>r.visitId)).size,staying.length);
+  for(const r of staying){rested++;const i=life.residents.indexOf(r),p=life.traffic.people[i],target=places.find(v=>v.id===r.visitId)!.target!;assert.ok(Math.hypot(p.x-target.x,p.z-target.z)<.15);assert.ok(!p.active);assert.ok(r.wait<=24);}
+ }
+ assert.ok(rested>60,'at least a full second of stable doorstep rest');
+ const actors=[...life.traffic.people],positions=actors.map(p=>({x:p.x,z:p.z}));life.setPlaces(places.map(v=>({...v,target:{x:v.target!.x+.5,z:v.target!.z}})),roads);assert.deepEqual(actors.map(p=>({x:p.x,z:p.z})),positions);
+ for(let frame=0;frame<60*200;frame++)life.update(1/60,true);assert.ok(life.residents.every(r=>r.mode==='sleeping'));assert.ok(life.traffic.people.every((p,i)=>p===actors[i]));
 });

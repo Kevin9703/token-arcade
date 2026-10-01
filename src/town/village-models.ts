@@ -25,6 +25,7 @@ export function villageModel(g:T.Group,kind:BuildingKind,variant:number):void {
   windowFrame(g,1.20,.89,-.40,true);const left=new T.Group();left.rotation.y=-Math.PI/2;left.position.x=-1.20;g.add(left);windowFrame(left,0,.89,0);
   for(let z=-1.1;z<.35;z+=.27)box(g,1.18,.20,z,.08,.11,.23,'#b6a08a');
   box(g,0,.59,.5,.47,.90,.07,wood);box(g,0,1.2,.56,.85,.16,.05,color);cylinder(g,.92,1.8,-.94,.12,.80,'#a39982');
+  const smoke = new T.Group(); smoke.name = 'smoke-emitter'; smoke.userData.movingPart = true; smoke.position.set(.92,2.22,-.94); g.add(smoke);
   for(const x of [-.78,.78]){cylinder(g,x,.32,1.03,.27,.06,'#ab8861');for(const z of [.73,1.3])box(g,x,.14,z,.3,.22,.21,wood);cylinder(g,x,.38,1.03,.08,.025,'#ede2bb');}
   box(g,-1.18,.26,1.04,.20,.31,.23,'#a6825f');for(const z of [.90,1.13])cylinder(g,-1.18,.51,z,.09,.15,'#879e66');
   box(g,1.04,.41,-.58,.20,.45,.65,'#a79f8b');

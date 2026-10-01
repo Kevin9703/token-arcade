@@ -102,9 +102,11 @@ export class TownUI {
   private goalHTML(goals: Goal[]): string { return `<ul class="goal-list">${goals.map(g => `<li class="${g.met ? 'met' : ''}"><span class="goal-check">${icon(g.met ? 'Check' : 'Flag')}</span><span>${g.label}</span><small>${g.need > 1 ? `${Math.min(g.current, g.need)}/${g.need}` : g.met ? '完成' : '待完成'}</small></li>`).join('')}</ul>`; }
   private currentGoal(): string {
     const p = this.store.puzzle;
-    if (p) return `<aside class="goal-card puzzle-goal"><span class="small-label">${icon('Puzzle')} 免费规划关</span><h2>${p.title}</h2>${this.goalHTML(puzzleGoals(p, this.e))}<div class="goal-meta"><span>道路 <b>${this.e.roadCount}/${p.roadBudget}</b></span>${stars(puzzleStars(p, this.e))}</div>${button('claim-puzzle', '评定这个方案', 'Check', 'primary small', puzzleStars(p, this.e) <= (this.store.state.puzzleStars[p.id] || 0) ? 'disabled' : '')}<p class="quiet-note">使用固定库存，不消耗主城金币</p></aside>`;
+    if (this.store.state.settings.goalCollapsed) return `<aside class="goal-card goal-collapsed">${button('toggle-goal', '展开目标', 'Flag', 'secondary', 'aria-expanded="false"')}</aside>`;
+    const collapse = button('toggle-goal', '收起目标', 'X', 'icon-only', 'aria-expanded="true"');
+    if (p) return `<aside class="goal-card puzzle-goal"><div class="chapter-row"><span class="small-label">${icon('Puzzle')} 免费规划关</span>${collapse}</div><h2>${p.title}</h2>${this.goalHTML(puzzleGoals(p, this.e))}<div class="goal-meta"><span>道路 <b>${this.e.roadCount}/${p.roadBudget}</b></span>${stars(puzzleStars(p, this.e))}</div>${button('claim-puzzle', '评定这个方案', 'Check', 'primary small', puzzleStars(p, this.e) <= (this.store.state.puzzleStars[p.id] || 0) ? 'disabled' : '')}<p class="quiet-note">使用固定库存，不消耗主城金币</p></aside>`;
     const completed = this.store.state.chapterStars.every(n => n > 0), ch = activeChapter(this.store.state), c = CHAPTERS[ch - 1], goals = chapterGoals(ch, this.e);
-    return `<aside class="goal-card"><div class="chapter-row"><span class="small-label">${icon('Flag')} ${completed ? '自由发展' : `第 ${ch} 章 / 6`}</span>${button('quests', '查看委托', 'ArrowUpRight', 'icon-only')}</div><h2>${completed ? '这就是我们的河谷' : c.title}</h2>${completed ? '<p>继续建造、挑战三星，给每个项目留一个好位置。</p>' : this.goalHTML(goals.base)}<div class="chapter-progress">${[1, 2, 3, 4, 5, 6].map(i => `<span class="${this.store.state.chapterStars[i - 1] ? 'done' : i === ch ? 'current' : ''}"></span>`).join('')}</div>${!completed && starsForChapter(ch, this.e) > this.store.state.chapterStars[ch - 1] ? button('claim-current', '完成委托', 'Check', 'primary small') : `<p class="quiet-note">${this.e.population} 位邻居 · ${this.e.food} 栋住宅获得食物</p><p class="goal-hint">${completed?'':progressHint(ch, this.store.board, this.e)}</p>`}</aside>`;
+    return `<aside class="goal-card"><div class="chapter-row"><span class="small-label">${icon('Flag')} ${completed ? '自由发展' : `第 ${ch} 章 / 6`}</span>${button('quests', '查看委托', 'ArrowUpRight', 'icon-only')}${collapse}</div><h2>${completed ? '这就是我们的河谷' : c.title}</h2>${completed ? '<p>继续建造、挑战三星，给每个项目留一个好位置。</p>' : this.goalHTML(goals.base)}<div class="chapter-progress">${[1, 2, 3, 4, 5, 6].map(i => `<span class="${this.store.state.chapterStars[i - 1] ? 'done' : i === ch ? 'current' : ''}"></span>`).join('')}</div>${!completed && starsForChapter(ch, this.e) > this.store.state.chapterStars[ch - 1] ? button('claim-current', '完成委托', 'Check', 'primary small') : `<p class="quiet-note">${this.e.population} 位邻居 · ${this.e.food} 栋住宅获得食物</p><p class="goal-hint">${completed?'':progressHint(ch, this.store.board, this.e)}</p>`}</aside>`;
   }
   private onboarding(): string {
     if (this.store.state.tutorialDone || this.store.activePuzzle) return '';
@@ -228,6 +230,7 @@ export class TownUI {
   private async action(action: string, _button: HTMLButtonElement): Promise<void> {
     const [command, value] = action.split(':');
     switch (command) {
+      case 'toggle-goal': this.store.updateSettings({goalCollapsed:!this.store.state.settings.goalCollapsed}); return;
       case 'inspect': this.resetTool(); this.panel = null; break;
       case 'build': this.panel = this.store.activePuzzle ? 'inventory' : 'build'; break;
       case 'build-homes': this.category = 'homes'; this.panel = 'build'; break;

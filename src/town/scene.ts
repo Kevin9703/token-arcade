@@ -14,11 +14,12 @@ import { PedestrianTraffic, walkingPose } from './pedestrians';
 import { stoneRoads } from './roads';
 import { worldTime } from './world-time';
 import { SeasonPalette } from './seasons';
-import { ResidentLife, homeForBuilding, type ResidentSeat } from './resident-life';
+import { ResidentLife, homeForBuilding, doorstepPlace, type ResidentSeat } from './resident-life';
 import { farmChains, farmDuration, tickFarm, roadRoute, FARM_LABELS, bakeryMaterialLabel, type FarmChain } from './farming';
 import { SeasonalMusic } from './music';
 import { keyboardPanDistance } from './keyboard-input';
 import { walkSurface, BUILDING_GROUND_Y } from './walk-surface';
+import { updateClockHands, smokeOrigin } from './building-effects';
 import type { Board, BuildingKind, Cell, Evaluation, TownState } from './types';
 
 export type Tool = 'inspect' | 'road' | 'erase' | 'place' | 'move';
@@ -317,6 +318,7 @@ export class TownScene {
   private environment(dt:number,time:number):void {
     if(!this.state)return;const s=this.state;if(s.settings.clockMode==='cycle')s.worldSeconds+=dt;
     const clock=worldTime(s.worldSeconds,s.settings),blend=1-Math.exp(-dt*2);
+    for (const b of this.board!.buildings) if (b.placed && b.kind === 'clock') updateClockHands(this.buildingMeshes.get(b.id)!, clock.hour);
     this.music.update(clock.season,s.settings,dt);
     this.sun.color.lerp(new T.Color('#9fb9d2').lerp(new T.Color('#fff2d6'),clock.daylight).lerp(new T.Color('#ffb879'),clock.warmth*.65),blend);
     this.sun.intensity+=(.62+clock.daylight*2.88-this.sun.intensity)*blend;this.ambient.intensity+=(.75+clock.daylight*1.15-this.ambient.intensity)*blend;
@@ -335,8 +337,9 @@ export class TownScene {
     this.life?.assignJobs(jobs,(from,to)=>{const roads=this.evaluation!.connectedRoads;if(!roads.size)return [];const start=[...roads].map(k=>{const [x,z]=k.split(',').map(Number);return{x:x+.5,z:z+.5};}).sort((a,b)=>Math.hypot(a.x-from.x,a.z-from.z)-Math.hypot(b.x-from.x,b.z-from.z))[0];return roadRoute(roads,start,to);});
     const celebration=s.village.celebration>0;
     const places=this.board!.buildings.filter(b=>b.placed&&this.evaluation!.buildings[b.id]?.connected&&(CATALOG[b.kind].service||b.kind==='park')).map(b=>{const p=entrance(b),d=dimensions(b),position={x:p.x+.5,z:p.z+.5},dx=b.x+d.w/2-position.x,dz=b.z+d.d/2-position.z,l=Math.hypot(dx,dz);return{id:b.id,position,target:{x:position.x+dx/l*.48,z:position.z+dz/l*.48}};});
+    const homePlaces = this.board!.buildings.filter(b=>b.placed&&b.kind==='house'&&this.evaluation!.buildings[b.id]?.connected).map(doorstepPlace);
     if(celebration){const hall=this.board!.buildings.find(b=>b.kind==='hall')!,p=entrance(hall),d=dimensions(hall),position={x:p.x+.5,z:p.z+.5},dx=hall.x+d.w/2-position.x,dz=hall.z+d.d/2-position.z,l=Math.hypot(dx,dz);for(let i=0;i<3;i++)places.push({id:`festival-${i}`,position,target:{x:position.x+dx/l*.45-dz/l*(i-1)*.65,z:position.z+dz/l*.45+dx/l*(i-1)*.65}});}
-    this.life?.setPlaces(places,this.evaluation!.connectedRoads);
+    this.life?.setPlaces([...places,...homePlaces],this.evaluation!.connectedRoads);
     this.life?.update(dt,clock.sleep);
     for(const chain of this.farms){const run=s.farm.runs[chain.field.id],crop=this.buildingMeshes.get(chain.field.id)?.getObjectByName('crop-patch');if(crop){const growth=run?.phase==='growing'?Math.min(1,run.elapsed/farmDuration(chain,'growing',clock.season)):run?.phase==='sowing'?.12:run?.phase==='harvesting'?1:.06;crop.scale.y=.12+growth*.88;}if(chain.mill){const fan=this.buildingMeshes.get(chain.mill.id)?.getObjectByName('mill-fan');if(fan&&!this.reduced)fan.rotation.z+=dt*(run?.phase==='milling'&&!clock.sleep?1.2:.13);}}
     for(const b of this.board!.buildings.filter(b=>b.placed&&PRODUCTION_KINDS.includes(b.kind))){
@@ -356,8 +359,10 @@ export class TownScene {
     }
     if(time-this.clockTick>1000){this.clockTick=time;const save=time-this.clockSave>20000;if(save)this.clockSave=time;this.events.clock?.(s.worldSeconds,save);const label=document.getElementById('world-clock');if(label)label.textContent=clock.label;this.updateFarmLabels(clock.sleep);}
     this.canvas.dataset.village=JSON.stringify(s.village);this.canvas.dataset.workers=JSON.stringify([...(this.life?.jobs.entries()||[])].map(([i,j])=>({resident:i,id:j.fieldId,target:j.target,path:this.life!.residents[i].path.length,mode:this.life!.residents[i].mode})));
+    this.canvas.dataset.clockHands=JSON.stringify(this.board!.buildings.filter(b=>b.placed&&b.kind==='clock').map(b=>({id:b.id,hour:this.buildingMeshes.get(b.id)?.getObjectByName('clock-hour-0')?.rotation.z,minute:this.buildingMeshes.get(b.id)?.getObjectByName('clock-minute-0')?.rotation.z})));
+    this.canvas.dataset.smokeSources=JSON.stringify(this.board!.buildings.filter(b=>b.placed&&['bakery','restaurant'].includes(b.kind)).map(b=>({id:b.id,origin:smokeOrigin(this.buildingMeshes.get(b.id)!)?.toArray()})));
     this.canvas.dataset.worldHour=clock.hour.toFixed(2);this.canvas.dataset.season=clock.season;this.canvas.dataset.residentActivities=JSON.stringify(this.life?.residents.map(r=>r.mode)||[]);this.canvas.dataset.doorAngles=JSON.stringify(this.life?.doors.map(h=>({id:h.id,open:+h.open.toFixed(2)}))||[]);
-    this.canvas.dataset.farm=JSON.stringify(s.farm);this.canvas.dataset.residents=JSON.stringify(this.traffic?.people.map((p,i)=>({id:i,x:+p.x.toFixed(3),z:+p.z.toFixed(3),y:+this.walkers[i].group.position.y.toFixed(3),travelled:+p.totalTravelled.toFixed(3)}))||[]);
+    this.canvas.dataset.farm=JSON.stringify(s.farm);this.canvas.dataset.residents=JSON.stringify(this.traffic?.people.map((p,i)=>({id:i,x:+p.x.toFixed(3),z:+p.z.toFixed(3),y:+this.walkers[i].group.position.y.toFixed(3),travelled:+p.totalTravelled.toFixed(3),visit:this.life!.residents[i].visitId,wait:+this.life!.residents[i].wait.toFixed(1)}))||[]);
   }
   private updateFarmLabels(sleep:boolean):void {
     if(!this.state)return;for(const good of ['wheat','flour','bread'] as const)document.querySelectorAll(`[data-farm-stock="${good}"]`).forEach(el=>el.textContent=String(this.state!.farm[good]));
@@ -439,7 +444,7 @@ export class TownScene {
       for (const p of this.particles) { p.life += dt; p.velocity.y -= dt * 2.4; p.mesh.position.addScaledVector(p.velocity, dt); p.mesh.rotation.x += dt * 3; p.mesh.rotation.z += dt * 2; p.mesh.scale.setScalar(Math.max(0, 1 - Math.max(0, p.life / p.duration - .6) * 2.5)); }
       this.particles = this.particles.filter(p => { if (p.life < p.duration && p.mesh.position.y > -.1) return true; this.scene.remove(p.mesh); p.mesh.geometry.dispose(); return false; });
       if (Math.random() < dt * 2 && this.board) {
-        for(const kitchen of this.board.buildings.filter(b=>b.placed&&['bakery','restaurant'].includes(b.kind))){ const pos = this.buildingMeshes.get(kitchen.id)!.localToWorld(kitchen.kind==='bakery'?new T.Vector3(-.52, 2.16, -.44):new T.Vector3(.92,2.21,-.94)); const puff = new T.Mesh(new T.IcosahedronGeometry(.06, 0), new T.MeshBasicMaterial({ color: '#e7e7d6', transparent: true, opacity: .45, depthWrite: false })); puff.position.copy(pos); this.smoke.add(puff); puff.userData.life = 0; }
+        for(const kitchen of this.board.buildings.filter(b=>b.placed&&['bakery','restaurant'].includes(b.kind))){ const pos = smokeOrigin(this.buildingMeshes.get(kitchen.id)!); if (!pos) continue; const puff = new T.Mesh(new T.IcosahedronGeometry(.06, 0), new T.MeshBasicMaterial({ color: '#e7e7d6', transparent: true, opacity: .45, depthWrite: false })); puff.position.copy(pos); this.smoke.add(puff); puff.userData.life = 0; }
       }
       for (const puff of [...this.smoke.children] as T.Mesh[]) { puff.userData.life += dt; puff.position.y += dt * .26; puff.position.x += dt * .12; puff.scale.setScalar(1 + puff.userData.life * .6); (puff.material as T.MeshBasicMaterial).opacity = Math.max(0, .45 - puff.userData.life * .14); if (puff.userData.life > 3.2) { this.smoke.remove(puff); puff.geometry.dispose(); (puff.material as T.Material).dispose(); } }
     }

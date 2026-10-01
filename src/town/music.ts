@@ -3,7 +3,7 @@ import type { TownState } from './types';
 
 export const SEASON_TRACKS: Record<Season, { title:string; source:string }> = {
   spring: { title:'Heartwarming', source:'./assets/town/audio/spring.mp3' },
-  summer: { title:'Carefree', source:'./assets/town/audio/summer.mp3' },
+  summer: { title:'Clear Air', source:'./assets/town/audio/summer-clear-air.mp3' },
   autumn: { title:'At Rest', source:'./assets/town/audio/autumn.mp3' },
   winter: { title:'Relaxing Piano Music', source:'./assets/town/audio/winter.mp3' },
 };
