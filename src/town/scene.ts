@@ -1,5 +1,5 @@
 import * as T from 'three';
-import {tickVillage,productionLabel,productionDuration,PRODUCTION_KINDS,stationRun,availableGoods,orderStatus,type Good} from './village';
+import {tickVillage,productionDuration,PRODUCTION_KINDS,stationRun,availableGoods,orderStatus,type Good} from './village';
 import {scheduledJobs} from './work-scheduler';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
@@ -22,7 +22,8 @@ import { walkSurface, BUILDING_GROUND_Y } from './walk-surface';
 import { updateClockHands, smokeOrigin } from './building-effects';
 import { describeResident, residentProfile, RESIDENT_COLORS, type ResidentInfo } from './resident-info';
 import { pickResident } from './resident-picking';
-import type { Board, BuildingKind, Cell, Evaluation, TownState } from './types';
+import { productionStatus, fishingView } from './production-feedback';
+import type { Board, Building, BuildingKind, Cell, Evaluation, TownState } from './types';
 
 export type Tool = 'inspect' | 'road' | 'erase' | 'place' | 'move';
 export interface SceneEvents { select(id: string | null): void; selectResident?(index: number): void; residentUpdated?(): void; cell(x: number, z: number): void; hover(cell: Cell | null): void; strokeEnd(): void; cancel(): void; assetsReady?(): void; clock?(seconds:number,save:boolean):void; rendered?(time:number):void }
@@ -212,6 +213,12 @@ export class TownScene {
   selectResident(index: number | null): void { this.residentSelection = index; if (index === null) this.residentHalo.visible = false; }
   residentInfo(index: number): ResidentInfo | null { return this.state && this.board && this.life ? describeResident(index, this.state, this.board, this.life) : null; }
   residentInfos(): ResidentInfo[] { return this.life?.residents.map((_,index)=>this.residentInfo(index)).filter((r):r is ResidentInfo=>r!==null) || []; }
+  productionStatus(b: Building): string {
+    if (!this.state || !this.evaluation) return '正在安排工作';
+    const clock=worldTime(this.state.worldSeconds,this.state.settings),worker=[...(this.life?.jobs.entries()||[])].find(([,j])=>j.fieldId.startsWith(`village-${b.id}-`));
+    const r=worker&&this.life!.residents[worker[0]],profile=worker&&residentProfile(worker[0]);
+    return productionStatus(this.state,this.evaluation,b,clock.season,clock.sleep,r&&profile?{name:profile.name,working:r.mode==='working',enRoute:r.path.length>0}:undefined);
+  }
   residentPortrait(index: number): string {
     const name = `resident-${index}`, cached = this.thumbnails.get(name); if (cached) return cached;
     const scene = new T.Scene(); scene.add(new T.HemisphereLight('#fff4db', '#879779', 3));
@@ -311,6 +318,12 @@ export class TownScene {
     this.pitchStep = DEFAULT_ELEVATION - this.elevation(); this.orbitStep = 0; this.panStep.set(0, 0);
   }
   overview(): void { if (!this.board) return; this.focusTarget = new T.Vector3(this.board.size / 2, 0, this.board.size / 2); this.zoomTarget = this.camera.right / this.camera.top < 1 ? .66 : .92; this.pitchStep = DEFAULT_ELEVATION - this.elevation(); this.orbitStep = 0; this.panStep.set(0, 0); }
+  viewFishing(id: string): void {
+    const b=this.board?.buildings.find(b=>b.id===id&&b.placed&&b.kind==='fishinghut'); if(!b)return;
+    const view=fishingView(b),offset=this.camera.position.clone().sub(this.controls.target),current=Math.atan2(offset.x,offset.z);
+    this.focus(view.target); this.zoomTarget=view.zoom;
+    this.orbitStep=Math.atan2(Math.sin(view.azimuth-current),Math.cos(view.azimuth-current)); this.pitchStep=view.elevation-this.elevation();
+  }
   rotate(direction: number): void {
     // A keyboard/screen-reader click gets a small smooth nudge, never a fixed view.
     this.orbitStep += direction * .16;
@@ -382,7 +395,7 @@ export class TownScene {
       const surface=walkSurface(this.board!.buildings,person);
       let height=surface.y+pose.bob;const h=this.life!.doors[r.home];if(h&&['entering','leaving','opening-out'].includes(r.mode))height+=.12*Math.min(1,Math.hypot(person.x-h.outside.x,person.z-h.outside.z)/.50);
       w.group.position.set(r.seated?person.x:surface.x,r.seated?r.seat!.y:height,r.seated?person.z:surface.z);w.group.rotation.y=person.angle;
-      const job=this.life!.jobs.get(index),working=r.mode==='working';const rod=w.group.getObjectByName('fishing-rod')!;rod.visible=working&&job?.phase==='harvesting'&&jobFishing(job?.fieldId,this.board!)&&!r.path.length;if(rod.visible&&!this.reduced)rod.rotation.x=Math.sin(time*.002)*.035;w.cargo.visible=working&&Boolean(job?.carrying);w.cargo.children.forEach(o=>{if(o instanceof T.Mesh)o.material=material(job?.carrying==='flour'?'#e9dfc1':job?.carrying==='fish'?'#87b8b2':job?.carrying==='carrot'?'#cb925d':job?.carrying==='milk'?'#ebe3cb':'#c8a769');});
+      const job=this.life!.jobs.get(index),working=r.mode==='working';const rod=w.group.getObjectByName('fishing-rod')!;rod.visible=working&&job?.harvesting===true&&job.phase==='harvesting'&&jobFishing(job?.fieldId,this.board!)&&!r.path.length;if(rod.visible&&!this.reduced)rod.rotation.x=Math.sin(time*.002)*.035;w.cargo.visible=working&&Boolean(job?.carrying);w.cargo.children.forEach(o=>{if(o instanceof T.Mesh)o.material=material(job?.carrying==='flour'?'#e9dfc1':job?.carrying==='fish'?'#87b8b2':job?.carrying==='carrot'?'#cb925d':job?.carrying==='milk'?'#ebe3cb':'#c8a769');});
       w.limbs.forEach((limb,i)=>{const target=i>=2&&working&&job?.carrying?-.85:i>=2&&working&&job?.harvesting&&!r.path.length&&!this.reduced?-.45+Math.sin(time*.004+index)*.3:(i<2?pose.leg:pose.arm)*(i%2?-1:1);limb.rotation.x+=(target-limb.rotation.x)*(1-Math.exp(-dt*16));});
     }
     const selected = this.residentSelection === null ? undefined : this.walkers[this.residentSelection]; this.residentHalo.visible = Boolean(selected?.group.visible);
@@ -397,7 +410,7 @@ export class TownScene {
   private updateFarmLabels(sleep:boolean):void {
     if(!this.state)return;for(const good of ['wheat','flour','bread'] as const)document.querySelectorAll(`[data-farm-stock="${good}"]`).forEach(el=>el.textContent=String(this.state!.farm[good]));
     for(const chain of this.farms){const run=this.state.farm.runs[chain.field.id];document.querySelectorAll('[data-farm-field]').forEach(el=>{if((el as HTMLElement).dataset.farmField===chain.field.id)el.textContent=chain.problem|| (sleep?'邻居休息中 · 清晨继续':run?FARM_LABELS[run.phase]:'准备播种');});}
-    document.querySelectorAll<HTMLElement>('[data-village-station]').forEach(el=>{const b=this.state!.town.buildings.find(b=>b.id===el.dataset.villageStation);if(b){const label=productionLabel(this.state!,this.evaluation!,b,worldTime(this.state!.worldSeconds,this.state!.settings).season,sleep),worker=[...(this.life?.jobs.entries()||[])].find(([,j])=>j.fieldId.startsWith(`village-${b.id}-`));el.textContent=!sleep&&!label.includes('缺少')&&!label.includes('暂停')&&!label.includes('冬季')?(worker?this.life!.residents[worker[0]].path.length?'邻居正在前往 · '+label:label:'等待空闲邻居 · '+label):label;}});
+    document.querySelectorAll<HTMLElement>('[data-village-station]').forEach(el=>{const b=this.state!.town.buildings.find(b=>b.id===el.dataset.villageStation);if(b)el.textContent=this.productionStatus(b);});
     document.querySelectorAll<HTMLElement>('[data-village-stock]').forEach(el=>{const [id,good]=el.dataset.villageStock!.split('|');el.textContent=String((this.state!.village.stock[id] as any)?.[good]||0);});
     document.querySelectorAll<HTMLElement>('[data-order-stock]').forEach(el=>{const available=availableGoods(this.state!,this.evaluation!);el.textContent=String(available[el.dataset.orderStock as Good]||0);});
     document.querySelectorAll<HTMLElement>('[data-order-status]').forEach(el=>{el.textContent=orderStatus(this.state!,this.evaluation!,el.dataset.orderStatus!,worldTime(this.state!.worldSeconds,this.state!.settings).season)||'材料齐了，可以邀请邻居分享！';});

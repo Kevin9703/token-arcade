@@ -61,6 +61,11 @@ export function completeOrder(s:TownState,e:Evaluation,id:string,season:Season):
   for(const station of Object.keys(s.village.stock).sort()){if(!e.buildings[station]?.connected)continue;const basket=s.village.stock[station],take=Math.min(left,basket[good as Good]||0);basket[good as Good]=(basket[good as Good]||0)-take;left-=take;if(!left)break;}}
  s.village.completed[id]=(s.village.completed[id]||0)+1;s.village.activeOrder=null;s.village.celebration=60;return '';
 }
+function fishReceiver(s:TownState,e:Evaluation,b:Building):Building|undefined {
+ const p=entrance(b),dist=pathDistances(e.connectedRoads,key(p.x,p.z));
+ return s.town.buildings.filter(d=>d.placed&&d.kind==='restaurant'&&e.buildings[d.id]?.connected&&(s.village.stock[d.id]?.fish||0)<12)
+  .sort((a,b)=>(dist.get(key(entrance(a).x,entrance(a).z))??Infinity)-(dist.get(key(entrance(b).x,entrance(b).z))??Infinity)||a.id.localeCompare(b.id))[0];
+}
 export function stationProblem(s:TownState,e:Evaluation,b:Building,season:Season):string {
  if(!b.placed)return '已收纳，保留库存和运输进度';
  if(!e.buildings[b.id]?.connected)return '入口未连到镇公所，生产与配送暂停';
@@ -74,7 +79,10 @@ export function stationProblem(s:TownState,e:Evaluation,b:Building,season:Season
   if(r.phase==='work'&&b.kind==='vegetablefield'&&season==='winter')return '冬季露地休耕：温室仍可种菜，现有作物进度保留';
   if(r.phase==='work'&&b.kind==='cowshed'&&r.choice==='cheese'&&!Object.keys(r.cargo).length&&(stock.milk||0)<1)return '缺少原材料：鲜奶（先选择鲜奶生产）';
   if(r.phase==='deliver'&&!e.buildings[r.destination]?.connected)return '配送目的地未连路，货物保留在村民手中';
-  if(r.phase==='work'&&!(b.kind==='cowshed'&&r.choice==='cheese')&&Object.values(stock).reduce((a,n)=>a+n,0)>=24)return '库存已满：接通饭馆或完成邻里订单';
+  if(r.phase==='work'&&!(b.kind==='cowshed'&&r.choice==='cheese')&&Object.values(stock).reduce((a,n)=>a+n,0)>=24){
+   if(b.kind==='fishinghut'){if(!fishReceiver(s,e,b))return '鲜鱼库存已满：接通饭馆并选择河谷炖鱼，消耗厨房里的鲜鱼';}
+   else return '库存已满：接通饭馆或完成邻里订单';
+  }
  }
  return '';
 }
@@ -86,6 +94,7 @@ export function productionLabel(s:TownState,e:Evaluation,b:Building,season:Seaso
  const problem=stationProblem(s,e,b,season);if(problem)return problem;if(sleep)return '邻居休息中 · 清晨继续';const r=stationRun(s.village,b);
  if(r.phase==='deliver')return `配送中：${Object.entries(r.cargo).map(([g,n])=>`${GOODS[g as Good]} ${n}`).join('、')} → ${CATALOG[s.town.buildings.find(b=>b.id===r.destination)!.kind].name}`;
  if(r.phase==='return')return '返回工作地点';
+ if(b.kind==='fishinghut'&&(s.village.stock[b.id]?.fish||0)>=24)return '准备把库存鲜鱼送往饭馆';
  const action=b.kind==='fishinghut'?'抛竿等待收鱼':b.kind==='cowshed'?(r.choice==='cheese'?'制作奶酪':'照料奶牛、挤奶'):b.kind==='pigpen'?'小猪寻松露':b.kind==='restaurant'?'烹饪料理':`种植${r.choice==='potato'?'土豆':'胡萝卜'}`;
  return `${action} · ${Math.round(Math.min(1,r.elapsed/productionDuration(b,r.choice,season))*100)}%`;
 }
@@ -96,7 +105,11 @@ export function tickVillage(s:TownState,e:Evaluation,dt:number,sleep:boolean,sea
  const stations=s.town.buildings.filter(b=>b.placed&&PRODUCTION_KINDS.includes(b.kind)).sort((a,b)=>a.id.localeCompare(b.id));
  for(const b of stations){const r=stationRun(v,b),stock=v.stock[b.id]||={};if(stationProblem(s,e,b,season))continue;
   const jobId=`village-${b.id}-${r.phase}`;
-  if(ready.has(jobId)){advanced=true;
+  const storedFish=b.kind==='fishinghut'&&r.phase==='work'&&(stock.fish||0)>=24,receiver=storedFish?fishReceiver(s,e,b):undefined;
+  if(ready.has(jobId)&&storedFish&&receiver){
+   const amount=Math.min(2,stock.fish||0,12-(v.stock[receiver.id]?.fish||0));stock.fish!-=amount;
+   r.cargo={fish:amount};r.destination=receiver.id;r.phase='deliver';r.elapsed=0;advanced=true;
+  }else if(ready.has(jobId)){advanced=true;
    if(b.kind==='restaurant'&&!Object.keys(r.cargo).length){const recipe=RECIPES.find(p=>p.id===r.choice)||RECIPES[0];r.recipe=recipe.id;r.cargo={...recipe.ingredients};for(const [g,n]of Object.entries(r.cargo))stock[g as Good]=(stock[g as Good]||0)-n;}
    if(b.kind==='cowshed'&&r.choice==='cheese'&&!Object.keys(r.cargo).length&&r.phase==='work'){stock.milk=(stock.milk||0)-1;r.cargo={milk:1};}
    r.elapsed+=Math.min(dt,1);
@@ -112,7 +125,7 @@ export function tickVillage(s:TownState,e:Evaluation,dt:number,sleep:boolean,sea
     }
    }
   }
-  jobs.push({fieldId:`village-${b.id}-${r.phase}`,cycles:r.cycles,phase:r.phase==='deliver'?'to-bakery':r.phase==='return'?'returning':'harvesting',target:r.phase==='deliver'?loadingSpot(s.town.buildings.find(b=>b.id===r.destination)!,b.id):stationSpot(b),entrance:r.phase==='deliver'?entry(s.town.buildings.find(b=>b.id===r.destination)!):entry(b),carrying:r.phase==='deliver'?Object.keys(r.cargo)[0] as Good:null,harvesting:r.phase==='work'});
+  jobs.push({fieldId:`village-${b.id}-${r.phase}`,cycles:r.cycles,phase:r.phase==='deliver'?'to-bakery':r.phase==='return'?'returning':'harvesting',target:r.phase==='deliver'?loadingSpot(s.town.buildings.find(b=>b.id===r.destination)!,b.id):stationSpot(b),entrance:r.phase==='deliver'?entry(s.town.buildings.find(b=>b.id===r.destination)!):entry(b),carrying:r.phase==='deliver'?Object.keys(r.cargo)[0] as Good:null,harvesting:r.phase==='work'&&!storedFish});
  }
  // Flour left over after the two units reserved for each bakery batch is transported to restaurants.
  for(const restaurant of stations.filter(b=>b.kind==='restaurant'&&e.buildings[b.id]?.connected)){

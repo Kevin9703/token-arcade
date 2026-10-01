@@ -1,4 +1,4 @@
-import {ORDERS,GOODS,RECIPES,PRODUCTION_KINDS,stationRun,availableGoods,orderStatus,productionLabel,type Good} from './village';
+import {ORDERS,GOODS,RECIPES,PRODUCTION_KINDS,stationRun,availableGoods,orderStatus,type Good} from './village';
 import {missingHomeNeeds} from './home-needs';
 import { farmChains, FARM_LABELS, bakeryMaterialLabel } from './farming';
 import { keyboardIntent, keyboardPan } from './keyboard-input';
@@ -241,9 +241,9 @@ export class TownUI {
     return `<h4>麦田到餐桌</h4><div class="production-status">${b.kind==='bakery'?`<span data-bakery-material="${escapeHTML(b.id)}">${bakeryMaterialLabel(b.id,chains,farm,worldTime(this.store.state.worldSeconds,this.store.state.settings).sleep)}</span>`:''}${chain?`<small data-farm-field="${escapeHTML(chain.field.id)}">${label}</small>`:'<small>布置麦田与风车磨坊，接通它们门前的道路。</small>'}</div>${button('production','查看农事流程','Wheat','text-button')}`;
   }
   private villageDetail(b:Building):string {
-    const s=this.store.state,r=stationRun(s.village,b),time=worldTime(s.worldSeconds,s.settings);
+    const s=this.store.state,r=stationRun(s.village,b);
     const options=b.kind==='restaurant'?RECIPES.map(p=>[p.id,p.name]):b.kind==='cowshed'?[['milk','鲜奶'],['cheese','奶酪（消耗 1 鲜奶）']]:['vegetablefield','greenhouse'].includes(b.kind)?[['carrot','胡萝卜 · 春季更快'],['potato','土豆 · 夏季更快']]:[];
-    return `<section class="village-detail"><p class="farm-status" data-village-station="${escapeHTML(b.id)}">${productionLabel(s,this.e,b,time.season,time.sleep)}</p>${options.length?`<label class="setting-row"><span>${b.kind==='restaurant'?'菜谱':'本次生产'}</span><select aria-label="${CATALOG[b.kind].name}生产选择" data-production="${escapeHTML(b.id)}">${options.map(([id,name])=>`<option value="${id}" ${(r.nextChoice||r.choice)===id?'selected':''}>${name}</option>`).join('')}</select></label>${r.nextChoice?'<small>当前批次完成后切换，原料不会浪费。</small>':''}`:''}${b.kind==='restaurant'?`<p class="panel-note">${RECIPES.map(p=>`${p.name}：${Object.entries(p.ingredients).map(([g,n])=>`${GOODS[g as Good]} ${n}`).join(' + ')} → 料理 2`).join('<br>')}</p>`:''}<div class="village-stocks">${Object.entries(GOODS).filter(([g])=>b.kind==='restaurant'?g!=='bread':b.kind==='cowshed'?['milk','cheese'].includes(g):b.kind==='pigpen'?g==='truffle':b.kind==='fishinghut'?g==='fish':['carrot','potato'].includes(g)).map(([g,name])=>`<span>${name} <b data-village-stock="${escapeHTML(b.id)}|${g}">${s.village.stock[b.id]?.[g as Good]||0}</b></span>`).join('')}</div><p class="panel-note">库存保存在这处设施；运输中的材料由村民携带。断路或夜晚会暂停，恢复后继续。</p></section>`;
+    return `<section class="village-detail">${b.kind==='fishinghut'?`${button(`view-fishing:${b.id}`,'看看码头','MapPin','secondary')}<p class="panel-note">码头在小屋朝河的一侧。钓鱼和务农轮班；夜间、断路或鲜鱼库存满时休息。河岸船屋只是装饰，不安排钓鱼。</p>`:''}<p class="farm-status" data-village-station="${escapeHTML(b.id)}">${this.scene.productionStatus(b)}</p>${options.length?`<label class="setting-row"><span>${b.kind==='restaurant'?'菜谱':'本次生产'}</span><select aria-label="${CATALOG[b.kind].name}生产选择" data-production="${escapeHTML(b.id)}">${options.map(([id,name])=>`<option value="${id}" ${(r.nextChoice||r.choice)===id?'selected':''}>${name}</option>`).join('')}</select></label>${r.nextChoice?'<small>当前批次完成后切换，原料不会浪费。</small>':''}`:''}${b.kind==='restaurant'?`<p class="panel-note">${RECIPES.map(p=>`${p.name}：${Object.entries(p.ingredients).map(([g,n])=>`${GOODS[g as Good]} ${n}`).join(' + ')} → 料理 2`).join('<br>')}</p>`:''}<div class="village-stocks">${Object.entries(GOODS).filter(([g])=>b.kind==='restaurant'?g!=='bread':b.kind==='cowshed'?['milk','cheese'].includes(g):b.kind==='pigpen'?g==='truffle':b.kind==='fishinghut'?g==='fish':['carrot','potato'].includes(g)).map(([g,name])=>`<span>${name} <b data-village-stock="${escapeHTML(b.id)}|${g}">${s.village.stock[b.id]?.[g as Good]||0}</b></span>`).join('')}</div><p class="panel-note">库存保存在这处设施；运输中的材料由村民携带。断路或夜晚会暂停，恢复后继续。</p></section>`;
   }
   private villagePanel():string {
     return `<h3>种植、养殖与钓鱼</h3><p class="story">至多三位邻居轮流工作。面包与料理用来完成邻里心愿；不消耗金币来生产，也没有离线惩罚。</p><p class="panel-note">春天胡萝卜、夏天土豆生长更快，秋天收获更多，冬天温室照常种菜。牛棚可在鲜奶与奶酪间选择，小猪寻找松露，钓鱼小屋夏天收鱼更快。</p>${this.store.state.town.buildings.filter(b=>b.placed&&PRODUCTION_KINDS.includes(b.kind)).map(b=>`<article class="village-card"><h4>${button('find:'+b.id,CATALOG[b.kind].name,'MapPin','text-button')}</h4>${this.villageDetail(b)}</article>`).join('')}${button('orders','去准备一份邻里心愿','ClipboardList','primary')}`;
@@ -281,6 +281,7 @@ export class TownUI {
       case 'close-panel': this.panel = null; break;
       case 'resident-home': { const b = this.store.board.buildings.find(b => b.id === value && b.placed); if (b) { const d=dimensions(b); this.scene.focus({x:b.x+d.w/2,z:b.z+d.d/2}); } return; }
       case 'resident': this.selectResident(Number(value)); return;
+      case 'view-fishing': this.scene.viewFishing(value); return;
       case 'category': this.category = value; break;
       case 'buy': this.selectedId = null; this.panel = null; this.setTool('place', value as BuildingKind); return;
       case 'place-owned': case 'move-building': {

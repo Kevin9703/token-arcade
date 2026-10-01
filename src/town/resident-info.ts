@@ -56,7 +56,7 @@ function workInfo(job: FarmJob, s: TownState, board: Board): { action: string; d
     if (job.carrying) return { action: `配送${GOODS[job.carrying as keyof typeof GOODS] || '小麦'}`, destination: board.buildings.find(b => b.id === run?.destination) };
     if (job.phase === 'returning') return { action: '返回工作地点', destination: station };
     const choice = run?.recipe || run?.choice || s.village.choices[station.id];
-    const action = station.kind === 'fishinghut' ? '在河边钓鱼' : station.kind === 'cowshed' ? choice === 'cheese' ? '制作奶酪' : '照料奶牛、挤奶' : station.kind === 'pigpen' ? '陪小猪寻找松露' : station.kind === 'restaurant' ? `烹饪${RECIPES.find(r => r.id === choice)?.name || '料理'}` : `照料${choice === 'potato' ? '土豆' : '胡萝卜'}`;
+    const action = station.kind === 'fishinghut' ? job.harvesting ? '在河边钓鱼' : '到码头领取库存鲜鱼' : station.kind === 'cowshed' ? choice === 'cheese' ? '制作奶酪' : '照料奶牛、挤奶' : station.kind === 'pigpen' ? '陪小猪寻找松露' : station.kind === 'restaurant' ? `烹饪${RECIPES.find(r => r.id === choice)?.name || '料理'}` : `照料${choice === 'potato' ? '土豆' : '胡萝卜'}`;
     return { action, destination: station };
   }
   return { action: '准备下一项工作' };

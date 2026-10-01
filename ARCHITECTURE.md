@@ -19,6 +19,7 @@ TypeScript + Three.js 构建原生 3D 城镇，DOM 提供 HUD 和建设面板，
 | `pedestrians.ts` | 内缩圆角步行车道、前后间距、入流预留、道路变化后的平滑重定向 |
 | `resident-life.ts` | 错峰逛店 / 聚会、独立停留、双侧避让、回家、开门、睡眠、归座与工作状态 |
 | `resident-info.ts` / `resident-picking.ts` | 稳定人物姓名与简介、实际行动和目的地说明、人物点击范围与建筑遮挡 |
+| `production-feedback.ts` | 实际工人与生产暂停 / 等待说明、南北河岸码头观察视角；不调度任务 |
 | `village.ts` / `work-scheduler.ts` | 原料库存、实际运输、三款菜谱、三种订单、四季种植与共享工人轮换 |
 | `walk-surface.ts` / `home-needs.ts` | 桥面拱度与安全横向位置、当前章节缺需求气泡 |
 | `models.ts` / `village-models.ts` | 原创建筑和居民、共享材质、倒角构件、网格合批及活动节点 |

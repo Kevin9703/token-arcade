@@ -51,11 +51,13 @@ test('distinct full models retain animated livestock, crops, piers and bounded f
 });
 test('three physical workers complete a farm and delivered meal cycle, retain actors, and go home at night',()=>{
  const s=villageFixture(),e=evaluate(s.town),traffic=new PedestrianTraffic(e.connectedRoads,9),life=new ResidentLife(traffic,s.town.buildings.filter(b=>b.kind==='house').map(homeForBuilding));life.setPlaces([],e.connectedRoads);const actors=[...traffic.people],chains=farmChains(s.town,e,s.farm);
- const nearest=(p:any)=>[...e.connectedRoads].map(k=>{const [x,z]=k.split(',').map(Number);return {x:x+.5,z:z+.5};}).sort((a,b)=>Math.hypot(a.x-p.x,a.z-p.z)-Math.hypot(b.x-p.x,b.z-p.z))[0];
+ const nearest=(p:any)=>[...e.connectedRoads].map(k=>{const [x,z]=k.split(',').map(Number);return {x:x+.5,z:z+.5};}).sort((a,b)=>Math.hypot(a.x-p.x,a.z-p.z)-Math.hypot(b.x-p.x,b.z-p.z))[0];let fishingSeconds=0;
  for(let frame=0;frame<20*1200;frame++){const ready=new Set<string>();for(const [i,j]of life.jobs){const p=traffic.people[i];if(life.residents[i].mode==='working'&&!life.residents[i].path.length&&Math.hypot(p.x-j.target.x,p.z-j.target.z)<.15)ready.add(j.fieldId);}
+  if(ready.has('village-fish-work'))fishingSeconds+=.05;
   const jobs=scheduledJobs(tickFarm(chains,s.farm,.05,false,'spring',ready),tickVillage(s,e,.05,false,'spring',ready));assert.ok(jobs.length<=3);life.assignJobs(jobs,(p,to)=>roadRoute(e.connectedRoads,nearest(p),to));life.update(.05,false);
  }
  assert.ok(s.farm.bread>=4,JSON.stringify({farm:s.farm,jobs:[...life.jobs],residents:life.residents.map((r,i)=>({mode:r.mode,path:r.path,p:traffic.people[i]}))}));assert.ok((s.village.stock.food.meal||0)>=2,JSON.stringify({village:s.village,jobs:[...life.jobs],residents:life.residents.map((r,i)=>({mode:r.mode,path:r.path,p:traffic.people[i]}))}));assert.ok(traffic.people.every((p,i)=>p===actors[i]));
+ assert.ok(fishingSeconds>=12,'a real resident reaches the pier and completes a fishing batch');assert.ok((s.village.stock.food.fish||0)>=2,'the fish is physically delivered to the restaurant');
  life.assignJobs([],()=>[]);for(let frame=0;frame<20*150;frame++)life.update(.05,true);assert.ok(life.residents.every(r=>r.mode==='sleeping'),JSON.stringify(life.residents.map((r,i)=>({r,p:traffic.people[i]}))));
 });
 
@@ -85,4 +87,22 @@ test('delivery completion and surplus flour pickup advance their checkpoint even
  const s=villageFixture(),e=evaluate(s.town);s.village.runs['flour-food']={phase:'work',elapsed:0,destination:'food',cargo:{},cycles:0,choice:'flour'};s.farm.flour=1;
  const before=s.farm.activeSeconds;tickVillage(s,e,1,false,'spring',new Set(['village-flour-food-work']));assert.equal(s.farm.flour,0);assert.ok(s.farm.activeSeconds>before);assert.equal(s.village.activeSeconds,1);
  tickVillage(s,e,1,false,'spring',new Set(['village-flour-food-deliver']));assert.equal(s.village.stock.food.flour,1);assert.equal(s.village.activeSeconds,2);
+});
+
+test('a full fishing hut sends existing fish after a restaurant is connected, only on real arrival',()=>{
+ const s=villageFixture(),hut=s.town.buildings.find(b=>b.id==='fish')!;
+ s.village.stock.fish={fish:24};s.village.stock.food={};
+ tickVillage(s,evaluate(s.town),0,false,'spring',new Set());
+ const before=JSON.stringify(s.village.stock),jobs=tickVillage(s,evaluate(s.town),1,false,'spring',new Set());
+ assert.equal(JSON.stringify(s.village.stock),before);assert.equal(jobs.find(j=>j.fieldId==='village-fish-work')?.harvesting,false);
+ tickVillage(s,evaluate(s.town),1,false,'spring',new Set(['village-fish-work']));
+ assert.equal(s.village.stock.fish.fish,22);assert.deepEqual(s.village.runs.fish.cargo,{fish:2});assert.equal(s.village.stock.food.fish,undefined);
+ const cargo=JSON.stringify(s.village.runs.fish);tickVillage(s,evaluate(s.town),1,true,'spring',new Set(['village-fish-deliver']));assert.equal(JSON.stringify(s.village.runs.fish),cargo);
+ s.town.roads=s.town.roads.filter(k=>k!=='13,17');tickVillage(s,evaluate(s.town),1,false,'spring',new Set(['village-fish-deliver']));assert.equal(JSON.stringify(s.village.runs.fish),cargo);
+ s.town.roads.push('13,17');tickVillage(s,evaluate(s.town),1,false,'spring',new Set(['village-fish-deliver']));
+ assert.equal(s.village.stock.food.fish,2);assert.deepEqual(s.village.runs.fish.cargo,{});assert.ok(parseTown(JSON.stringify(s),'demo'));
+ tickVillage(s,evaluate(s.town),1,false,'spring',new Set(['village-fish-deliver']));assert.equal(s.village.stock.food.fish,2);
+ s.village.runs.fish.phase='work';s.village.stock.fish.fish=24;s.village.stock.food.fish=12;
+ assert.match(stationProblem(s,evaluate(s.town),hut,'spring'),/河谷炖鱼/);assert.ok(!tickVillage(s,evaluate(s.town),1,false,'spring',new Set(['village-fish-work'])).some(j=>j.fieldId.startsWith('village-fish-')));
+ assert.equal(s.village.stock.fish.fish,24);
 });

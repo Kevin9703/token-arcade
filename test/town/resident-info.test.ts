@@ -44,6 +44,7 @@ test('production and deliveries identify real crops, recipes and destinations ra
   s.village.runs.kitchen={phase:'work',choice:'soup',recipe:'fish',elapsed:0,destination:'',cargo:{},cycles:0};life.jobs.set(0,job('village-kitchen-work'));assert.equal(info().intention,'烹饪河谷炖鱼');
   life.jobs.set(0,job('village-flour-kitchen-deliver','to-bakery','flour'));assert.equal(info().destination,buildingLabel(kitchen));
   s.town.buildings.unshift(makeBuilding('other-mill','mill',2,4));const p=entrance(mill);life.jobs.set(0,{...job('village-flour-kitchen-work','milling'),entrance:{x:p.x+.5,z:p.z+.5}});assert.equal(info().destination,buildingLabel(mill));
+  s.town.buildings.push(makeBuilding('fish','fishinghut',12,13));life.jobs.set(0,{...job('village-fish-work'),harvesting:false});assert.equal(info().intention,'到码头领取库存鲜鱼');
 });
 
 test('a selected neighbor follows doorstep, shop, seat and bedtime transitions without changing identity',()=>{
